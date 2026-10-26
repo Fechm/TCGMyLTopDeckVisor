@@ -17,6 +17,11 @@ catalogos = json.loads((r.RAIZ / "datos" / "catalogos.json").read_text(encoding=
 razas = {x["id"]: x["name"] for x in catalogos["races"]}
 
 refs = [(c, r.IMAGENES / f"{c['ed_edid']}-{c['edid']}.jpg") for c in cartas]
+ruta_especiales = r.RAIZ / "datos" / "especiales.json"
+for c in json.loads(ruta_especiales.read_text(encoding="utf-8")) if ruta_especiales.exists() else []:
+    nombres[c["id"]] = c["name"]
+    ediciones[c["ed_slug"]] = c["ed_titulo"]
+    refs.append((c, r.RAIZ / "datos" / "especiales" / f"{c['id']}.jpg"))
 refs = [(c, p) for c, p in refs if p.exists()]
 f = r.metodos(r.Embedder())["cnn_carta+arte"]
 base = f([r.leer(p) for _, p in refs]).astype(np.float32)

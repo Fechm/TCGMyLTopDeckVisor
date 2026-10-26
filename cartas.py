@@ -140,6 +140,10 @@ def normalizar_texto(texto):
 
 def cargar(razas_aliados=("0", "11", "37", "44", "49", "51")):
     crudas = json.loads((RAIZ / "datos" / "cartas-imperio.json").read_text(encoding="utf-8"))
+    ruta_especiales = RAIZ / "datos" / "especiales.json"
+    especiales = json.loads(ruta_especiales.read_text(encoding="utf-8")) if ruta_especiales.exists() else []
+    reworks = {normalizar(x["name"]) for x in especiales if x.get("rework")}
+    crudas = [x for x in crudas if normalizar(x["name"]) not in reworks] + especiales
     ban = json.loads((RAIZ / "banlist.json").read_text(encoding="utf-8"))
     limites = {normalizar(n): 0 for n in ban["prohibidas"]}
     limites.update({normalizar(n): v for n, v in ban["limitadas"].items()})
