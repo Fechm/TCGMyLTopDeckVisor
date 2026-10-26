@@ -63,6 +63,15 @@
   .marco { position: absolute; left: 50%; top: 46%; height: 78%; aspect-ratio: 709 / 1016; max-width: 92%; transform: translate(-50%, -50%); border: 3px solid var(--visor-ink); border-radius: 12px; box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.38); transition: border-color 0.15s, box-shadow 0.15s; }
   .marco.registrada { border-color: var(--ok); box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.38), inset 0 0 0 4px var(--ok); }
   .marco.viendo { border-color: var(--gold); }
+  .marco.foil { border-image: linear-gradient(135deg, #ff6ec7, #ffd86e, #6effa8, #6ec8ff, #b06eff) 1; }
+  .foil-boton[aria-pressed="true"] { background: linear-gradient(135deg, #ffe3f4, #fff3cf, #dcffe9, #dceeff, #efe1ff); border-color: var(--gold); color: #3a2a00; }
+  .pregunta-foil { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+  .pregunta-foil span { font-weight: 700; }
+  .pregunta-foil button { min-height: 40px; padding: 0 14px; border-radius: 8px; border: 0; font: 600 0.95rem var(--body); cursor: pointer; background: var(--visor-ink); color: var(--visor); }
+  .pregunta-foil button + button { background: transparent; color: var(--visor-ink); border: 1px solid var(--visor-ink); }
+  .casilla { display: flex; gap: 8px; align-items: flex-start; font-size: 0.9rem; color: var(--muted); }
+  .casilla input { margin-top: 3px; accent-color: var(--gold); width: 18px; height: 18px; }
+  .brillo-foil { color: var(--gold); font-weight: 700; }
   .banda { position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 14px 12px; background: linear-gradient(transparent, rgb(0 0 0 / 0.78)); color: var(--visor-ink); display: grid; gap: 2px; }
   .banda strong { font-size: 1.05rem; overflow-wrap: anywhere; }
   .banda small { opacity: 0.8; font-variant-numeric: tabular-nums; }
@@ -131,10 +140,16 @@
       <div class="banda" id="banda" hidden>
         <strong id="lectura">Buscando carta…</strong>
         <small id="detalle"></small>
+        <div class="pregunta-foil" id="pregunta-foil" hidden>
+          <span>✨ Parece foil</span>
+          <button type="button" id="foil-si">Sí, es foil</button>
+          <button type="button" id="foil-no">No</button>
+        </div>
       </div>
     </div>
     <div class="botones">
       <button type="button" class="boton principal" id="iniciar" disabled>Iniciar escáner</button>
+      <button type="button" class="boton foil-boton" id="modo-foil" aria-pressed="false">✨ Foil: no</button>
       <button type="button" class="boton" id="forzar" disabled>Agregar la que veo</button>
       <button type="button" class="boton" id="deshacer" disabled>Deshacer último</button>
     </div>
@@ -152,6 +167,14 @@
         <label class="ajuste" for="umbral">
           <span>Exigencia para registrar: <b id="umbral-valor">0,68</b> (súbela si registra cartas equivocadas, bájala si no registra nada)</span>
           <input type="range" id="umbral" min="0.60" max="0.82" step="0.01" value="0.68">
+        </label>
+        <label class="casilla" for="foil-auto">
+          <input type="checkbox" id="foil-auto" checked>
+          <span>Detectar foil: después de registrar, inclina la carta 4 segundos y te avisa si parece foil. Si la retiras antes, no pregunta.</span>
+        </label>
+        <label class="ajuste" for="umbral-foil">
+          <span>Sensibilidad foil: <b id="umbral-foil-valor">8,0</b> (bájala si no detecta tus foil, súbela si pregunta demasiado)</span>
+          <input type="range" id="umbral-foil" min="5.5" max="11" step="0.1" value="8.0">
         </label>
       </div>
     </details>
@@ -182,6 +205,7 @@
               <output id="copias">1</output>
               <button type="button" id="mas" aria-label="Una copia más">+</button>
             </div>
+            <label class="casilla" for="foto-foil"><input type="checkbox" id="foto-foil"> <span>Es foil</span></label>
             <button type="button" class="boton principal" id="agregar" disabled>Agregar a mi colección</button>
             <button type="button" class="boton" id="saltar" hidden>Saltar foto</button>
           </div>
@@ -419,6 +443,161 @@ async function verificarDibujo(fuente, caja, mejor) {
   return { ref: ganador.j, k, inl: ganador.inl, segundo, fuerte: ganador.inl >= ORB_MINIMO && ganador.inl >= 2 * segundo };
 }
 
+/* ---------- Foil ---------- */
+const FOIL_ANCHO = 180, FOIL_ALTO = 258, FOIL_CUADROS = 16, FOIL_INTERVALO = 250, FOIL_BORDE = 8;
+let modoFoil = false, foilAuto = true, umbralFoil = 8.0;
+
+function capturarCrop(fuente, [x, y, w, h]) {
+  const c = new OffscreenCanvas(2 * FOIL_ANCHO, 2 * FOIL_ALTO), ctx = c.getContext("2d");
+  ctx.drawImage(fuente, x, y, w, h, 0, 0, 2 * FOIL_ANCHO, 2 * FOIL_ALTO);
+  return ctx.getImageData(0, 0, 2 * FOIL_ANCHO, 2 * FOIL_ALTO);
+}
+
+function reducir(im) {
+  const c = new OffscreenCanvas(im.width, im.height);
+  c.getContext("2d").putImageData(im, 0, 0);
+  const r = new OffscreenCanvas(FOIL_ANCHO, FOIL_ALTO), ctx = r.getContext("2d");
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(c, 0, 0, FOIL_ANCHO, FOIL_ALTO);
+  return ctx.getImageData(0, 0, FOIL_ANCHO, FOIL_ALTO);
+}
+
+let detectorFoil = null;
+
+function alinearCrops(lista) {
+  if (!cv) return lista.map(reducir);
+  detectorFoil = detectorFoil || new cv.ORB(1000);
+  const gris = im => { const m = cv.matFromImageData(im), g = new cv.Mat(); cv.cvtColor(m, g, cv.COLOR_RGBA2GRAY); m.delete(); return g; };
+  const rasgosDe = g => { const kp = new cv.KeyPointVector(), des = new cv.Mat(), mask = new cv.Mat(); detectorFoil.detectAndCompute(g, mask, kp, des); mask.delete(); return { kp, des }; };
+  const g0 = gris(lista[0]), base = rasgosDe(g0);
+  const salida = [lista[0]];
+  for (const im of lista.slice(1)) {
+    const g = gris(im), r = rasgosDe(g);
+    let alineada = im;
+    if (r.des.rows >= 8 && base.des.rows >= 8) {
+      const pares = new cv.DMatchVectorVector();
+      comparador.knnMatch(r.des, base.des, pares, 2);
+      const src = [], dst = [];
+      for (let i = 0; i < pares.size(); i++) {
+        const p = pares.get(i);
+        if (p.size() < 2) continue;
+        const a = p.get(0), b = p.get(1);
+        if (a.distance < 0.75 * b.distance) {
+          const q = r.kp.get(a.queryIdx).pt, t = base.kp.get(a.trainIdx).pt;
+          src.push(q.x, q.y); dst.push(t.x, t.y);
+        }
+      }
+      pares.delete();
+      if (src.length / 2 >= 12) {
+        const m1 = cv.matFromArray(src.length / 2, 1, cv.CV_32FC2, src), m2 = cv.matFromArray(dst.length / 2, 1, cv.CV_32FC2, dst), mask = new cv.Mat();
+        const H = cv.findHomography(m1, m2, cv.RANSAC, 4.0, mask);
+        if (!H.empty() && cv.countNonZero(mask) >= 12) {
+          const src4 = cv.matFromImageData(im), dst4 = new cv.Mat();
+          cv.warpPerspective(src4, dst4, H, new cv.Size(im.width, im.height), cv.INTER_LINEAR, cv.BORDER_REPLICATE);
+          alineada = new ImageData(new Uint8ClampedArray(dst4.data), im.width, im.height);
+          src4.delete(); dst4.delete();
+        }
+        m1.delete(); m2.delete(); mask.delete(); H.delete();
+      }
+    }
+    salida.push(alineada);
+    g.delete(); r.kp.delete(); r.des.delete();
+  }
+  g0.delete(); base.kp.delete(); base.des.delete();
+  return salida.map(reducir);
+}
+
+function abLab(im) {
+  const w = FOIL_ANCHO, h = FOIL_ALTO, d = im.data, n = w * h;
+  const lin = v => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  const f = t => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const A = new Float32Array(n), B = new Float32Array(n);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let r = 0, g = 0, b = 0, c = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const yy = Math.min(h - 1, Math.max(0, y + dy)), xx = Math.min(w - 1, Math.max(0, x + dx)), i = 4 * (yy * w + xx);
+        r += d[i]; g += d[i + 1]; b += d[i + 2]; c++;
+      }
+      const R = lin(r / c), G = lin(g / c), Bl = lin(b / c);
+      const X = (0.4124 * R + 0.3576 * G + 0.1805 * Bl) / 0.95047, Y = 0.2126 * R + 0.7152 * G + 0.0722 * Bl, Z = (0.0193 * R + 0.1192 * G + 0.9505 * Bl) / 1.08883;
+      const i = y * w + x;
+      A[i] = 500 * (f(X) - f(Y));
+      B[i] = 200 * (f(Y) - f(Z));
+    }
+  }
+  const mediana = arr => { const s = Float32Array.from(arr).sort(); return s[s.length >> 1]; };
+  const ma = mediana(A), mb = mediana(B);
+  for (let i = 0; i < n; i++) { A[i] -= ma; B[i] -= mb; }
+  return { A, B };
+}
+
+function metricaFoil(lista) {
+  const labs = alinearCrops(lista).map(abLab), k = labs.length, n = FOIL_ANCHO * FOIL_ALTO, valores = [];
+  for (let y = FOIL_BORDE; y < FOIL_ALTO - FOIL_BORDE; y++) {
+    for (let x = FOIL_BORDE; x < FOIL_ANCHO - FOIL_BORDE; x++) {
+      const i = y * FOIL_ANCHO + x;
+      let sa = 0, sb = 0, qa = 0, qb = 0;
+      for (const l of labs) { sa += l.A[i]; sb += l.B[i]; qa += l.A[i] * l.A[i]; qb += l.B[i] * l.B[i]; }
+      const va = qa / k - (sa / k) ** 2, vb = qb / k - (sb / k) ** 2;
+      valores.push(Math.sqrt(Math.max(0, va + vb)));
+    }
+  }
+  valores.sort((a, b) => a - b);
+  return valores[Math.floor(valores.length * 0.9)];
+}
+
+function iniciarMedicionFoil(registro) {
+  if (!foilAuto || modoFoil) return;
+  detenerMedicionFoil();
+  const m = { registro, crops: [], timer: null };
+  scan.medicion = m;
+  m.timer = setInterval(() => {
+    if (scan.medicion !== m || !scan.activo) return detenerMedicionFoil();
+    if (scan.modo !== "registrada") return detenerMedicionFoil();
+    const caja = cajaDelMarco();
+    if (!caja) return;
+    m.crops.push(capturarCrop($("video"), caja));
+    $("detalle").textContent = `Inclina la carta a un lado y al otro… (${m.crops.length}/${FOIL_CUADROS}) · o retírala para seguir`;
+    if (m.crops.length >= FOIL_CUADROS) {
+      detenerMedicionFoil();
+      let valor = 0;
+      try { valor = metricaFoil(m.crops); } catch (e) { return; }
+      m.registro.medidaFoil = valor;
+      if (valor >= umbralFoil) preguntarFoil(m.registro, valor);
+      else $("detalle").textContent = `No parece foil (${valor.toFixed(1)}) · retira la carta`;
+    }
+  }, FOIL_INTERVALO);
+}
+
+function detenerMedicionFoil() {
+  if (scan.medicion?.timer) clearInterval(scan.medicion.timer);
+  scan.medicion = null;
+}
+
+function preguntarFoil(registro, valor) {
+  scan.preguntaFoil = registro;
+  $("pregunta-foil").hidden = false;
+  $("pregunta-foil").querySelector("span").textContent = `✨ Parece foil (${valor.toFixed(1)})`;
+  $("marco").classList.add("foil");
+  clearTimeout(scan.preguntaTimer);
+  scan.preguntaTimer = setTimeout(cerrarPreguntaFoil, 12000);
+}
+
+function cerrarPreguntaFoil() {
+  scan.preguntaFoil = null;
+  $("pregunta-foil").hidden = true;
+  $("marco").classList.remove("foil");
+}
+
+function marcarFoil(registro) {
+  const actual = coleccion[registro.carta.id];
+  if (!actual || registro.foil) return;
+  guardar(registro.carta, actual.cantidad, (actual.foil || 0) + 1);
+  registro.foil = true;
+  renderSesion(false);
+}
+
 /* ---------- Escáner continuo ---------- */
 const scan = { activo: false, stream: null, wake: null, audio: null, ventana: [], modo: "buscando", registrada: -1, salida: 0, cambio: 0, ultimo: null, cuadros: 0, t0: 0, votosDibujo: [] };
 const registrosSesion = [];
@@ -454,13 +633,17 @@ function pintarLectura(texto, detalle, clase) {
 async function registrar(k, j) {
   const carta = meta.cartas[j];
   const nueva = (coleccion[carta.id]?.cantidad || 0) + 1;
-  guardar(carta, nueva);
-  registrosSesion.unshift({ carta, total: nueva });
+  const foil = modoFoil;
+  guardar(carta, nueva, (coleccion[carta.id]?.foil || 0) + (foil ? 1 : 0));
+  const registro = { carta, total: nueva, foil };
+  registrosSesion.unshift(registro);
+  cerrarPreguntaFoil();
   pitido();
   renderSesion(true);
   $("deshacer").disabled = false;
   scan.modo = "registrada"; scan.registrada = k; scan.ventana = []; scan.salida = 0; scan.cambio = 0; scan.votosDibujo = [];
-  pintarLectura(`✓ ${carta.nombre}`, `Registrada · tienes ${nueva} · retira la carta`, "registrada");
+  pintarLectura(`✓ ${foil ? "✨ " : ""}${carta.nombre}`, `Registrada${foil ? " como foil" : ""} · tienes ${nueva} · retira la carta`, "registrada");
+  iniciarMedicionFoil(registro);
 }
 
 async function cuadro() {
@@ -489,7 +672,7 @@ async function cuadro() {
     if (scan.salida >= CUADROS_PARA_SOLTAR || scan.cambio >= CUADROS_PARA_SOLTAR + 1) {
       scan.modo = "buscando"; scan.ventana = []; scan.votosDibujo = [];
       pintarLectura("Buscando carta…", pie, "");
-    } else {
+    } else if (!scan.medicion && !scan.preguntaFoil) {
       $("detalle").textContent = `Retira la carta · ${pie}`;
     }
   } else {
@@ -554,6 +737,8 @@ async function iniciarEscaner() {
 
 function detenerEscaner() {
   scan.activo = false;
+  detenerMedicionFoil();
+  cerrarPreguntaFoil();
   scan.stream?.getTracks().forEach(t => t.stop());
   scan.stream = null;
   try { scan.wake?.release(); } catch (e) {}
@@ -575,8 +760,8 @@ function renderSesion(animar) {
   }
   $("registros").replaceChildren(...registrosSesion.slice(0, 12).map((r, i) => {
     const fila = document.createElement("div"); fila.className = "registro" + (animar && i === 0 ? " nuevo" : "");
-    const nombre = document.createElement("div"); nombre.className = "nombre"; nombre.textContent = r.carta.nombre;
-    const sm = document.createElement("small"); sm.textContent = descripcion(r.carta); nombre.append(sm);
+    const nombre = document.createElement("div"); nombre.className = "nombre"; nombre.textContent = (r.foil ? "✨ " : "") + r.carta.nombre;
+    const sm = document.createElement("small"); sm.textContent = descripcion(r.carta) + (r.foil ? " · foil" : ""); nombre.append(sm);
     const tot = document.createElement("span"); tot.className = "total"; tot.textContent = `×${r.total}`;
     fila.append(nombre, tot);
     return fila;
@@ -592,7 +777,9 @@ $("forzar").addEventListener("click", () => {
 $("deshacer").addEventListener("click", () => {
   const r = registrosSesion.shift();
   if (!r) return;
-  guardar(r.carta, (coleccion[r.carta.id]?.cantidad || 1) - 1);
+  const actual = coleccion[r.carta.id];
+  if (scan.preguntaFoil === r) cerrarPreguntaFoil();
+  guardar(r.carta, (actual?.cantidad || 1) - 1, Math.max(0, (actual?.foil || 0) - (r.foil ? 1 : 0)));
   estado(`Deshecho: ${r.carta.nombre}.`);
   renderSesion(false);
   $("deshacer").disabled = registrosSesion.length === 0;
@@ -603,6 +790,28 @@ $("umbral").addEventListener("input", () => {
   try { localStorage.setItem("umbral-myl", String(umbral)); } catch (e) {}
 });
 document.addEventListener("visibilitychange", () => { if (document.hidden && scan.activo) detenerEscaner(); });
+$("modo-foil").addEventListener("click", () => {
+  modoFoil = !modoFoil;
+  $("modo-foil").setAttribute("aria-pressed", String(modoFoil));
+  $("modo-foil").textContent = modoFoil ? "✨ Foil: sí" : "✨ Foil: no";
+  if (modoFoil) { detenerMedicionFoil(); cerrarPreguntaFoil(); }
+});
+$("foil-si").addEventListener("click", () => {
+  const r = scan.preguntaFoil;
+  cerrarPreguntaFoil();
+  if (r) { marcarFoil(r); $("detalle").textContent = `Guardada como foil ✨ · retira la carta`; }
+});
+$("foil-no").addEventListener("click", cerrarPreguntaFoil);
+$("foil-auto").addEventListener("change", () => {
+  foilAuto = $("foil-auto").checked;
+  if (!foilAuto) detenerMedicionFoil();
+  try { localStorage.setItem("foil-auto-myl", foilAuto ? "1" : "0"); } catch (e) {}
+});
+$("umbral-foil").addEventListener("input", () => {
+  umbralFoil = Number($("umbral-foil").value);
+  $("umbral-foil-valor").textContent = umbralFoil.toFixed(1).replace(".", ",");
+  try { localStorage.setItem("umbral-foil-myl", String(umbralFoil)); } catch (e) {}
+});
 
 /* ---------- Modo foto ---------- */
 function recortes(bmp) {
@@ -700,9 +909,11 @@ function recibir(ev) {
 }
 
 /* ---------- Colección ---------- */
-function guardar(carta, cantidad) {
+function guardar(carta, cantidad, foil) {
+  const previo = coleccion[carta.id]?.foil || 0;
+  foil = Math.max(0, Math.min(cantidad, foil ?? previo));
   if (cantidad <= 0) delete coleccion[carta.id];
-  else coleccion[carta.id] = { id: carta.id, nombre: carta.nombre, edicion: carta.edicion, tipo: carta.tipo, raza: carta.raza, coste: carta.coste, cantidad, actualizado: new Date().toISOString() };
+  else coleccion[carta.id] = { id: carta.id, nombre: carta.nombre, edicion: carta.edicion, tipo: carta.tipo, raza: carta.raza, coste: carta.coste, cantidad, foil, actualizado: new Date().toISOString() };
   renderColeccion();
   try { localStorage.setItem("coleccion-myl", JSON.stringify(coleccion)); } catch (e) {}
 }
@@ -712,7 +923,8 @@ function renderColeccion() {
   const items = Object.values(coleccion);
   const total = items.reduce((a, x) => a + x.cantidad, 0);
   const dragones = items.filter(x => x.tipo === "Aliado" && /drag/i.test(x.raza || "")).reduce((a, x) => a + x.cantidad, 0);
-  $("resumen").replaceChildren(...[["Cartas", total], ["Distintas", items.length], ["Aliados Dragón", dragones]].map(([t, v]) => {
+  const foils = items.reduce((a, x) => a + (x.foil || 0), 0);
+  $("resumen").replaceChildren(...[["Cartas", total], ["Distintas", items.length], ["Foil", foils], ["Aliados Dragón", dragones]].map(([t, v]) => {
     const s = document.createElement("span"); s.textContent = t + ": ";
     const b = document.createElement("b"); b.textContent = v.toLocaleString("es-CL"); s.append(b);
     return s;
@@ -735,6 +947,11 @@ function renderColeccion() {
       const fila = document.createElement("div"); fila.className = "fila";
       const nombre = document.createElement("div"); nombre.className = "nombre"; nombre.textContent = x.nombre;
       const sm = document.createElement("small"); sm.textContent = [x.raza, x.edicion].filter(Boolean).join(" · "); nombre.append(sm);
+      if (x.foil) {
+        const brillo = document.createElement("small"); brillo.className = "brillo-foil";
+        brillo.textContent = `✨ ${x.foil} foil${x.foil < x.cantidad ? ` · ${x.cantidad - x.foil} normal` : ""}`;
+        nombre.append(brillo);
+      }
       const cont = document.createElement("div"); cont.className = "contador";
       const menos = document.createElement("button"); menos.type = "button"; menos.textContent = "−"; menos.setAttribute("aria-label", `Quitar una copia de ${x.nombre}`);
       const out = document.createElement("output"); out.textContent = x.cantidad;
@@ -765,9 +982,10 @@ $("mas").addEventListener("click", () => { $("copias").value = String(Math.min(9
 $("agregar").addEventListener("click", () => {
   if (elegido == null) return;
   const carta = meta.cartas[elegido];
-  const nueva = (coleccion[carta.id]?.cantidad || 0) + Number($("copias").value);
-  guardar(carta, nueva);
-  estado(`Agregada: ${carta.nombre} (ahora tienes ${nueva}).`);
+  const copias = Number($("copias").value), esFoil = $("foto-foil").checked;
+  const nueva = (coleccion[carta.id]?.cantidad || 0) + copias;
+  guardar(carta, nueva, (coleccion[carta.id]?.foil || 0) + (esFoil ? copias : 0));
+  estado(`Agregada${esFoil ? " como foil ✨" : ""}: ${carta.nombre} (ahora tienes ${nueva}).`);
   siguiente();
 });
 $("saltar").addEventListener("click", siguiente);
@@ -779,6 +997,9 @@ try { coleccion = JSON.parse(localStorage.getItem("coleccion-myl") || "{}") || {
 try {
   const u = Number(localStorage.getItem("umbral-myl"));
   if (u >= 0.6 && u <= 0.82) { umbral = u; $("umbral").value = String(u); $("umbral-valor").textContent = u.toFixed(2).replace(".", ","); }
+  const uf = Number(localStorage.getItem("umbral-foil-myl"));
+  if (uf >= 5.5 && uf <= 10) { umbralFoil = uf; $("umbral-foil").value = String(uf); $("umbral-foil-valor").textContent = uf.toFixed(1).replace(".", ","); }
+  if (localStorage.getItem("foil-auto-myl") === "0") { foilAuto = false; $("foil-auto").checked = false; }
 } catch (e) {}
 renderColeccion();
 iniciarModelo();
