@@ -299,7 +299,7 @@ async function migrarColeccion() {
 const SUPABASE_URL = "https://nzehvfrlbmltxfqkovtu.supabase.co";
 const SUPABASE_CLAVE = "sb_publishable_5v43J9mYq5wdC8hxRIduTA_yyzJBZ5n";
 const legal = new Map(), indicePorId = new Map(), indiceNombre = new Map();
-let modoLocal = false, cartasConArchivos = 0;
+let localHasta = 0, cartasConArchivos = 0;
 
 function registrarEnCatalogo(c) {
   const j = meta.cartas.length;
@@ -322,7 +322,7 @@ async function buscarRemoto(q) {
     method: "POST",
     headers: { apikey: SUPABASE_CLAVE, Authorization: `Bearer ${SUPABASE_CLAVE}`, "Content-Type": "application/json" },
     body: JSON.stringify({ consulta: "[" + Array.from(q, x => x.toFixed(5)).join(",") + "]", cantidad: 12 }),
-    signal: AbortSignal.timeout(4000),
+    signal: AbortSignal.timeout(10000),
   });
   if (!r.ok) throw new Error(`la base respondió ${r.status}`);
   return r.json();
@@ -364,6 +364,7 @@ async function iniciarModelo() {
     await migrarColeccion();
     renderColeccion();
     refrescarLegalidad().catch(() => {});
+    buscarRemoto(new Float32Array(meta.dim).fill(1 / Math.sqrt(meta.dim))).catch(() => {});
   } catch (e) {
     chip("chip-modelo", "Error", "mal");
     estado("No se pudo cargar el reconocedor: " + e.message + ". Recarga la página para intentar de nuevo.");
@@ -411,7 +412,7 @@ async function similitudes(fuente, cajas) {
     for (let k = 0; k < dim; k++) q[k] /= Math.SQRT2;
     return q;
   });
-  if (!modoLocal) {
+  if (Date.now() >= localHasta) {
     try {
       const respuestas = await Promise.all(consultas.map(buscarRemoto));
       for (const filas of respuestas) for (const f of filas) {
@@ -425,7 +426,7 @@ async function similitudes(fuente, cajas) {
       }));
       return { mejor, recorteDe };
     } catch (err) {
-      modoLocal = true;
+      localHasta = Date.now() + 30000;
       estado("No pude consultar la base de cartas; sigo con las referencias guardadas en el sitio.");
     }
   }
