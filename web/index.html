@@ -80,6 +80,14 @@
   .banda { position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 14px 12px; background: linear-gradient(transparent, rgb(0 0 0 / 0.78)); color: var(--visor-ink); display: grid; gap: 2px; }
   .banda strong { font-size: 1.05rem; overflow-wrap: anywhere; }
   .banda small { opacity: 0.8; font-variant-numeric: tabular-nums; }
+  .estado-legal { justify-self: start; margin-top: 4px; padding: 2px 8px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; color: #fff; }
+  .estado-legal.vigente { background: #1d7a3e; }
+  .estado-legal.reimpresion { background: #2f6db5; }
+  .estado-legal.limitada { background: #a86a00; }
+  .estado-legal.rotada { background: #6b6b6b; }
+  .estado-legal.prohibida { background: #b3261e; }
+  .estado-legal.otro { background: #5a4a8a; }
+  .registro .estado-legal, .fila .estado-legal, .candidato .estado-legal { display: inline-block; margin: 4px 0 0; font-size: 0.72rem; }
   .visor .apagado { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; color: var(--visor-ink); padding: 24px; gap: 6px; }
 
   .ajuste { display: grid; gap: 4px; font-size: 0.9rem; color: var(--muted); }
@@ -105,6 +113,7 @@
   .candidato[aria-pressed="true"] { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); background: var(--gold-soft); }
   .candidato strong { font-weight: 700; overflow-wrap: anywhere; }
   .candidato .meta { grid-column: 1 / -1; color: var(--muted); font-size: 0.85rem; }
+  .candidato .estado-legal { grid-column: 1 / -1; justify-self: start; }
   .similitud { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.85rem; }
   .agregar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
   .contador { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
@@ -149,6 +158,7 @@
       <div class="banda" id="banda" hidden>
         <strong id="lectura">Buscando carta…</strong>
         <small id="detalle"></small>
+        <span class="estado-legal" id="estado-legal" hidden></span>
         <div class="pregunta-foil" id="pregunta-foil" hidden>
           <span>✨ Parece foil</span>
           <button type="button" id="foil-si">Sí, es foil</button>
@@ -286,23 +296,65 @@ async function migrarColeccion() {
   }
 }
 
+const SUPABASE_URL = "https://nzehvfrlbmltxfqkovtu.supabase.co";
+const SUPABASE_CLAVE = "sb_publishable_5v43J9mYq5wdC8hxRIduTA_yyzJBZ5n";
+const legal = new Map(), indicePorId = new Map(), indiceNombre = new Map();
+let modoLocal = false, cartasConArchivos = 0;
+
+function registrarEnCatalogo(c) {
+  const j = meta.cartas.length;
+  meta.cartas.push(c);
+  indicePorId.set(String(c.id), j);
+  const clave = normalizar(c.nombre).replace(/\s+/g, " ").trim();
+  if (!indiceNombre.has(clave)) { indiceNombre.set(clave, nombres.length); nombres.push(c.nombre); }
+  nombreDe.push(indiceNombre.get(clave));
+  return j;
+}
+
+async function cargarReferenciasLocales() {
+  if (refs) return;
+  const [r, s] = await Promise.all([cargarBinario("referencias.bin"), cargarBinario("escalas.bin")]);
+  refs = new Int8Array(r); escalas = new Float32Array(s);
+}
+
+async function buscarRemoto(q) {
+  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/buscar_cartas`, {
+    method: "POST",
+    headers: { apikey: SUPABASE_CLAVE, Authorization: `Bearer ${SUPABASE_CLAVE}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ consulta: "[" + Array.from(q, x => x.toFixed(5)).join(",") + "]", cantidad: 12 }),
+    signal: AbortSignal.timeout(4000),
+  });
+  if (!r.ok) throw new Error(`la base respondió ${r.status}`);
+  return r.json();
+}
+
+async function refrescarLegalidad() {
+  const ids = Object.keys(coleccion);
+  for (let i = 0; i < ids.length; i += 150) {
+    const lote = ids.slice(i, i + 150).map(id => `"${id.replace(/"/g, "")}"`).join(",");
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/legalidad?select=id,estado,limite&id=in.(${encodeURIComponent(lote)})`, {
+      headers: { apikey: SUPABASE_CLAVE, Authorization: `Bearer ${SUPABASE_CLAVE}` },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!r.ok) return;
+    for (const f of await r.json()) {
+      legal.set(String(f.id), { estado: f.estado, limite: f.limite });
+      if (coleccion[f.id]) coleccion[f.id].legal = { estado: f.estado, limite: f.limite };
+    }
+  }
+  renderColeccion();
+  try { localStorage.setItem("coleccion-myl", JSON.stringify(coleccion)); } catch (e) {}
+}
+
 async function iniciarModelo() {
   try {
     const t0 = performance.now();
-    const [m, r, s, modelo] = await Promise.all([
-      fetch("catalogo.json").then(x => x.json()),
-      cargarBinario("referencias.bin"),
-      cargarBinario("escalas.bin"),
-      cargarBinario("modelo.onnx"),
-    ]);
-    meta = m; refs = new Int8Array(r); escalas = new Float32Array(s);
-    const indice = new Map();
-    nombreDe = new Int32Array(meta.cartas.length);
-    meta.cartas.forEach((c, j) => {
-      const clave = normalizar(c.nombre).replace(/\s+/g, " ").trim();
-      if (!indice.has(clave)) { indice.set(clave, nombres.length); nombres.push(c.nombre); }
-      nombreDe[j] = indice.get(clave);
-    });
+    const [m, modelo] = await Promise.all([fetch("catalogo.json").then(x => x.json()), cargarBinario("modelo.onnx")]);
+    const cartas = m.cartas;
+    meta = { ...m, cartas: [] };
+    nombreDe = [];
+    cartas.forEach(registrarEnCatalogo);
+    cartasConArchivos = cartas.length;
     $("subtitulo").textContent = `Imperio · ${meta.cartas.length.toLocaleString("es-CL")} cartas reconocibles`;
     ort.env.wasm.numThreads = 1;
     sesion = await ort.InferenceSession.create(modelo, { executionProviders: ["wasm"] });
@@ -311,6 +363,7 @@ async function iniciarModelo() {
     habilitar(true);
     await migrarColeccion();
     renderColeccion();
+    refrescarLegalidad().catch(() => {});
   } catch (e) {
     chip("chip-modelo", "Error", "mal");
     estado("No se pudo cargar el reconocedor: " + e.message + ". Recarga la página para intentar de nuevo.");
@@ -350,13 +403,35 @@ async function similitudes(fuente, cajas) {
   }
   const e = new Float32Array(partes.reduce((a, p) => a + p.length, 0));
   partes.reduce((o, p) => (e.set(p, o), o + p.length), 0);
-  const d = e.length / (cajas.length * 2);
-  const total = meta.cartas.length, dim = meta.dim, mejor = new Float32Array(total).fill(-1), recorteDe = new Int16Array(total);
-  cajas.forEach((_, i) => {
+  const d = e.length / (cajas.length * 2), dim = meta.dim;
+  const consultas = cajas.map((_, i) => {
     const q = new Float32Array(dim);
     q.set(unitario(e, 2 * i * d, 2 * i * d + d), 0);
     q.set(unitario(e, (2 * i + 1) * d, (2 * i + 1) * d + d), d);
     for (let k = 0; k < dim; k++) q[k] /= Math.SQRT2;
+    return q;
+  });
+  if (!modoLocal) {
+    try {
+      const respuestas = await Promise.all(consultas.map(buscarRemoto));
+      for (const filas of respuestas) for (const f of filas) {
+        legal.set(String(f.id), { estado: f.estado, limite: f.limite });
+        if (!indicePorId.has(String(f.id))) registrarEnCatalogo({ id: String(f.id), nombre: f.nombre, edicion: f.edicion, tipo: f.tipo, raza: "", coste: null, fuerza: null });
+      }
+      const mejor = new Float32Array(meta.cartas.length).fill(-1), recorteDe = new Int16Array(meta.cartas.length);
+      respuestas.forEach((filas, i) => filas.forEach(f => {
+        const j = indicePorId.get(String(f.id));
+        if (f.similitud > mejor[j]) { mejor[j] = f.similitud; recorteDe[j] = i; }
+      }));
+      return { mejor, recorteDe };
+    } catch (err) {
+      modoLocal = true;
+      estado("No pude consultar la base de cartas; sigo con las referencias guardadas en el sitio.");
+    }
+  }
+  await cargarReferenciasLocales();
+  const total = escalas.length, mejor = new Float32Array(meta.cartas.length).fill(-1), recorteDe = new Int16Array(meta.cartas.length);
+  consultas.forEach((q, i) => {
     for (let j = 0; j < total; j++) {
       let s = 0;
       const base = j * dim;
@@ -366,6 +441,32 @@ async function similitudes(fuente, cajas) {
     }
   });
   return { mejor, recorteDe };
+}
+
+function textoLegal(l) {
+  if (!l?.estado) return null;
+  const lim = l.limite > 0 && l.limite < 3 ? ` · limitada a ${l.limite}` : "";
+  return {
+    vigente: { texto: `Vigente${lim}`, clase: lim ? "limitada" : "vigente" },
+    legal_por_reimpresion: { texto: `Legal por reimpresión${lim}`, clase: lim ? "limitada" : "reimpresion" },
+    rotada: { texto: "Rotó: no se juega en Imperio", clase: "rotada" },
+    prohibida: { texto: "Prohibida en Imperio", clase: "prohibida" },
+    otro_formato: { texto: "Otro formato", clase: "otro" },
+  }[l.estado] || null;
+}
+
+function mostrarLegal(j) {
+  const el = $("estado-legal");
+  const t = j == null ? null : textoLegal(legal.get(String(meta.cartas[j]?.id)));
+  el.hidden = !t;
+  if (t) { el.textContent = t.texto; el.className = "estado-legal " + t.clase; }
+}
+
+function insigniaLegal(l) {
+  const t = textoLegal(l);
+  if (!t) return null;
+  const e = document.createElement("span"); e.className = "estado-legal " + t.clase; e.textContent = t.texto;
+  return e;
 }
 
 function porNombre(mejor) {
@@ -477,7 +578,8 @@ function coincidencias(q, r) {
 
 async function verificarDibujo(fuente, caja, mejor) {
   if (!cv) return null;
-  const candidatos = [...mejor.keys()].sort((a, b) => mejor[b] - mejor[a]).slice(0, ORB_CANDIDATOS);
+  const candidatos = [...mejor.keys()].filter(j => mejor[j] > -1 && j < cartasConArchivos).sort((a, b) => mejor[b] - mejor[a]).slice(0, ORB_CANDIDATOS);
+  if (!candidatos.length) return null;
   const refsOrb = await Promise.all(candidatos.map(rasgosReferencia));
   const q = rasgosConsulta(fuente, caja);
   const puntos = candidatos.map((j, i) => ({ j, inl: coincidencias(q, refsOrb[i]) })).sort((a, b) => b.inl - a.inl);
@@ -670,7 +772,8 @@ function pitido() {
   try { navigator.vibrate?.(70); } catch (e) {}
 }
 
-function pintarLectura(texto, detalle, clase) {
+function pintarLectura(texto, detalle, clase, j) {
+  mostrarLegal(j);
   $("lectura").textContent = texto;
   $("detalle").textContent = detalle;
   $("marco").className = "marco" + (clase ? " " + clase : "");
@@ -681,14 +784,14 @@ async function registrar(k, j) {
   const nueva = (coleccion[carta.id]?.cantidad || 0) + 1;
   const foil = modoFoil;
   guardar(carta, nueva, (coleccion[carta.id]?.foil || 0) + (foil ? 1 : 0));
-  const registro = { carta, total: nueva, foil };
+  const registro = { carta, total: nueva, foil, legal: legal.get(String(carta.id)) };
   registrosSesion.unshift(registro);
   cerrarPreguntaFoil();
   pitido();
   renderSesion(true);
   $("deshacer").disabled = false;
   scan.modo = "registrada"; scan.registrada = k; scan.ventana = []; scan.salida = 0; scan.cambio = 0; scan.votosDibujo = [];
-  pintarLectura(`✓ ${foil ? "✨ " : ""}${carta.nombre}`, `Registrada${foil ? " como foil" : ""} · tienes ${nueva} · retira la carta`, "registrada");
+  pintarLectura(`✓ ${foil ? "✨ " : ""}${carta.nombre}`, `Registrada${foil ? " como foil" : ""} · tienes ${nueva} · retira la carta`, "registrada", j);
   iniciarMedicionFoil(registro);
 }
 
@@ -725,7 +828,7 @@ async function cuadro() {
     scan.ventana.push({ sim: actual.sim, top: f.top });
     if (scan.ventana.length > CUADROS_PARA_REGISTRAR) scan.ventana.shift();
     const prom = new Float32Array(nombres.length);
-    for (const v of scan.ventana) for (let k = 0; k < prom.length; k++) prom[k] += v.sim[k] / scan.ventana.length;
+    for (const v of scan.ventana) for (let k = 0; k < prom.length; k++) prom[k] += (v.sim[k] ?? -1) / scan.ventana.length;
     const p = dosMejores(prom);
     const estable = scan.ventana.length === CUADROS_PARA_REGISTRAR && scan.ventana.every(v => v.top === p.top);
     const candidatoRed = estable && p.conf >= umbral && p.margen >= MARGEN_MINIMO;
@@ -741,13 +844,13 @@ async function cuadro() {
         if (scan.votosDibujo.length === 2 && scan.votosDibujo.every(x => x.k === v.k)) {
           await registrar(v.k, v.ref);
         } else {
-          pintarLectura(`Viendo: ${nombres[v.k]}`, `dibujo ${v.inl} vs ${v.segundo} · ${pie}`, "viendo");
+          pintarLectura(`Viendo: ${nombres[v.k]}`, `dibujo ${v.inl} vs ${v.segundo} · ${pie}`, "viendo", v.ref);
         }
       } else if (candidatoRed && p.margen >= MARGEN_SIN_DIBUJO) {
         await registrar(p.top, actual.ref[p.top]);
       } else {
         if (v) scan.votosDibujo = [];
-        pintarLectura(`Viendo: ${nombres[f.top]}`, (v ? `dibujo ${v.inl} vs ${v.segundo} · ` : "") + pie, "viendo");
+        pintarLectura(`Viendo: ${nombres[f.top]}`, (v ? `dibujo ${v.inl} vs ${v.segundo} · ` : "") + pie, "viendo", actual.ref[f.top]);
       }
     } else {
       scan.votosDibujo = [];
@@ -808,6 +911,7 @@ function renderSesion(animar) {
     const fila = document.createElement("div"); fila.className = "registro" + (animar && i === 0 ? " nuevo" : "");
     const nombre = document.createElement("div"); nombre.className = "nombre"; nombre.textContent = (r.foil ? "✨ " : "") + r.carta.nombre;
     const sm = document.createElement("small"); sm.textContent = descripcion(r.carta) + (r.foil ? " · foil" : ""); nombre.append(sm);
+    const ins = insigniaLegal(r.legal); if (ins) nombre.append(ins);
     const tot = document.createElement("span"); tot.className = "total"; tot.textContent = `×${r.total}`;
     fila.append(nombre, tot);
     return fila;
@@ -890,6 +994,7 @@ function botonCarta(j, similitud) {
   const sim = document.createElement("span"); sim.className = "similitud"; sim.textContent = similitud == null ? "" : `${Math.round(similitud * 100)}%`;
   const m = document.createElement("span"); m.className = "meta"; m.textContent = descripcion(c);
   b.append(fuerte, sim, m);
+  const ins = insigniaLegal(legal.get(String(c.id))); if (ins) b.append(ins);
   b.addEventListener("click", () => elegir(j));
   return b;
 }
@@ -959,7 +1064,7 @@ function guardar(carta, cantidad, foil) {
   const previo = coleccion[carta.id]?.foil || 0;
   foil = Math.max(0, Math.min(cantidad, foil ?? previo));
   if (cantidad <= 0) delete coleccion[carta.id];
-  else coleccion[carta.id] = { id: carta.id, nombre: carta.nombre, edicion: carta.edicion, tipo: carta.tipo, raza: carta.raza, coste: carta.coste, cantidad, foil, actualizado: new Date().toISOString() };
+  else coleccion[carta.id] = { id: carta.id, nombre: carta.nombre, edicion: carta.edicion, tipo: carta.tipo, raza: carta.raza, coste: carta.coste, cantidad, foil, legal: legal.get(String(carta.id)) || coleccion[carta.id]?.legal, actualizado: new Date().toISOString() };
   renderColeccion();
   try { localStorage.setItem("coleccion-myl", JSON.stringify(coleccion)); } catch (e) {}
 }
@@ -993,6 +1098,7 @@ function renderColeccion() {
       const fila = document.createElement("div"); fila.className = "fila";
       const nombre = document.createElement("div"); nombre.className = "nombre"; nombre.textContent = x.nombre;
       const sm = document.createElement("small"); sm.textContent = [x.raza, x.edicion].filter(Boolean).join(" · "); nombre.append(sm);
+      const ins = insigniaLegal(x.legal); if (ins) nombre.append(ins);
       if (x.foil) {
         const brillo = document.createElement("small"); brillo.className = "brillo-foil";
         brillo.textContent = `✨ ${x.foil} foil${x.foil < x.cantidad ? ` · ${x.cantidad - x.foil} normal` : ""}`;
