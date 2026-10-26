@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Escáner MyL Imperio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.wasm.min.js"></script>
+<style>
+  /* Layout: una columna de herramienta; escáner arriba, colección abajo. Paleta de tinta azul y oro de moneda MyL. */
+  :root {
+    --bg: #f4f2ee;
+    --surface: #ffffff;
+    --ink: #1c2230;
+    --muted: #5e6675;
+    --line: #dcd8cf;
+    --gold: #a8740f;
+    --gold-soft: #f3e6c4;
+    --ok: #2f7d4f;
+    --warn: #a6501c;
+    --display: "Cinzel", "Trajan Pro", Georgia, serif;
+    --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12151d; --surface: #1b202b; --ink: #ece8df; --muted: #a2a8b5; --line: #2f3542;
+      --gold: #e2b24d; --gold-soft: #3a2f17; --ok: #6cc28f; --warn: #e89a6a; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12151d; --surface: #1b202b; --ink: #ece8df; --muted: #a2a8b5; --line: #2f3542;
+    --gold: #e2b24d; --gold-soft: #3a2f17; --ok: #6cc28f; --warn: #e89a6a; color-scheme: dark;
+  }
+  body {
+    background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.45;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 20px 40px;
+  }
+  main { max-width: 640px; margin: 0 auto; display: grid; gap: 20px; }
+  h1, h2 { font-family: var(--display); margin: 0; text-wrap: balance; letter-spacing: 0.02em; }
+  h1 { font-size: 1.6rem; }
+  h2 { font-size: 1.1rem; }
+  .cabecera { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .sub { color: var(--muted); font-size: 0.9rem; margin: 2px 0 0; }
+  .chip { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; background: var(--gold-soft); color: var(--gold); white-space: nowrap; }
+  .chip.ok { background: transparent; border: 1px solid var(--ok); color: var(--ok); }
+  .chip.mal { background: transparent; border: 1px solid var(--warn); color: var(--warn); }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 14px; min-width: 0; }
+  .botones { display: flex; flex-wrap: wrap; gap: 10px; }
+  .boton { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 18px; border-radius: 10px; font: 600 1rem var(--body); cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+  .boton.principal { background: var(--gold); border-color: var(--gold); color: var(--surface); flex: 1 1 200px; }
+  .boton:disabled, .boton[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; }
+  .boton:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+  input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .consejo { color: var(--muted); font-size: 0.9rem; margin: 0; }
+  .resultado { display: grid; grid-template-columns: 110px 1fr; gap: 14px; align-items: start; }
+  .resultado canvas { width: 110px; height: auto; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
+  .candidatos { display: grid; gap: 8px; min-width: 0; }
+  .candidato { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+  .candidato[aria-pressed="true"] { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); background: var(--gold-soft); }
+  .candidato strong { font-weight: 700; overflow-wrap: anywhere; }
+  .candidato .meta { grid-column: 1 / -1; color: var(--muted); font-size: 0.85rem; }
+  .similitud { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.85rem; }
+  .agregar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .contador { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .contador button { width: 44px; height: 44px; border: 0; background: transparent; color: var(--ink); font-size: 1.3rem; cursor: pointer; }
+  .contador output { min-width: 32px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .buscar { width: 100%; min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; }
+  .estado { margin: 0; font-size: 0.95rem; }
+  .resumen { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--muted); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+  .resumen b { color: var(--ink); }
+  .grupo h3 { margin: 6px 0; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .fila { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .fila .nombre { min-width: 0; overflow-wrap: anywhere; }
+  .fila .nombre small { display: block; color: var(--muted); }
+  .vacio { color: var(--muted); margin: 0; }
+  @media (max-width: 420px) { .resultado { grid-template-columns: 1fr; } .resultado canvas { width: 140px; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+</head>
+<body>
+<main>
+  <header class="cabecera">
+    <div>
+      <h1>Escáner MyL</h1>
+      <p class="sub" id="subtitulo">Imperio · cargando catálogo</p>
+    </div>
+    <span class="chip" id="chip-modelo">Preparando</span>
+  </header>
+
+  <section class="panel" aria-labelledby="t-escanear">
+    <h2 id="t-escanear">Escanear carta</h2>
+    <div class="botones">
+      <label class="boton principal" id="btn-foto" aria-disabled="true">
+        Sacar foto
+        <input type="file" id="in-foto" accept="image/*" capture="environment" disabled>
+      </label>
+      <label class="boton" id="btn-galeria" aria-disabled="true">
+        Elegir de la galería
+        <input type="file" id="in-galeria" accept="image/*" multiple disabled>
+      </label>
+    </div>
+    <p class="consejo">Pon la carta sobre una mesa, de frente y cerca, que ocupe casi toda la foto. Si tiene funda brillante, evita el reflejo de la luz.</p>
+    <p class="estado" id="estado" role="status"></p>
+
+    <div id="zona-resultado" hidden>
+      <div class="resultado">
+        <canvas id="recorte" width="220" height="316" aria-label="Recorte de la carta usado para reconocerla"></canvas>
+        <div class="candidatos" id="candidatos"></div>
+      </div>
+      <input class="buscar" id="buscar" type="search" placeholder="¿Ninguna es? Escribe el nombre" autocomplete="off">
+      <div class="candidatos" id="sugerencias"></div>
+      <div class="agregar">
+        <div class="contador" aria-label="Copias">
+          <button type="button" id="menos" aria-label="Una copia menos">−</button>
+          <output id="copias">1</output>
+          <button type="button" id="mas" aria-label="Una copia más">+</button>
+        </div>
+        <button type="button" class="boton principal" id="agregar" disabled>Agregar a mi colección</button>
+        <button type="button" class="boton" id="saltar" hidden>Saltar foto</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="t-coleccion">
+    <div class="cabecera">
+      <h2 id="t-coleccion">Mi colección</h2>
+      <span class="chip" id="chip-guardado">Sin conexión</span>
+    </div>
+    <div class="resumen" id="resumen"></div>
+    <input class="buscar" id="filtro" type="search" placeholder="Filtrar por nombre" autocomplete="off">
+    <div id="lista"><p class="vacio">Todavía no hay cartas. Saca una foto de tu primera carta y aparecerá aquí, agrupada por tipo.</p></div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const TAM = 224, MEDIA = [0.485, 0.456, 0.406], DESV = [0.229, 0.224, 0.225];
+const ASPECTO = 709 / 1016;
+const ORDEN_TIPOS = ["Aliado", "Talismán", "Tótem", "Arma", "Oro"];
+
+let meta = null, refs = null, escalas = null, sesion = null;
+let coleccion = {}, db = null, elegido = null, cola = [];
+
+function estado(texto) { $("estado").textContent = texto; }
+function chip(id, texto, clase) { const c = $(id); c.textContent = texto; c.className = "chip" + (clase ? " " + clase : ""); }
+function habilitar(si) {
+  for (const id of ["in-foto", "in-galeria"]) $(id).disabled = !si;
+  for (const id of ["btn-foto", "btn-galeria"]) $(id).setAttribute("aria-disabled", String(!si));
+}
+
+async function cargarBinario(ruta) {
+  const r = await fetch(ruta);
+  if (!r.ok) throw new Error(`No se pudo cargar ${ruta} (${r.status})`);
+  return r.arrayBuffer();
+}
+
+async function crearSesion(modelo) {
+  ort.env.wasm.numThreads = 1;
+  return ort.InferenceSession.create(modelo, { executionProviders: ["wasm"] });
+}
+
+async function iniciarModelo() {
+  try {
+    const t0 = performance.now();
+    const [m, r, s, modelo] = await Promise.all([
+      fetch("catalogo.json").then(x => x.json()),
+      cargarBinario("referencias.bin"),
+      cargarBinario("escalas.bin"),
+      cargarBinario("modelo.onnx"),
+    ]);
+    meta = m; refs = new Int8Array(r); escalas = new Float32Array(s);
+    $("subtitulo").textContent = `Imperio · ${meta.cartas.length.toLocaleString("es-CL")} cartas reconocibles`;
+    sesion = await crearSesion(modelo);
+    chip("chip-modelo", "Listo", "ok");
+    estado(`Reconocedor listo en ${((performance.now() - t0) / 1000).toFixed(1)} s.`);
+    habilitar(true);
+    renderColeccion();
+  } catch (e) {
+    chip("chip-modelo", "Error", "mal");
+    estado("No se pudo cargar el reconocedor: " + e.message + ". Recarga la página para intentar de nuevo.");
+  }
+}
+
+function recortes(bmp) {
+  const w = bmp.width, h = bmp.height, salida = [];
+  for (const s of meta.escalas) {
+    let ch = h * s, cw = ch * ASPECTO;
+    if (cw > w) { cw = w; ch = w / ASPECTO; }
+    for (const dy of s === 1 ? [0] : [-0.05, 0, 0.05]) {
+      const x0 = (w - cw) / 2;
+      const y0 = Math.min(Math.max(0, (h - ch) / 2 + dy * h), h - ch);
+      salida.push([x0, y0, cw, ch]);
+    }
+  }
+  return salida;
+}
+
+function llenarTensor(datos, offset, bmp, [x, y, w, h]) {
+  const c = new OffscreenCanvas(TAM, TAM), ctx = c.getContext("2d");
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(bmp, x, y, w, h, 0, 0, TAM, TAM);
+  const px = ctx.getImageData(0, 0, TAM, TAM).data, n = TAM * TAM;
+  for (let i = 0; i < n; i++)
+    for (let k = 0; k < 3; k++) datos[offset + k * n + i] = (px[i * 4 + k] / 255 - MEDIA[k]) / DESV[k];
+}
+
+function unitario(v, ini, fin) {
+  let s = 0;
+  for (let i = ini; i < fin; i++) s += v[i] * v[i];
+  s = Math.sqrt(s) || 1;
+  const o = new Float32Array(fin - ini);
+  for (let i = ini; i < fin; i++) o[i - ini] = v[i] / s;
+  return o;
+}
+
+async function reconocer(bmp) {
+  const cajas = recortes(bmp), [ax0, ay0, ax1, ay1] = meta.arte, n = TAM * TAM * 3;
+  const datos = new Float32Array(cajas.length * 2 * n);
+  cajas.forEach((c, i) => {
+    llenarTensor(datos, 2 * i * n, bmp, c);
+    llenarTensor(datos, (2 * i + 1) * n, bmp, [c[0] + ax0 * c[2], c[1] + ay0 * c[3], (ax1 - ax0) * c[2], (ay1 - ay0) * c[3]]);
+  });
+  const salida = await sesion.run({ input: new ort.Tensor("float32", datos, [cajas.length * 2, 3, TAM, TAM]) });
+  const e = salida[sesion.outputNames[0]].data, d = e.length / (cajas.length * 2);
+  const total = meta.cartas.length, dim = meta.dim, mejor = new Float32Array(total).fill(-1), recorteDe = new Int16Array(total);
+  cajas.forEach((_, i) => {
+    const carta = unitario(e, 2 * i * d, 2 * i * d + d), arte = unitario(e, (2 * i + 1) * d, (2 * i + 1) * d + d);
+    const q = new Float32Array(dim);
+    q.set(carta, 0); q.set(arte, d);
+    for (let k = 0; k < dim; k++) q[k] /= Math.SQRT2;
+    for (let j = 0; j < total; j++) {
+      let s = 0;
+      const base = j * dim;
+      for (let k = 0; k < dim; k++) s += q[k] * refs[base + k];
+      s *= escalas[j];
+      if (s > mejor[j]) { mejor[j] = s; recorteDe[j] = i; }
+    }
+  });
+  const vistos = new Set(), orden = [];
+  for (const j of [...mejor.keys()].sort((a, b) => mejor[b] - mejor[a])) {
+    if (vistos.has(meta.cartas[j].nombre)) continue;
+    vistos.add(meta.cartas[j].nombre);
+    orden.push(j);
+    if (orden.length === 5) break;
+  }
+  return { orden, mejor, caja: cajas[recorteDe[orden[0]]] };
+}
+
+function descripcion(c) {
+  const partes = [c.tipo];
+  if (c.tipo === "Aliado") partes.push(`${c.coste}/${c.fuerza}`, c.raza);
+  else if (c.coste) partes.push(`coste ${c.coste}`);
+  partes.push(c.edicion);
+  return partes.filter(Boolean).join(" · ");
+}
+
+function botonCarta(j, similitud) {
+  const c = meta.cartas[j], b = document.createElement("button");
+  b.type = "button"; b.className = "candidato"; b.dataset.j = j;
+  b.setAttribute("aria-pressed", "false");
+  const fuerte = document.createElement("strong"); fuerte.textContent = c.nombre;
+  const sim = document.createElement("span"); sim.className = "similitud"; sim.textContent = similitud == null ? "" : `${Math.round(similitud * 100)}%`;
+  const m = document.createElement("span"); m.className = "meta"; m.textContent = descripcion(c);
+  b.append(fuerte, sim, m);
+  b.addEventListener("click", () => elegir(j));
+  return b;
+}
+
+function elegir(j) {
+  elegido = j;
+  document.querySelectorAll(".candidato").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.j) === j)));
+  $("agregar").disabled = false;
+  const ya = coleccion[meta.cartas[j].id]?.cantidad || 0;
+  $("agregar").textContent = ya ? `Agregar (ya tienes ${ya})` : "Agregar a mi colección";
+}
+
+async function procesar(archivo) {
+  $("zona-resultado").hidden = true;
+  estado("Reconociendo la carta…");
+  const t0 = performance.now();
+  let bmp = await createImageBitmap(archivo, { imageOrientation: "from-image" });
+  const escala = Math.min(1, 1024 / Math.max(bmp.width, bmp.height));
+  if (escala < 1) bmp = await createImageBitmap(bmp, { resizeWidth: Math.round(bmp.width * escala), resizeHeight: Math.round(bmp.height * escala), resizeQuality: "high" });
+  const { orden, mejor, caja } = await reconocer(bmp);
+  const lienzo = $("recorte"), ctx = lienzo.getContext("2d");
+  ctx.drawImage(bmp, ...caja, 0, 0, lienzo.width, lienzo.height);
+  const lista = $("candidatos");
+  lista.replaceChildren(...orden.map(j => botonCarta(j, mejor[j])));
+  $("sugerencias").replaceChildren();
+  $("buscar").value = "";
+  $("copias").value = "1";
+  $("zona-resultado").hidden = false;
+  elegir(orden[0]);
+  const segundos = ((performance.now() - t0) / 1000).toFixed(1);
+  const dudosa = mejor[orden[0]] - mejor[orden[1]] < 0.02;
+  estado(`${dudosa ? "Revisa la sugerencia: hay cartas parecidas." : "La primera opción es la más probable."} (${segundos} s${cola.length ? `, quedan ${cola.length} fotos` : ""})`);
+}
+
+async function siguiente() {
+  $("saltar").hidden = cola.length === 0;
+  if (cola.length) {
+    try { await procesar(cola.shift()); } catch (e) { estado("No pude leer esa foto: " + e.message); siguiente(); }
+    $("saltar").hidden = cola.length === 0;
+  } else {
+    $("zona-resultado").hidden = true;
+  }
+}
+
+function recibir(ev) {
+  cola = [...ev.target.files];
+  ev.target.value = "";
+  if (cola.length) siguiente();
+}
+
+async function guardar(carta, cantidad) {
+  if (cantidad <= 0) delete coleccion[carta.id];
+  else coleccion[carta.id] = { id: carta.id, nombre: carta.nombre, edicion: carta.edicion, tipo: carta.tipo, raza: carta.raza, coste: carta.coste, cantidad, actualizado: new Date().toISOString() };
+  renderColeccion();
+  if (db) {
+    const ref = db.collection("coleccion").doc(carta.id);
+    try { cantidad <= 0 ? await ref.delete() : await ref.set(coleccion[carta.id]); }
+    catch (e) { chip("chip-guardado", "No se guardó", "mal"); estado("No se pudo guardar en la nube (" + e.code + "). Queda guardado solo en este teléfono."); }
+  }
+  try { localStorage.setItem("coleccion-myl", JSON.stringify(coleccion)); } catch (e) {}
+}
+
+function renderColeccion() {
+  const filtro = $("filtro").value.trim().toLowerCase();
+  const items = Object.values(coleccion);
+  const total = items.reduce((a, x) => a + x.cantidad, 0);
+  const dragones = items.filter(x => x.tipo === "Aliado" && /drag/i.test(x.raza || "")).reduce((a, x) => a + x.cantidad, 0);
+  $("resumen").innerHTML = "";
+  for (const [t, v] of [["Cartas", total], ["Distintas", items.length], ["Aliados Dragón", dragones]]) {
+    const s = document.createElement("span"); s.textContent = t + ": ";
+    const b = document.createElement("b"); b.textContent = v.toLocaleString("es-CL"); s.append(b);
+    $("resumen").append(s);
+  }
+  const lista = $("lista");
+  const visibles = items.filter(x => !filtro || x.nombre.toLowerCase().includes(filtro));
+  if (!visibles.length) {
+    const p = document.createElement("p"); p.className = "vacio";
+    p.textContent = items.length ? "Ninguna carta coincide con el filtro." : "Todavía no hay cartas. Saca una foto de tu primera carta y aparecerá aquí, agrupada por tipo.";
+    lista.replaceChildren(p);
+    return;
+  }
+  const grupos = ORDEN_TIPOS.map(tipo => {
+    const filas = visibles.filter(x => x.tipo === tipo).sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+    if (!filas.length) return null;
+    const g = document.createElement("div"); g.className = "grupo";
+    const h = document.createElement("h3"); h.textContent = `${tipo} · ${filas.reduce((a, x) => a + x.cantidad, 0)}`;
+    g.append(h);
+    for (const x of filas) {
+      const fila = document.createElement("div"); fila.className = "fila";
+      const nombre = document.createElement("div"); nombre.className = "nombre"; nombre.textContent = x.nombre;
+      const sm = document.createElement("small"); sm.textContent = [x.raza, x.edicion].filter(Boolean).join(" · "); nombre.append(sm);
+      const cont = document.createElement("div"); cont.className = "contador";
+      const menos = document.createElement("button"); menos.type = "button"; menos.textContent = "−"; menos.setAttribute("aria-label", `Quitar una copia de ${x.nombre}`);
+      const out = document.createElement("output"); out.textContent = x.cantidad;
+      const mas = document.createElement("button"); mas.type = "button"; mas.textContent = "+"; mas.setAttribute("aria-label", `Agregar una copia de ${x.nombre}`);
+      menos.addEventListener("click", () => guardar(x, x.cantidad - 1));
+      mas.addEventListener("click", () => guardar(x, x.cantidad + 1));
+      cont.append(menos, out, mas);
+      fila.append(nombre, cont);
+      g.append(fila);
+    }
+    return g;
+  }).filter(Boolean);
+  lista.replaceChildren(...grupos);
+}
+
+function normalizar(t) { return t.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase(); }
+
+$("buscar").addEventListener("input", () => {
+  const q = normalizar($("buscar").value.trim());
+  if (q.length < 2 || !meta) { $("sugerencias").replaceChildren(); return; }
+  const hallados = [];
+  for (let j = 0; j < meta.cartas.length && hallados.length < 6; j++)
+    if (normalizar(meta.cartas[j].nombre).includes(q)) hallados.push(j);
+  $("sugerencias").replaceChildren(...hallados.map(j => botonCarta(j, null)));
+});
+
+$("menos").addEventListener("click", () => { $("copias").value = String(Math.max(1, Number($("copias").value) - 1)); });
+$("mas").addEventListener("click", () => { $("copias").value = String(Math.min(9, Number($("copias").value) + 1)); });
+$("agregar").addEventListener("click", async () => {
+  if (elegido == null) return;
+  const carta = meta.cartas[elegido];
+  const nueva = (coleccion[carta.id]?.cantidad || 0) + Number($("copias").value);
+  await guardar(carta, nueva);
+  estado(`Agregada: ${carta.nombre} (ahora tienes ${nueva}).`);
+  siguiente();
+});
+$("saltar").addEventListener("click", siguiente);
+$("in-foto").addEventListener("change", recibir);
+$("in-galeria").addEventListener("change", recibir);
+$("filtro").addEventListener("input", renderColeccion);
+
+try { coleccion = JSON.parse(localStorage.getItem("coleccion-myl") || "{}") || {}; } catch (e) { coleccion = {}; }
+renderColeccion();
+iniciarModelo();
+
+(async () => {
+  db = window.claude?.use ? await window.claude.use("db") : null;
+  if (!db) { chip("chip-guardado", "Solo en este teléfono"); return; }
+  chip("chip-guardado", "Sincronizando");
+  db.collection("coleccion").onSnapshot(snap => {
+    const remoto = {};
+    for (const d of snap.docs) remoto[d.id] = d.data();
+    coleccion = remoto;
+    try { localStorage.setItem("coleccion-myl", JSON.stringify(coleccion)); } catch (e) {}
+    chip("chip-guardado", "Guardado en la nube", "ok");
+    renderColeccion();
+  }, e => chip("chip-guardado", "Sin sincronizar", "mal"));
+})();
+</script>
+</body>
+</html>

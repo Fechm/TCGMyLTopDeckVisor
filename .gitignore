@@ -1,0 +1,13 @@
+__pycache__/
+datos/
+reglas/
+escaner/
+mazo-dragon-*.md
+spike/web/
+spike/modelos/
+spike/*.jpg
+spike/*.npy
+spike/exportar_web.py
+spike/empaquetar_wasm.py
+spike/parchar_carga.py
+spike/parchar_texto.py

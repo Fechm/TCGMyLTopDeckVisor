@@ -1,0 +1,17 @@
+{
+  "fuente": "https://blog.myl.cl/banlists-actualizadas/ (Imperio, actualizacion 12/10/26)",
+  "prohibidas": [
+    "Tenshi X-2", "Cthulhu", "Hook", "Septimus", "Flechero",
+    "San Bruno", "Horda Tenebris", "Creación de Temaukel", "Cancha Rayada", "Fusil Patriota",
+    "Sheut", "Liberar Esclavos", "Resistencia de Acero"
+  ],
+  "limitadas": {
+    "Sherlok Holmes": 2, "El Rey y el Verdugo": 1, "E.A. Poe": 1, "Yelmo Mambrino": 1,
+    "Batallón de Ovejas": 1, "León Indiferente": 1, "Manuel Bulnes": 1, "Padre de la Patria": 1,
+    "Ramón Freire": 1, "Mariano Osorio": 1, "Legión Paladín": 1, "Lucerna": 1, "Levisterio": 1,
+    "Tesoro de los Césares": 1, "Cueva de Xalpén": 1, "Akuma el Terrible": 1, "Voragh el Devorador": 1,
+    "Kuchiku el Cazador": 1, "Azi Sruvara": 2, "Nyssara Cautiva": 2, "Crono Diamante": 1,
+    "Espada de O'higgins": 1, "Duelo de Dragones": 1, "Escamas de Dragón": 1, "Shiji": 1,
+    "Ángel Metatrón": 1, "Lilith": 1, "Jinete de la Peste": 1
+  }
+}
