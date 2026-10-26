@@ -1,35 +1,38 @@
 # TCGMyL Top Deck Visor
 
-Escanea tus cartas de Mitos y Leyendas (formato Imperio) con la cámara del teléfono y arma el mejor mazo Dragón con lo que tienes.
+Escanea tus cartas de Mitos y Leyendas (formato Imperio) con la cámara del teléfono, guárdalas en tu Top Deck digital y arma el mejor mazo Dragón con lo que tienes.
 
-## Escáner (`web/`)
+Datos e imágenes de cartas: [Códice TCG](https://codicetcg.org) (Imperio vigente, incluida Drácula: Rey Vampiro). Mitos y Leyendas es marca de sus respectivos dueños.
+
+## Sitio (`web/`)
 
 Es un sitio estático para Cloudflare Pages: el directorio de salida es `web`, sin build.
 
-1. Sacas una foto de la carta o eliges varias de la galería.
-2. El navegador la compara contra las imágenes oficiales de las cartas vigentes en Imperio, con un MobileNetV2 en ONNX que corre en onnxruntime-web.
-3. Prueba varios recortes de la foto y te muestra las 5 cartas más parecidas.
-4. Confirmas la correcta y queda en tu colección, guardada en el navegador.
+- **Escanear (`index.html`):** escáner continuo con la cámara.
+  - Reconoce la carta en el marco con un MobileNetV2 en ONNX (onnxruntime-web).
+  - Cuando la red duda, confirma con puntos ORB (OpenCV.js).
+  - La registra sola y suma copias.
+  - Tiene botón «Foil» y, en forma opcional, sugerencia «parece foil» midiendo el cambio de color al inclinar la carta.
+- **Mi Top Deck (`topdeck.html`):** tu colección como carpeta, con filtros, y un visor 3D con inclinación por dedo o giroscopio, reflejo, holográfico para las foil y reverso.
 
-Con fotos sintéticas acierta en primera opción el 98% de las fotos normales y el 90% de las difíciles (reflejo, desenfoque, un dedo encima).
+La colección se guarda en el navegador (`localStorage`).
 
 Para regenerar los archivos del sitio:
 
 ```bash
-python descargar.py
-python spike/descargar_imagenes.py
+python descargar_codice.py
 python spike/preparar_modelo.py
-python spike/exportar_escaner.py
+python spike/exportar_codice.py
 ```
 
 ## Optimizador de mazo
 
-1. `python descargar.py`: baja desde api.myl.cl las cartas de las ediciones IMP vigentes (`datos/`).
+1. `python descargar_codice.py`: baja las cartas de la temporada vigente de Imperio, la banlist (que reescribe `banlist.json`) y las imágenes (`datos/`).
 2. `python optimizar.py --iteraciones 4000 --sim 300 --semilla 1`: arma el mazo y escribe `mazo-dragon-semillaN.md`.
 
 Archivos que puedes editar:
-- `banlist.json`: prohibidas y limitadas (blog.myl.cl, actualización 12/10/26).
 - `valoraciones.json`: puntaje manual 0-10 que reemplaza al automático. Aquí entra tu experiencia de juego.
+- `banlist.json`: se regenera desde Códice en cada descarga.
 
 El puntaje de cada mazo combina:
 - **Calidad** (50%): promedio del puntaje de sus cartas.
@@ -45,7 +48,10 @@ Lo que la simulación no modela: bloqueos y respuestas del rival, Anular, cement
 
 ## Carpeta `spike/`
 
-Son las pruebas de reconocimiento:
-- `reconocer.py`: compara métodos.
-- `mejoras.py`: prueba promediar varios cuadros y reordenar con ORB.
-- `multirecorte.py`: prueba el recorte automático.
+Son las pruebas y calibraciones:
+- `reconocer.py`, `mejoras.py` y `multirecorte.py`: métodos de reconocimiento.
+- `orb.py`: verificación por dibujo.
+- `calibrar.py`: umbrales de registro.
+- `foil.py` y `foil_vivo.py`: detección de foil con videos reales.
+
+`descargar.py` y `wiki_especiales.py` son las fuentes anteriores (api.myl.cl y la wiki), reemplazadas por Códice.

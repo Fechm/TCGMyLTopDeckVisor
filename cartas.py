@@ -138,12 +138,30 @@ def normalizar_texto(texto):
     return re.sub(r"\s+", " ", texto).strip()
 
 
-def cargar(razas_aliados=("0", "11", "37", "44", "49", "51")):
-    crudas = json.loads((RAIZ / "datos" / "cartas-imperio.json").read_text(encoding="utf-8"))
-    ruta_especiales = RAIZ / "datos" / "especiales.json"
-    especiales = json.loads(ruta_especiales.read_text(encoding="utf-8")) if ruta_especiales.exists() else []
-    reworks = {normalizar(x["name"]) for x in especiales if x.get("rework")}
-    crudas = [x for x in crudas if normalizar(x["name"]) not in reworks] + especiales
+def desde_codice(c, ediciones):
+    razas = [str(r) for r in (c.get("r") or [0])]
+    return {
+        "id": c["u"],
+        "name": c["n"],
+        "type": str(c["t"]),
+        "race": razas[0],
+        "razas": razas,
+        "cost": None if c.get("c") is None else str(c["c"]),
+        "damage": None if c.get("z") is None else str(c["z"]),
+        "ability": c.get("h") or "",
+        "ed_slug": ediciones.get(str(c["e"]), str(c["e"])),
+        "rarity": c.get("f") or "",
+    }
+
+
+def cartas_codice():
+    datos = json.loads((RAIZ / "datos" / "codice-cartas.json").read_text(encoding="utf-8"))
+    ediciones = datos["dictionaries"]["e"]
+    return [desde_codice(c, ediciones) for c in datos["cards"]]
+
+
+def cargar(razas_aliados=("0", "11")):
+    crudas = cartas_codice()
     ban = json.loads((RAIZ / "banlist.json").read_text(encoding="utf-8"))
     limites = {normalizar(n): 0 for n in ban["prohibidas"]}
     limites.update({normalizar(n): v for n, v in ban["limitadas"].items()})
@@ -153,7 +171,8 @@ def cargar(razas_aliados=("0", "11", "37", "44", "49", "51")):
     for x in crudas:
         if x["type"] not in TIPOS:
             continue
-        if x["type"] == "1" and x["race"] not in razas_aliados:
+        sin_raza = x["razas"] == ["0"]
+        if x["type"] == "1" and not ((sin_raza and "0" in razas_aliados) or set(x["razas"]) & set(razas_aliados) - {"0"}):
             continue
         c = _crear(x, limites)
         if c.max_copias == 0:

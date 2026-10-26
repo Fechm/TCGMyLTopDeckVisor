@@ -75,6 +75,8 @@
   .boton { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 16px; border-radius: 10px; font: 600 1rem var(--body); cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--ink); text-decoration: none; }
   .boton.principal { background: var(--gold); border-color: var(--gold); color: var(--surface); }
   .aviso-ejemplo { color: var(--gold); font-weight: 700; font-size: 0.9rem; }
+  .credito { color: var(--muted); font-size: 0.8rem; margin: 0; }
+  .credito a { color: inherit; }
 
   .visor3d { position: fixed; inset: 0; z-index: 20; background: radial-gradient(circle at 50% 40%, #1d2233, var(--visor) 70%); color: var(--visor-ink); display: grid; grid-template-rows: auto 1fr auto; padding: max(12px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); touch-action: none; }
   .barra { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -140,6 +142,7 @@
     </div>
   </section>
 
+  <p class="credito">Datos e imágenes de cartas: <a href="https://codicetcg.org" target="_blank" rel="noopener">Códice TCG</a>. Mitos y Leyendas es marca de sus respectivos dueños.</p>
   <section class="carpeta" aria-label="Tus cartas">
     <div class="grilla" id="grilla"></div>
     <div class="vacio" id="vacio" hidden>
@@ -417,9 +420,31 @@ $("ver-ejemplo").addEventListener("click", () => {
   } catch (e) {
     $("resumen").textContent = "No se pudo cargar el catálogo de cartas. Recarga la página.";
   }
+  await migrar();
   coleccion = leerColeccion().map(completar);
   resumen(); pintarFiltros(); pintarGrilla();
 })();
+
+async function migrar() {
+  let guardada;
+  try { guardada = JSON.parse(localStorage.getItem("coleccion-myl") || "{}") || {}; } catch (e) { return; }
+  const viejas = Object.keys(guardada).filter(id => !catalogo.has(id));
+  if (!viejas.length || !catalogo.size) return;
+  let mapa = {};
+  try { mapa = await (await fetch("migracion.json")).json(); } catch (e) { return; }
+  let movidas = 0;
+  for (const id of viejas) {
+    const nueva = catalogo.get(mapa[id]);
+    if (!nueva) continue;
+    const v = guardada[id], previa = guardada[nueva.id];
+    const cantidad = (previa?.cantidad || 0) + v.cantidad;
+    guardada[nueva.id] = { id: nueva.id, nombre: nueva.nombre, edicion: nueva.edicion, tipo: nueva.tipo, raza: nueva.raza, coste: nueva.coste,
+      cantidad, foil: Math.min(cantidad, (previa?.foil || 0) + (v.foil || 0)), actualizado: new Date().toISOString() };
+    delete guardada[id];
+    movidas++;
+  }
+  if (movidas) try { localStorage.setItem("coleccion-myl", JSON.stringify(guardada)); } catch (e) {}
+}
 window.addEventListener("storage", e => {
   if (e.key === "coleccion-myl" && !esEjemplo) { coleccion = leerColeccion().map(completar); resumen(); pintarFiltros(); pintarGrilla(); }
 });
