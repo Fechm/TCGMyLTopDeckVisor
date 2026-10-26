@@ -6,7 +6,13 @@ import numpy as np
 import multirecorte as mr
 import reconocer as r
 
+from exportar_escaner_rutas import imagen_completa as _imagen
+
 DESTINO = r.RAIZ / "web"
+
+
+def imagen_completa(c):
+    return _imagen(c["id"], c)
 TIPOS = {"1": "Aliado", "2": "Talismán", "3": "Arma", "4": "Tótem", "5": "Oro"}
 
 cartas = json.loads((r.RAIZ / "datos" / "cartas-imperio.json").read_text(encoding="utf-8"))
@@ -54,6 +60,7 @@ meta = {
             "coste": c["cost"],
             "fuerza": c["damage"],
             "raza": razas.get(c["race"], "") if c["type"] == "1" else "",
+            "img": imagen_completa(c),
         }
         for c, _ in refs
     ],

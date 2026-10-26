@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mi Top Deck MyL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
+<style>
+  /* Layout: carpeta de coleccionista en grilla; el visor 3D abre a pantalla completa encima. Misma tinta azul y oro del escáner. */
+  :root {
+    --bg: #f4f2ee;
+    --surface: #ffffff;
+    --ink: #1c2230;
+    --muted: #5e6675;
+    --line: #dcd8cf;
+    --gold: #a8740f;
+    --gold-soft: #f3e6c4;
+    --carpeta: #23283a;
+    --bolsillo: #2e3550;
+    --visor: #07090d;
+    --visor-ink: #f5f2ea;
+    --display: "Cinzel", "Trajan Pro", Georgia, serif;
+    --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12151d; --surface: #1b202b; --ink: #ece8df; --muted: #a2a8b5; --line: #2f3542;
+      --gold: #e2b24d; --gold-soft: #3a2f17; --carpeta: #0e1118; --bolsillo: #1b2131; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12151d; --surface: #1b202b; --ink: #ece8df; --muted: #a2a8b5; --line: #2f3542;
+    --gold: #e2b24d; --gold-soft: #3a2f17; --carpeta: #0e1118; --bolsillo: #1b2131; color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.45;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: max(16px, env(safe-area-inset-top, 0px)) max(40px, env(safe-area-inset-bottom, 0px));
+  }
+  main { max-width: 980px; margin: 0 auto; display: grid; gap: 16px; }
+  h1, h2 { font-family: var(--display); margin: 0; letter-spacing: 0.02em; text-wrap: balance; }
+  h1 { font-size: 1.5rem; }
+  .pestanas { display: flex; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 4px; width: fit-content; }
+  .pestanas a { padding: 8px 14px; border-radius: 9px; color: var(--muted); text-decoration: none; font-weight: 600; }
+  .pestanas a[aria-current="page"] { background: var(--gold); color: var(--surface); }
+  .cabecera { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .sub { color: var(--muted); font-size: 0.9rem; margin: 2px 0 0; font-variant-numeric: tabular-nums; }
+  .herramientas { display: grid; gap: 10px; }
+  .buscar { width: 100%; min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; }
+  .filtros { display: flex; flex-wrap: wrap; gap: 6px; }
+  .filtro { min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: 600 0.9rem var(--body); cursor: pointer; }
+  .filtro[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .filtro.foil[aria-pressed="true"] { background: linear-gradient(135deg, #ffd1ec, #fff1c4, #c9ffe0, #cde9ff, #e6d2ff); color: #2a1d00; border-color: var(--gold); }
+  select.filtro { padding-right: 28px; }
+  .boton:focus-visible, .filtro:focus-visible, .buscar:focus-visible, .bolsillo:focus-visible, .control:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+
+  .carpeta { background: var(--carpeta); border-radius: 16px; padding: 14px; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.05), 0 10px 30px rgb(0 0 0 / 0.18); }
+  .grilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; }
+  @media (max-width: 480px) { .carpeta { padding: 10px; } .grilla { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; } }
+  .bolsillo { position: relative; padding: 0; border: 0; border-radius: 10px; background: var(--bolsillo); aspect-ratio: 709 / 1016; cursor: pointer; overflow: hidden; box-shadow: 0 2px 6px rgb(0 0 0 / 0.35); transition: transform 0.15s; }
+  .bolsillo:hover { transform: translateY(-2px); }
+  .bolsillo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .bolsillo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 35%, rgb(255 255 255 / 0.16) 48%, transparent 60%); pointer-events: none; }
+  .bolsillo.es-foil::before { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none; mix-blend-mode: color-dodge; opacity: 0.3;
+    background: linear-gradient(125deg, #ff4fa3, #ffd84f, #4fff9b, #4fc3ff, #b44fff, #ff4fa3); background-size: 300% 300%; animation: holo 6s linear infinite; }
+  @keyframes holo { from { background-position: 0% 50%; } to { background-position: 300% 50%; } }
+  .cantidad { position: absolute; z-index: 2; right: 6px; bottom: 6px; background: rgb(7 9 13 / 0.82); color: var(--visor-ink); border-radius: 999px; padding: 1px 8px; font: 700 0.8rem var(--body); font-variant-numeric: tabular-nums; }
+  .marca-foil { position: absolute; z-index: 2; left: 6px; bottom: 6px; font-size: 0.85rem; filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.6)); }
+  .sin-imagen { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; padding: 10px; color: var(--visor-ink); font: 700 0.85rem var(--display); background: radial-gradient(circle at 50% 35%, #3a4366, #1a1f30); }
+  .vacio { color: var(--visor-ink); text-align: center; padding: 30px 10px; display: grid; gap: 12px; justify-items: center; }
+  .vacio p { margin: 0; max-width: 40ch; opacity: 0.85; }
+  .boton { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 16px; border-radius: 10px; font: 600 1rem var(--body); cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--ink); text-decoration: none; }
+  .boton.principal { background: var(--gold); border-color: var(--gold); color: var(--surface); }
+  .aviso-ejemplo { color: var(--gold); font-weight: 700; font-size: 0.9rem; }
+
+  .visor3d { position: fixed; inset: 0; z-index: 20; background: radial-gradient(circle at 50% 40%, #1d2233, var(--visor) 70%); color: var(--visor-ink); display: grid; grid-template-rows: auto 1fr auto; padding: max(12px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); touch-action: none; }
+  .barra { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .control { min-width: 44px; min-height: 44px; border-radius: 999px; border: 1px solid rgb(255 255 255 / 0.25); background: rgb(255 255 255 / 0.08); color: var(--visor-ink); font: 600 0.95rem var(--body); cursor: pointer; padding: 0 14px; }
+  .escena { display: grid; place-items: center; perspective: 1100px; min-height: 0; }
+  .carta3d { position: relative; width: min(78vw, calc(62vh * 709 / 1016), 420px); aspect-ratio: 709 / 1016; transform-style: preserve-3d; transition: transform 0.12s ease-out; will-change: transform; cursor: grab; }
+  .carta3d.girando { transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .cara { position: absolute; inset: 0; border-radius: 4.5% / 3.2%; overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; box-shadow: 0 30px 60px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.08); }
+  .cara img { width: 100%; height: 100%; object-fit: cover; display: block; user-select: none; -webkit-user-drag: none; }
+  .trasera { transform: rotateY(180deg); background:
+      radial-gradient(circle at 50% 50%, rgb(226 178 77 / 0.25), transparent 45%),
+      repeating-conic-gradient(from 0deg at 50% 50%, #1c2338 0deg 10deg, #232b45 10deg 20deg),
+      #1a2034;
+    display: grid; place-content: center; text-align: center; border: 10px solid #b8892a; }
+  .trasera .emblema { font: 700 clamp(1.4rem, 7vw, 2.4rem) var(--display); color: #e9c46a; letter-spacing: 0.08em; text-shadow: 0 2px 10px rgb(0 0 0 / 0.6); }
+  .trasera .lema { font: 600 0.8rem var(--body); color: #e9c46a; opacity: 0.8; letter-spacing: 0.3em; text-transform: uppercase; margin-top: 6px; }
+  .reflejo { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: soft-light;
+    background: radial-gradient(circle at var(--mx, 50%) var(--my, 30%), rgb(255 255 255 / 0.75), rgb(255 255 255 / 0.1) 35%, transparent 60%); }
+  .holo { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: color-dodge; opacity: var(--ho, 0.15); transition: opacity 0.2s;
+    background:
+      repeating-linear-gradient(110deg, #ff4fa3 0%, #ffd84f 7%, #4fff9b 14%, #4fc3ff 21%, #b44fff 28%, #ff4fa3 35%),
+      radial-gradient(circle at var(--mx, 50%) var(--my, 50%), rgb(255 255 255 / 0.6), transparent 55%);
+    background-size: 220% 220%, 100% 100%;
+    background-position: var(--hx, 50%) var(--hy, 50%), center;
+    filter: saturate(1.3) contrast(1.1); }
+  .holo::after { content: ""; position: absolute; inset: 0; opacity: 0.35; mix-blend-mode: overlay;
+    background-image: radial-gradient(rgb(255 255 255 / 0.9) 0.6px, transparent 1.2px); background-size: 7px 7px; background-position: var(--hx, 50%) var(--hy, 50%); }
+  .ficha { text-align: center; display: grid; gap: 4px; justify-items: center; }
+  .ficha h2 { font-size: 1.15rem; }
+  .ficha p { margin: 0; opacity: 0.8; font-size: 0.92rem; }
+  .ficha .tienes { color: #e9c46a; font-weight: 700; opacity: 1; }
+  .ayuda { font-size: 0.8rem; opacity: 0.6; }
+  @media (prefers-reduced-motion: reduce) { .bolsillo.es-foil::before { animation: none; } .carta3d, .carta3d.girando { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <nav class="pestanas" aria-label="Secciones">
+    <a href="./">Escanear</a>
+    <a href="topdeck.html" aria-current="page">Mi Top Deck</a>
+  </nav>
+
+  <header class="cabecera">
+    <div>
+      <h1>Mi Top Deck</h1>
+      <p class="sub" id="resumen">Cargando tu colección…</p>
+    </div>
+    <span class="aviso-ejemplo" id="aviso-ejemplo" hidden>Viendo cartas de ejemplo</span>
+  </header>
+
+  <section class="herramientas" aria-label="Filtros">
+    <input class="buscar" id="buscar" type="search" placeholder="Buscar por nombre" autocomplete="off">
+    <div class="filtros" id="filtros-tipo"></div>
+    <div class="filtros">
+      <button type="button" class="filtro foil" id="solo-foil" aria-pressed="false">✨ Solo foil</button>
+      <select class="filtro" id="raza" aria-label="Raza"><option value="">Todas las razas</option></select>
+      <select class="filtro" id="orden" aria-label="Ordenar">
+        <option value="tipo">Por tipo y coste</option>
+        <option value="nombre">Por nombre</option>
+        <option value="edicion">Por edición</option>
+        <option value="cantidad">Más copias primero</option>
+      </select>
+    </div>
+  </section>
+
+  <section class="carpeta" aria-label="Tus cartas">
+    <div class="grilla" id="grilla"></div>
+    <div class="vacio" id="vacio" hidden>
+      <p id="vacio-texto">Tu Top Deck está vacío. Escanea tus cartas y aparecerán aquí como en una carpeta.</p>
+      <a class="boton principal" href="./">Escanear cartas</a>
+      <button type="button" class="boton" id="ver-ejemplo">Ver con cartas de ejemplo</button>
+    </div>
+  </section>
+</main>
+
+<div class="visor3d" id="visor3d" role="dialog" aria-modal="true" aria-labelledby="ficha-nombre" hidden>
+  <div class="barra">
+    <button type="button" class="control" id="cerrar" aria-label="Cerrar">✕</button>
+    <button type="button" class="control" id="giroscopio" hidden>Mover con el teléfono</button>
+    <span class="ayuda" id="posicion"></span>
+  </div>
+  <div class="escena" id="escena">
+    <div class="carta3d" id="carta3d">
+      <div class="cara frontal">
+        <img id="imagen" alt="">
+        <div class="sin-imagen" id="sin-imagen" hidden></div>
+        <div class="holo" id="holo" hidden></div>
+        <div class="reflejo"></div>
+      </div>
+      <div class="cara trasera" aria-hidden="true">
+        <div class="emblema">TOP DECK</div>
+        <div class="lema">Mi colección</div>
+      </div>
+    </div>
+  </div>
+  <div class="ficha">
+    <h2 id="ficha-nombre"></h2>
+    <p id="ficha-detalle"></p>
+    <p class="tienes" id="ficha-tienes"></p>
+    <div class="barra" style="gap:12px">
+      <button type="button" class="control" id="anterior" aria-label="Carta anterior">‹</button>
+      <span class="ayuda">Arrastra para inclinar · toca para dar vuelta</span>
+      <button type="button" class="control" id="siguiente" aria-label="Carta siguiente">›</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const TIPOS = ["Aliado", "Talismán", "Tótem", "Arma", "Oro"];
+let catalogo = new Map(), coleccion = [], visibles = [], esEjemplo = false;
+const filtro = { tipo: "", foil: false, raza: "", texto: "", orden: "tipo" };
+
+function normalizar(t) { return (t || "").normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase(); }
+
+function leerColeccion() {
+  try { return Object.values(JSON.parse(localStorage.getItem("coleccion-myl") || "{}") || {}); } catch (e) { return []; }
+}
+
+function completar(x) {
+  const c = catalogo.get(String(x.id)) || {};
+  return { ...c, ...x, fuerza: c.fuerza, img: c.img, foil: x.foil || 0, cantidad: x.cantidad || 0 };
+}
+
+function ejemplo() {
+  const elegidas = [...catalogo.values()].filter(c => c.tipo === "Aliado" && /drag/i.test(c.raza)).slice(0, 14)
+    .concat([...catalogo.values()].filter(c => c.tipo !== "Aliado").slice(0, 10));
+  return elegidas.map((c, i) => ({ ...c, cantidad: 1 + (i % 3), foil: i % 4 === 0 ? 1 : 0 }));
+}
+
+function resumen() {
+  const total = coleccion.reduce((a, x) => a + x.cantidad, 0), foils = coleccion.reduce((a, x) => a + x.foil, 0);
+  $("resumen").textContent = coleccion.length
+    ? `${total.toLocaleString("es-CL")} cartas · ${coleccion.length.toLocaleString("es-CL")} distintas · ✨ ${foils} foil`
+    : "Sin cartas todavía";
+}
+
+function pintarFiltros() {
+  const tipos = ["", ...TIPOS.filter(t => coleccion.some(x => x.tipo === t))];
+  $("filtros-tipo").replaceChildren(...tipos.map(t => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "filtro"; b.textContent = t || "Todas";
+    b.setAttribute("aria-pressed", String(filtro.tipo === t));
+    b.addEventListener("click", () => { filtro.tipo = t; pintarFiltros(); pintarGrilla(); });
+    return b;
+  }));
+  const razas = [...new Set(coleccion.map(x => x.raza).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const sel = $("raza"), actual = filtro.raza;
+  sel.replaceChildren(new Option("Todas las razas", ""), ...razas.map(r => new Option(r, r)));
+  sel.value = razas.includes(actual) ? actual : "";
+}
+
+function ordenar(lista) {
+  const porNombre = (a, b) => a.nombre.localeCompare(b.nombre, "es");
+  const coste = x => Number(x.coste ?? 99);
+  if (filtro.orden === "nombre") return lista.sort(porNombre);
+  if (filtro.orden === "edicion") return lista.sort((a, b) => (a.edicion || "").localeCompare(b.edicion || "", "es") || porNombre(a, b));
+  if (filtro.orden === "cantidad") return lista.sort((a, b) => b.cantidad - a.cantidad || porNombre(a, b));
+  return lista.sort((a, b) => TIPOS.indexOf(a.tipo) - TIPOS.indexOf(b.tipo) || coste(a) - coste(b) || porNombre(a, b));
+}
+
+function pintarGrilla() {
+  const q = normalizar(filtro.texto);
+  visibles = ordenar(coleccion.filter(x =>
+    (!filtro.tipo || x.tipo === filtro.tipo) && (!filtro.foil || x.foil > 0) &&
+    (!filtro.raza || x.raza === filtro.raza) && (!q || normalizar(x.nombre).includes(q))));
+  $("vacio").hidden = visibles.length > 0;
+  if (!visibles.length) {
+    $("vacio-texto").textContent = coleccion.length
+      ? "Ninguna carta coincide con los filtros."
+      : "Tu Top Deck está vacío. Escanea tus cartas y aparecerán aquí como en una carpeta.";
+    $("ver-ejemplo").hidden = coleccion.length > 0;
+  }
+  $("grilla").replaceChildren(...visibles.map((x, i) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "bolsillo" + (x.foil ? " es-foil" : "");
+    b.setAttribute("aria-label", `${x.nombre}, ${x.cantidad} ${x.cantidad === 1 ? "copia" : "copias"}${x.foil ? `, ${x.foil} foil` : ""}`);
+    if (catalogo.has(String(x.id))) {
+      const img = document.createElement("img");
+      img.loading = "lazy"; img.decoding = "async"; img.alt = "";
+      img.src = `miniaturas/${x.id}.jpg`;
+      img.onerror = () => { img.remove(); b.prepend(placeholder(x.nombre)); };
+      b.append(img);
+    } else {
+      b.append(placeholder(x.nombre));
+    }
+    const n = document.createElement("span"); n.className = "cantidad"; n.textContent = `×${x.cantidad}`;
+    b.append(n);
+    if (x.foil) { const f = document.createElement("span"); f.className = "marca-foil"; f.textContent = "✨"; b.append(f); }
+    b.addEventListener("click", () => abrir(i));
+    return b;
+  }));
+}
+
+function placeholder(nombre) {
+  const d = document.createElement("div"); d.className = "sin-imagen"; d.textContent = nombre; return d;
+}
+
+/* ---------- Visor 3D ---------- */
+const visor = { i: 0, girada: false, rx: 0, ry: 0, giro: false, arrastre: null };
+
+function abrir(i) {
+  visor.i = i;
+  $("visor3d").hidden = false;
+  document.body.style.overflow = "hidden";
+  $("giroscopio").hidden = !("DeviceOrientationEvent" in window) || visor.giro;
+  mostrar();
+  $("cerrar").focus();
+}
+
+function cerrar() {
+  $("visor3d").hidden = true;
+  document.body.style.overflow = "";
+}
+
+function mostrar() {
+  const x = visibles[visor.i];
+  if (!x) return;
+  visor.girada = false; visor.rx = 0; visor.ry = 0;
+  aplicar(true);
+  $("ficha-nombre").textContent = x.nombre;
+  const partes = [x.tipo];
+  if (x.tipo === "Aliado") partes.push(`coste ${x.coste} · fuerza ${x.fuerza}`, x.raza);
+  else if (x.coste != null && x.coste !== "") partes.push(`coste ${x.coste}`);
+  partes.push(x.edicion);
+  $("ficha-detalle").textContent = partes.filter(Boolean).join(" · ");
+  $("ficha-tienes").textContent = `Tienes ×${x.cantidad}${x.foil ? ` · ✨ ${x.foil} foil` : ""}`;
+  $("posicion").textContent = `${visor.i + 1} de ${visibles.length}`;
+  $("holo").hidden = !x.foil;
+  const img = $("imagen");
+  $("sin-imagen").hidden = true;
+  if (x.img) {
+    img.hidden = false;
+    img.src = `miniaturas/${x.id}.jpg`;
+    const alta = new Image();
+    alta.onload = () => { if (visibles[visor.i] === x) img.src = alta.src; };
+    alta.src = x.img;
+    img.onerror = () => { img.hidden = true; $("sin-imagen").hidden = false; $("sin-imagen").textContent = x.nombre; };
+  } else {
+    img.hidden = true; $("sin-imagen").hidden = false; $("sin-imagen").textContent = x.nombre;
+  }
+  img.alt = x.nombre;
+}
+
+function aplicar(suave) {
+  const c = $("carta3d");
+  c.classList.toggle("girando", !!suave);
+  c.style.transform = `rotateX(${visor.rx}deg) rotateY(${visor.ry + (visor.girada ? 180 : 0)}deg)`;
+  const mx = 50 + visor.ry * 2.2, my = 50 - visor.rx * 2.2;
+  c.style.setProperty("--mx", `${mx}%`);
+  c.style.setProperty("--my", `${my}%`);
+  c.style.setProperty("--hx", `${50 + visor.ry * 3}%`);
+  c.style.setProperty("--hy", `${50 + visor.rx * 3}%`);
+  c.style.setProperty("--ho", (0.12 + 0.3 * Math.min(1, Math.hypot(visor.rx, visor.ry) / 25)).toFixed(2));
+}
+
+function inclinar(dx, dy) {
+  visor.ry = Math.max(-25, Math.min(25, dx));
+  visor.rx = Math.max(-25, Math.min(25, -dy));
+  aplicar(false);
+}
+
+function pasar(d) {
+  if (!visibles.length) return;
+  visor.i = (visor.i + d + visibles.length) % visibles.length;
+  mostrar();
+}
+
+const carta = $("carta3d");
+carta.addEventListener("pointerdown", e => {
+  carta.setPointerCapture(e.pointerId);
+  visor.arrastre = { x: e.clientX, y: e.clientY, t: performance.now(), movio: false };
+});
+carta.addEventListener("pointermove", e => {
+  const r = carta.getBoundingClientRect();
+  if (visor.arrastre) {
+    const dx = e.clientX - visor.arrastre.x, dy = e.clientY - visor.arrastre.y;
+    if (Math.abs(dx) + Math.abs(dy) > 6) visor.arrastre.movio = true;
+    if (Math.abs(dx) > r.width * 0.6 && Math.abs(dx) > Math.abs(dy) * 2) {
+      visor.arrastre = null;
+      pasar(dx < 0 ? 1 : -1);
+      return;
+    }
+  }
+  if (visor.giro) return;
+  if (e.pointerType === "mouse" || visor.arrastre) {
+    const px = (e.clientX - r.left) / r.width - 0.5, py = (e.clientY - r.top) / r.height - 0.5;
+    inclinar(px * 40, py * 40);
+  }
+});
+carta.addEventListener("pointerup", e => {
+  const a = visor.arrastre;
+  visor.arrastre = null;
+  if (a && !a.movio && performance.now() - a.t < 400) { visor.girada = !visor.girada; aplicar(true); return; }
+  if (!visor.giro && e.pointerType !== "mouse") { visor.rx = 0; visor.ry = 0; aplicar(true); }
+});
+carta.addEventListener("pointerleave", e => { if (e.pointerType === "mouse" && !visor.giro) { visor.rx = 0; visor.ry = 0; aplicar(true); } });
+
+function alOrientar(e) {
+  if ($("visor3d").hidden || e.gamma == null) return;
+  inclinar(e.gamma * 0.9, (e.beta - 45) * 0.7);
+}
+
+$("giroscopio").addEventListener("click", async () => {
+  try {
+    if (typeof DeviceOrientationEvent.requestPermission === "function") {
+      const r = await DeviceOrientationEvent.requestPermission();
+      if (r !== "granted") { $("giroscopio").textContent = "Permiso denegado"; return; }
+    }
+    window.addEventListener("deviceorientation", alOrientar);
+    visor.giro = true;
+    $("giroscopio").hidden = true;
+  } catch (e) { $("giroscopio").textContent = "No disponible"; }
+});
+$("cerrar").addEventListener("click", cerrar);
+$("anterior").addEventListener("click", () => pasar(-1));
+$("siguiente").addEventListener("click", () => pasar(1));
+document.addEventListener("keydown", e => {
+  if ($("visor3d").hidden) return;
+  if (e.key === "Escape") cerrar();
+  if (e.key === "ArrowRight") pasar(1);
+  if (e.key === "ArrowLeft") pasar(-1);
+  if (e.key === " ") { e.preventDefault(); visor.girada = !visor.girada; aplicar(true); }
+});
+
+/* ---------- Filtros ---------- */
+$("buscar").addEventListener("input", () => { filtro.texto = $("buscar").value; pintarGrilla(); });
+$("solo-foil").addEventListener("click", () => { filtro.foil = !filtro.foil; $("solo-foil").setAttribute("aria-pressed", String(filtro.foil)); pintarGrilla(); });
+$("raza").addEventListener("change", () => { filtro.raza = $("raza").value; pintarGrilla(); });
+$("orden").addEventListener("change", () => { filtro.orden = $("orden").value; pintarGrilla(); });
+$("ver-ejemplo").addEventListener("click", () => {
+  esEjemplo = true; coleccion = ejemplo(); $("aviso-ejemplo").hidden = false;
+  resumen(); pintarFiltros(); pintarGrilla();
+});
+
+(async () => {
+  try {
+    const meta = await (await fetch("catalogo.json")).json();
+    catalogo = new Map(meta.cartas.map(c => [String(c.id), c]));
+  } catch (e) {
+    $("resumen").textContent = "No se pudo cargar el catálogo de cartas. Recarga la página.";
+  }
+  coleccion = leerColeccion().map(completar);
+  resumen(); pintarFiltros(); pintarGrilla();
+})();
+window.addEventListener("storage", e => {
+  if (e.key === "coleccion-myl" && !esEjemplo) { coleccion = leerColeccion().map(completar); resumen(); pintarFiltros(); pintarGrilla(); }
+});
+</script>
+</body>
+</html>
