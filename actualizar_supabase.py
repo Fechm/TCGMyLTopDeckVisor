@@ -20,6 +20,8 @@ SUPABASE = os.environ.get("SUPABASE_URL", "https://nzehvfrlbmltxfqkovtu.supabase
 CLAVE = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 UA = {"User-Agent": "Mozilla/5.0 (TCGMyLTopDeckVisor; actualizacion diaria)"}
 LOTE_HUELLAS = 40
+HISTORICAS = os.environ.get("HISTORICAS") == "1"
+PAUSA_IMAGEN = 0.5 if HISTORICAS else 0
 
 
 def pedir(url, binario=False, intentos=4):
@@ -133,30 +135,40 @@ def main():
     print(f"banlist: {len(limites)} cartas")
 
     con_huella = {f["carta_id"] for f in todos("huellas?select=carta_id")}
-    pendientes = [c for u, c in cartas.items() if int(vigente["id"]) in c["temporadas"] and u not in con_huella]
+    pendientes = [c for u, c in cartas.items() if (HISTORICAS or int(vigente["id"]) in c["temporadas"]) and u not in con_huella and c["imagen"]]
     print(f"huellas existentes: {len(con_huella)}, por calcular: {len(pendientes)}")
     if not pendientes:
         return
 
     import reconocer as r
     embebedor = r.metodos(r.Embedder())["cnn_carta+arte"]
+    por_imagen = {}
     for i in range(0, len(pendientes), LOTE_HUELLAS):
         lote = pendientes[i: i + LOTE_HUELLAS]
-        imagenes, ids = [], []
+        imagenes, ids, filas = [], [], []
         for c in lote:
+            if c["imagen"] in por_imagen:
+                filas.append({"carta_id": c["id"], "vector": por_imagen[c["imagen"]]})
+                continue
             try:
                 im = Image.open(io.BytesIO(pedir(c["imagen"], binario=True))).convert("RGB")
             except Exception as e:
                 print("  sin imagen", c["id"], e)
                 continue
+            finally:
+                time.sleep(PAUSA_IMAGEN)
             if im.width > 709:
                 im = im.resize((709, round(im.height * 709 / im.width)), Image.LANCZOS)
             imagenes.append(np.array(im)[:, :, ::-1].copy())
-            ids.append(c["id"])
-        if not imagenes:
+            ids.append(c)
+        if imagenes:
+            for c, v in zip(ids, embebedor(imagenes)):
+                texto = "[" + ",".join(f"{x:.5f}" for x in v) + "]"
+                por_imagen[c["imagen"]] = texto
+                filas.append({"carta_id": c["id"], "vector": texto})
+            del imagenes
+        if not filas:
             continue
-        vectores = embebedor(imagenes)
-        filas = [{"carta_id": u, "vector": "[" + ",".join(f"{x:.5f}" for x in v) + "]"} for u, v in zip(ids, vectores)]
         upsert("huellas", filas, "carta_id")
         print(f"  huellas {i + len(lote)}/{len(pendientes)}")
 
