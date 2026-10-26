@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.wasm.min.js"></script>
+<script src="cuenta.js"></script>
 <style>
   /* Layout: una columna de herramienta; visor de cámara arriba, registro de la sesión y colección abajo. Paleta de tinta azul y oro de moneda MyL. */
   :root {
@@ -471,10 +472,13 @@ function insigniaLegal(l) {
 }
 
 function porNombre(mejor) {
-  const sim = new Float32Array(nombres.length).fill(-1), ref = new Int32Array(nombres.length);
+  const sim = new Float32Array(nombres.length).fill(-1), ref = new Int32Array(nombres.length), puntaje = new Float32Array(nombres.length).fill(-9);
   for (let j = 0; j < mejor.length; j++) {
+    if (mejor[j] < 0) continue;
     const k = nombreDe[j];
-    if (mejor[j] > sim[k]) { sim[k] = mejor[j]; ref[k] = j; }
+    if (mejor[j] > sim[k]) sim[k] = mejor[j];
+    const p = mejor[j] + (legal.get(String(meta.cartas[j].id))?.estado === "vigente" ? 0.03 : 0);
+    if (p > puntaje[k]) { puntaje[k] = p; ref[k] = j; }
   }
   return { sim, ref };
 }
@@ -1023,12 +1027,12 @@ async function procesar(archivo) {
     await Promise.race([cargarOpenCV(), new Promise((_, no) => setTimeout(() => no(new Error("tiempo")), 20000))]);
     dibujo = await verificarDibujo(bmp, cajas[recorteDe[primero]], mejor);
   } catch (e) {}
-  const vistos = new Set(), orden = [];
+  const vistos = new Set(), orden = [], { ref: preferida } = porNombre(mejor);
   if (dibujo?.fuerte) { orden.push(dibujo.ref); vistos.add(dibujo.k); }
   for (const j of [...mejor.keys()].sort((a, b) => mejor[b] - mejor[a])) {
     if (vistos.has(nombreDe[j])) continue;
     vistos.add(nombreDe[j]);
-    orden.push(j);
+    orden.push(preferida[nombreDe[j]]);
     if (orden.length === 5) break;
   }
   const lienzo = $("recorte"), ctx = lienzo.getContext("2d");
@@ -1068,6 +1072,7 @@ function guardar(carta, cantidad, foil) {
   else coleccion[carta.id] = { id: carta.id, nombre: carta.nombre, edicion: carta.edicion, tipo: carta.tipo, raza: carta.raza, coste: carta.coste, cantidad, foil, legal: legal.get(String(carta.id)) || coleccion[carta.id]?.legal, actualizado: new Date().toISOString() };
   renderColeccion();
   try { localStorage.setItem("coleccion-myl", JSON.stringify(coleccion)); } catch (e) {}
+  Cuenta.marcar(carta.id);
 }
 
 function renderColeccion() {
@@ -1155,6 +1160,13 @@ try {
   if (localStorage.getItem("foil-auto-myl") === "0") { foilAuto = false; $("foil-auto").checked = false; }
 } catch (e) {}
 renderColeccion();
+Cuenta.iniciar({
+  contenedor: document.querySelector(".cabecera"),
+  alCambiar: () => {
+    try { coleccion = JSON.parse(localStorage.getItem("coleccion-myl") || "{}") || {}; } catch (e) { coleccion = {}; }
+    renderColeccion();
+  },
+});
 iniciarModelo();
 </script>
 </body>

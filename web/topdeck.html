@@ -185,6 +185,7 @@
   </div>
 </div>
 
+<script src="cuenta.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const TIPOS = ["Aliado", "Talismán", "Tótem", "Arma", "Oro"];
@@ -199,7 +200,7 @@ function leerColeccion() {
 
 function completar(x) {
   const c = catalogo.get(String(x.id)) || {};
-  return { ...c, ...x, fuerza: c.fuerza, img: c.img, foil: x.foil || 0, cantidad: x.cantidad || 0 };
+  return { ...c, ...x, fuerza: c.fuerza ?? x.fuerza, img: c.img, foil: x.foil || 0, cantidad: x.cantidad || 0 };
 }
 
 function ejemplo() {
@@ -420,10 +421,42 @@ $("ver-ejemplo").addEventListener("click", () => {
   } catch (e) {
     $("resumen").textContent = "No se pudo cargar el catálogo de cartas. Recarga la página.";
   }
+  const compartido = new URLSearchParams(location.search).get("c");
+  if (compartido) return verCompartido(compartido);
   await migrar();
   coleccion = leerColeccion().map(completar);
   resumen(); pintarFiltros(); pintarGrilla();
+  Cuenta.iniciar({
+    contenedor: document.querySelector(".cabecera"),
+    alCambiar: () => { if (!esEjemplo) { coleccion = leerColeccion().map(completar); resumen(); pintarFiltros(); pintarGrilla(); } },
+  });
 })();
+
+async function verCompartido(enlace) {
+  esEjemplo = true;
+  $("ver-ejemplo").remove();
+  document.querySelector("#vacio .boton.principal").remove();
+  $("aviso-ejemplo").textContent = "Solo lectura";
+  $("aviso-ejemplo").hidden = false;
+  $("resumen").textContent = "Cargando el Top Deck compartido…";
+  let datos = null;
+  try {
+    datos = await Cuenta.rpc("ver_compartido", { p_enlace: enlace });
+  } catch (e) {
+    $("resumen").textContent = e.message;
+    return;
+  }
+  if (!datos) {
+    $("resumen").textContent = "Este enlace no existe o su dueño lo desactivó.";
+    $("vacio").hidden = false;
+    $("vacio-texto").textContent = "No hay nada que mostrar.";
+    return;
+  }
+  document.querySelector(".cabecera h1").textContent = `Top Deck de ${datos.usuario}`;
+  document.title = `Top Deck de ${datos.usuario}`;
+  coleccion = datos.cartas.map(completar);
+  resumen(); pintarFiltros(); pintarGrilla();
+}
 
 async function migrar() {
   let guardada;
