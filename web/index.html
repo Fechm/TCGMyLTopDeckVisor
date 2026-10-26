@@ -336,14 +336,21 @@ function unitario(v, ini, fin) {
 }
 
 async function similitudes(fuente, cajas) {
-  const [ax0, ay0, ax1, ay1] = meta.arte, n = TAM * TAM * 3;
-  const datos = new Float32Array(cajas.length * 2 * n);
-  cajas.forEach((c, i) => {
-    llenarTensor(datos, 2 * i * n, fuente, c);
-    llenarTensor(datos, (2 * i + 1) * n, fuente, [c[0] + ax0 * c[2], c[1] + ay0 * c[3], (ax1 - ax0) * c[2], (ay1 - ay0) * c[3]]);
-  });
-  const salida = await sesion.run({ input: new ort.Tensor("float32", datos, [cajas.length * 2, 3, TAM, TAM]) });
-  const e = salida[sesion.outputNames[0]].data, d = e.length / (cajas.length * 2);
+  const [ax0, ay0, ax1, ay1] = meta.arte, n = TAM * TAM * 3, LOTE = 4;
+  const partes = [];
+  for (let ini = 0; ini < cajas.length; ini += LOTE) {
+    const lote = cajas.slice(ini, ini + LOTE);
+    const datos = new Float32Array(lote.length * 2 * n);
+    lote.forEach((c, i) => {
+      llenarTensor(datos, 2 * i * n, fuente, c);
+      llenarTensor(datos, (2 * i + 1) * n, fuente, [c[0] + ax0 * c[2], c[1] + ay0 * c[3], (ax1 - ax0) * c[2], (ay1 - ay0) * c[3]]);
+    });
+    const salida = await sesion.run({ input: new ort.Tensor("float32", datos, [lote.length * 2, 3, TAM, TAM]) });
+    partes.push(salida[sesion.outputNames[0]].data);
+  }
+  const e = new Float32Array(partes.reduce((a, p) => a + p.length, 0));
+  partes.reduce((o, p) => (e.set(p, o), o + p.length), 0);
+  const d = e.length / (cajas.length * 2);
   const total = meta.cartas.length, dim = meta.dim, mejor = new Float32Array(total).fill(-1), recorteDe = new Int16Array(total);
   cajas.forEach((_, i) => {
     const q = new Float32Array(dim);
@@ -449,12 +456,14 @@ function coincidencias(q, r) {
   const src = [], dst = [];
   for (let i = 0; i < pares.size(); i++) {
     const p = pares.get(i);
-    if (p.size() < 2) continue;
-    const a = p.get(0), b = p.get(1);
-    if (a.distance < 0.75 * b.distance) {
-      src.push(q.pts[2 * a.queryIdx], q.pts[2 * a.queryIdx + 1]);
-      dst.push(r.pts[2 * a.trainIdx], r.pts[2 * a.trainIdx + 1]);
+    if (p.size() >= 2) {
+      const a = p.get(0), b = p.get(1);
+      if (a.distance < 0.75 * b.distance) {
+        src.push(q.pts[2 * a.queryIdx], q.pts[2 * a.queryIdx + 1]);
+        dst.push(r.pts[2 * a.trainIdx], r.pts[2 * a.trainIdx + 1]);
+      }
     }
+    p.delete();
   }
   desRef.delete(); pares.delete();
   const buenos = src.length / 2;
@@ -515,12 +524,14 @@ function alinearCrops(lista) {
       const src = [], dst = [];
       for (let i = 0; i < pares.size(); i++) {
         const p = pares.get(i);
-        if (p.size() < 2) continue;
-        const a = p.get(0), b = p.get(1);
-        if (a.distance < 0.75 * b.distance) {
-          const q = r.kp.get(a.queryIdx).pt, t = base.kp.get(a.trainIdx).pt;
-          src.push(q.x, q.y); dst.push(t.x, t.y);
+        if (p.size() >= 2) {
+          const a = p.get(0), b = p.get(1);
+          if (a.distance < 0.75 * b.distance) {
+            const q = r.kp.get(a.queryIdx).pt, t = base.kp.get(a.trainIdx).pt;
+            src.push(q.x, q.y); dst.push(t.x, t.y);
+          }
         }
+        p.delete();
       }
       pares.delete();
       if (src.length / 2 >= 12) {
