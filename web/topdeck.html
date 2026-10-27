@@ -99,15 +99,20 @@
   .trasera .lema { font: 600 0.8rem var(--body); color: #e9c46a; opacity: 0.8; letter-spacing: 0.3em; text-transform: uppercase; margin-top: 6px; }
   .reflejo { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: soft-light;
     background: radial-gradient(circle at var(--mx, 50%) var(--my, 30%), rgb(255 255 255 / 0.75), rgb(255 255 255 / 0.1) 35%, transparent 60%); }
-  .holo { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: color-dodge; opacity: var(--ho, 0.15); transition: opacity 0.2s;
-    background:
-      repeating-linear-gradient(110deg, #ff4fa3 0%, #ffd84f 7%, #4fff9b 14%, #4fc3ff 21%, #b44fff 28%, #ff4fa3 35%),
-      radial-gradient(circle at var(--mx, 50%) var(--my, 50%), rgb(255 255 255 / 0.6), transparent 55%);
-    background-size: 220% 220%, 100% 100%;
-    background-position: var(--hx, 50%) var(--hy, 50%), center;
-    filter: saturate(1.3) contrast(1.1); }
-  .holo::after { content: ""; position: absolute; inset: 0; opacity: 0.35; mix-blend-mode: overlay;
-    background-image: radial-gradient(rgb(255 255 255 / 0.9) 0.6px, transparent 1.2px); background-size: 7px 7px; background-position: var(--hx, 50%) var(--hy, 50%); }
+  .holo { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: color-dodge; opacity: var(--ho, 0.4); transition: opacity 0.2s;
+    background-image:
+      repeating-linear-gradient(115deg, hsl(0 90% 62%) 0%, hsl(40 95% 60%) 3.5%, hsl(90 85% 58%) 7%, hsl(170 85% 58%) 10.5%,
+        hsl(220 90% 64%) 14%, hsl(280 85% 66%) 17.5%, hsl(330 90% 62%) 21%, hsl(360 90% 62%) 24.5%),
+      repeating-linear-gradient(55deg, rgb(0 0 0 / 0.6) 0%, rgb(255 255 255 / 0.3) 2.5%, rgb(0 0 0 / 0.6) 5%);
+    background-size: 300% 300%, 220% 220%;
+    background-position: var(--hx, 50%) var(--hy, 50%), calc(100% - var(--hx, 50%)) calc(100% - var(--hy, 50%));
+    background-blend-mode: overlay;
+    filter: brightness(0.7) contrast(1.4) saturate(1.1);
+    -webkit-mask-image: radial-gradient(farthest-corner circle at var(--mx, 50%) var(--my, 50%), #000 0%, rgb(0 0 0 / 0.5) 35%, rgb(0 0 0 / 0.1) 80%);
+    mask-image: radial-gradient(farthest-corner circle at var(--mx, 50%) var(--my, 50%), #000 0%, rgb(0 0 0 / 0.5) 35%, rgb(0 0 0 / 0.1) 80%); }
+  .holo::after { content: ""; position: absolute; inset: 0; mix-blend-mode: color-dodge; opacity: 0.4;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='1' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 10 -7'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 180px 180px; background-position: var(--hx, 50%) var(--hy, 50%); }
   .ficha { text-align: center; display: grid; gap: 4px; justify-items: center; }
   .ficha h2 { font-size: 1.15rem; }
   .ficha p { margin: 0; opacity: 0.8; font-size: 0.92rem; }
@@ -333,7 +338,7 @@ function aplicar(suave) {
   c.style.setProperty("--my", `${my}%`);
   c.style.setProperty("--hx", `${50 + visor.ry * 3}%`);
   c.style.setProperty("--hy", `${50 + visor.rx * 3}%`);
-  c.style.setProperty("--ho", (0.12 + 0.3 * Math.min(1, Math.hypot(visor.rx, visor.ry) / 25)).toFixed(2));
+  c.style.setProperty("--ho", (0.25 + 0.5 * Math.min(1, Math.hypot(visor.rx, visor.ry) / 20)).toFixed(2));
 }
 
 function inclinar(dx, dy) {
