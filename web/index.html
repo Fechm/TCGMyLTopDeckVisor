@@ -107,6 +107,12 @@
 </style>
 </head>
 <body>
+<div class="carga" id="carga" hidden role="status" aria-live="polite">
+  <div class="carga-logo"><img src="logo.png" alt=""><span class="destello"></span></div>
+  <h2>MyL Top Deck</h2>
+  <div class="carga-barra" role="progressbar" aria-label="Cargando" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="carga-barra"><span id="carga-relleno"></span></div>
+  <p id="carga-texto">Preparando…</p>
+</div>
 <main>
   <header class="cabecera-app">
     <img src="logo.png" alt="" width="40" height="40">
@@ -280,10 +286,52 @@ function habilitar(si) {
   $("iniciar").disabled = !si;
 }
 
-async function cargarBinario(ruta) {
+async function cargarBinario(ruta, alAvanzar) {
   const r = await fetch(ruta);
   if (!r.ok) throw new Error(`No se pudo cargar ${ruta} (${r.status})`);
-  return r.arrayBuffer();
+  const total = Number(r.headers.get("content-length")) || 0;
+  if (!alAvanzar || !total || !r.body) return r.arrayBuffer();
+  const lector = r.body.getReader(), partes = [];
+  let recibido = 0;
+  for (;;) {
+    const { done, value } = await lector.read();
+    if (done) break;
+    partes.push(value); recibido += value.length;
+    alAvanzar(Math.min(1, recibido / total));
+  }
+  const salida = new Uint8Array(recibido);
+  let i = 0;
+  for (const p of partes) { salida.set(p, i); i += p.length; }
+  return salida.buffer;
+}
+
+const carga = { pct: 0, listo: false, reloj: null };
+function progreso(pct, texto) {
+  carga.pct = Math.max(carga.pct, Math.min(100, pct));
+  $("carga-relleno").style.width = `${carga.pct}%`;
+  $("carga-barra").setAttribute("aria-valuenow", String(Math.round(carga.pct)));
+  if (texto) $("carga-texto").textContent = texto;
+}
+function mostrarCarga(si) {
+  const el = $("carga");
+  if (si) { el.hidden = false; el.classList.remove("saliendo"); return; }
+  el.classList.add("saliendo");
+  setTimeout(() => { el.hidden = true; }, 500);
+}
+async function calentarBase() {
+  const inicio = performance.now();
+  carga.reloj = setInterval(() => {
+    const s = (performance.now() - inicio) / 1000;
+    progreso(82 + 15 * (1 - Math.exp(-s / 6)), s > 3 ? "La base de cartas estaba dormida. Despertándola, unos segundos más…" : null);
+  }, 250);
+  try {
+    for (let intento = 0; intento < 3; intento++) {
+      try { await buscarRemoto(new Float32Array(meta.dim).fill(1 / Math.sqrt(meta.dim))); return true; } catch (e) {}
+    }
+    return false;
+  } finally {
+    clearInterval(carga.reloj);
+  }
 }
 
 async function migrarColeccion() {
@@ -364,7 +412,11 @@ async function refrescarLegalidad() {
 async function iniciarModelo() {
   try {
     const t0 = performance.now();
-    const [m, modelo] = await Promise.all([fetch("catalogo.json").then(x => x.json()), cargarBinario("modelo.onnx")]);
+    progreso(4, "Abriendo el grimorio de cartas…");
+    const [m, modelo] = await Promise.all([
+      fetch("catalogo.json").then(x => x.json()).then(x => { progreso(12); return x; }),
+      cargarBinario("modelo.onnx", f => progreso(12 + 58 * f, "Descargando el reconocedor de cartas…")),
+    ]);
     const cartas = m.cartas;
     meta = { ...m, cartas: [] };
     nombreDe = [];
@@ -374,16 +426,24 @@ async function iniciarModelo() {
     fetch(`${SUPABASE_URL}/rest/v1/huellas?select=carta_id`, { method: "HEAD", headers: { apikey: SUPABASE_CLAVE, Prefer: "count=exact", Range: "0-0" } })
       .then(r => { const n = Number((r.headers.get("content-range") || "").split("/")[1]); if (n) $("subtitulo").textContent = `Imperio · ${n.toLocaleString("es-CL")} cartas reconocibles`; })
       .catch(() => {});
+    progreso(72, "Preparando el reconocedor…");
     ort.env.wasm.numThreads = 1;
     sesion = await ort.InferenceSession.create(modelo, { executionProviders: ["wasm"] });
+    progreso(82, "Conectando con la base de cartas…");
+    const despierta = await calentarBase();
+    progreso(100, despierta ? "¡Listo!" : "La base no respondió; uso las cartas vigentes guardadas en el sitio.");
+    carga.listo = true;
+    setTimeout(() => mostrarCarga(false), despierta ? 350 : 1800);
     chip("chip-modelo", "Listo", "ok");
     estado(`Reconocedor listo en ${((performance.now() - t0) / 1000).toFixed(1)} s.`);
     habilitar(true);
     await migrarColeccion();
     renderColeccion();
     refrescarLegalidad().catch(() => {});
-    buscarRemoto(new Float32Array(meta.dim).fill(1 / Math.sqrt(meta.dim))).catch(() => {});
   } catch (e) {
+    carga.listo = true;
+    progreso(100, "No se pudo cargar el reconocedor. Recarga la página para intentar de nuevo.");
+    setTimeout(() => mostrarCarga(false), 2500);
     chip("chip-modelo", "Error", "mal");
     estado("No se pudo cargar el reconocedor: " + e.message + ". Recarga la página para intentar de nuevo.");
   }
@@ -1192,6 +1252,7 @@ try {
 } catch (e) {}
 renderColeccion();
 function aplicarSesion(s) {
+  mostrarCarga(!!s && !carga.listo);
   $("portada").hidden = !!s;
   $("app").hidden = !s;
   if (!s && scan.activo) detenerEscaner();

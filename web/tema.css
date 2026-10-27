@@ -132,3 +132,30 @@ h2 { font-size: 1.05rem; }
   * { transition: none !important; animation: none !important; }
   @view-transition { navigation: none; }
 }
+
+.carga {
+  position: fixed; inset: 0; z-index: 40; display: grid; place-content: center; justify-items: center; gap: 16px; padding: 24px; text-align: center;
+  background: radial-gradient(ellipse 80% 55% at 50% 40%, rgb(226 178 77 / 0.12), transparent 70%), var(--bg);
+  transition: opacity 0.45s ease, visibility 0.45s;
+}
+.carga.saliendo { opacity: 0; visibility: hidden; }
+.carga-logo { position: relative; width: min(46vw, 180px); aspect-ratio: 858 / 1119; animation: flotar 3.2s ease-in-out infinite; }
+.carga-logo img { width: 100%; height: 100%; display: block; animation: brillo 2.4s ease-in-out infinite; }
+.carga-logo .destello {
+  position: absolute; inset: 0; pointer-events: none; mix-blend-mode: screen;
+  background: linear-gradient(105deg, transparent 35%, rgb(255 246 214 / 0.95) 50%, transparent 65%) no-repeat;
+  background-size: 250% 100%; animation: barrido 2.4s ease-in-out infinite;
+  -webkit-mask: url("logo.png") center / contain no-repeat; mask: url("logo.png") center / contain no-repeat;
+}
+.carga h2 { font-size: 1.3rem; letter-spacing: 0.08em; }
+.carga-barra { position: relative; width: min(72vw, 300px); height: 8px; border-radius: 999px; background: rgb(255 255 255 / 0.06); border: 1px solid var(--line); overflow: hidden; }
+.carga-barra span {
+  position: absolute; inset: 0 auto 0 0; width: 0; border-radius: inherit; transition: width 0.35s ease;
+  background: linear-gradient(90deg, var(--gold-oscuro), var(--gold) 60%, var(--gold-claro)); box-shadow: 0 0 12px rgb(226 178 77 / 0.6);
+}
+.carga-barra span::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.5), transparent); background-size: 40% 100%; background-repeat: no-repeat; animation: recorre 1.4s linear infinite; }
+.carga p { margin: 0; min-height: 2.6em; max-width: 30ch; color: var(--muted); font-size: 0.92rem; }
+@keyframes flotar { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes brillo { 0%, 100% { filter: drop-shadow(0 6px 18px rgb(226 178 77 / 0.25)); } 50% { filter: drop-shadow(0 8px 30px rgb(226 178 77 / 0.6)); } }
+@keyframes barrido { 0% { background-position: 150% 0; } 60%, 100% { background-position: -60% 0; } }
+@keyframes recorre { from { background-position: -40% 0; } to { background-position: 140% 0; } }
