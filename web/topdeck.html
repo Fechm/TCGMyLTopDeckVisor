@@ -207,6 +207,10 @@ function completar(x) {
   return { ...c, ...x, fuerza: c.fuerza ?? x.fuerza, img: c.img, foil: x.foil || 0, cantidad: x.cantidad || 0 };
 }
 
+function miniatura(x) {
+  return catalogo.has(String(x.id)) ? `miniaturas/${x.id}.jpg` : `img/220/${encodeURIComponent(x.id)}.webp`;
+}
+
 function ejemplo() {
   const elegidas = [...catalogo.values()].filter(c => c.tipo === "Aliado" && /drag/i.test(c.raza)).slice(0, 14)
     .concat([...catalogo.values()].filter(c => c.tipo !== "Aliado").slice(0, 10));
@@ -263,7 +267,7 @@ function pintarGrilla() {
     if (catalogo.has(String(x.id))) {
       const img = document.createElement("img");
       img.loading = "lazy"; img.decoding = "async"; img.alt = "";
-      img.src = `miniaturas/${x.id}.jpg`;
+      img.src = miniatura(x);
       img.onerror = () => { img.remove(); b.prepend(placeholder(x.nombre)); };
       b.append(img);
     } else {
@@ -314,16 +318,12 @@ function mostrar() {
   $("holo").hidden = !x.foil;
   const img = $("imagen");
   $("sin-imagen").hidden = true;
-  if (x.img) {
-    img.hidden = false;
-    img.src = `miniaturas/${x.id}.jpg`;
-    const alta = new Image();
-    alta.onload = () => { if (visibles[visor.i] === x) img.src = alta.src; };
-    alta.src = x.img;
-    img.onerror = () => { img.hidden = true; $("sin-imagen").hidden = false; $("sin-imagen").textContent = x.nombre; };
-  } else {
-    img.hidden = true; $("sin-imagen").hidden = false; $("sin-imagen").textContent = x.nombre;
-  }
+  img.hidden = false;
+  img.onerror = () => { img.hidden = true; $("sin-imagen").hidden = false; $("sin-imagen").textContent = x.nombre; };
+  img.src = miniatura(x);
+  const alta = new Image();
+  alta.onload = () => { if (visibles[visor.i] === x) img.src = alta.src; };
+  alta.src = x.img || `img/400/${encodeURIComponent(x.id)}.webp`;
   img.alt = x.nombre;
 }
 

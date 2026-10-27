@@ -22,6 +22,9 @@ UA = {"User-Agent": "Mozilla/5.0 (TCGMyLTopDeckVisor; actualizacion diaria)"}
 LOTE_HUELLAS = 40
 HISTORICAS = os.environ.get("HISTORICAS") == "1"
 PAUSA_IMAGEN = 0.5 if HISTORICAS else 0
+BUCKET_R2 = "myl-cartas"
+ENDPOINT_R2 = "https://cc92b2285bb1d752493b28ffea7a01aa.r2.cloudflarestorage.com"
+TAMANOS = (220, 400)
 
 
 def pedir(url, binario=False, intentos=4):
@@ -135,43 +138,83 @@ def main():
     print(f"banlist: {len(limites)} cartas")
 
     con_huella = {f["carta_id"] for f in todos("huellas?select=carta_id")}
-    pendientes = [c for u, c in cartas.items() if (HISTORICAS or int(vigente["id"]) in c["temporadas"]) and u not in con_huella and c["imagen"]]
-    print(f"huellas existentes: {len(con_huella)}, por calcular: {len(pendientes)}")
+    r2 = cliente_r2()
+    con_imagen = imagenes_en_r2(r2) if r2 else None
+    alcance = [c for u, c in cartas.items() if (HISTORICAS or int(vigente["id"]) in c["temporadas"]) and c["imagen"]]
+    pendientes = [c for c in alcance if c["id"] not in con_huella or (con_imagen is not None and c["id"] not in con_imagen)]
+    print(f"huellas existentes: {len(con_huella)}, imágenes en R2: {'sin acceso' if con_imagen is None else len(con_imagen)}, "
+          f"cartas por procesar: {len(pendientes)}")
     if not pendientes:
         return
 
     import reconocer as r
     embebedor = r.metodos(r.Embedder())["cnn_carta+arte"]
     por_imagen = {}
+    subidas = 0
     for i in range(0, len(pendientes), LOTE_HUELLAS):
         lote = pendientes[i: i + LOTE_HUELLAS]
         imagenes, ids, filas = [], [], []
         for c in lote:
-            if c["imagen"] in por_imagen:
-                filas.append({"carta_id": c["id"], "vector": por_imagen[c["imagen"]]})
-                continue
-            try:
-                im = Image.open(io.BytesIO(pedir(c["imagen"], binario=True))).convert("RGB")
-            except Exception as e:
-                print("  sin imagen", c["id"], e)
-                continue
-            finally:
-                time.sleep(PAUSA_IMAGEN)
-            if im.width > 709:
-                im = im.resize((709, round(im.height * 709 / im.width)), Image.LANCZOS)
-            imagenes.append(np.array(im)[:, :, ::-1].copy())
-            ids.append(c)
+            previo = por_imagen.get(c["imagen"])
+            if previo is None:
+                try:
+                    im = Image.open(io.BytesIO(pedir(c["imagen"], binario=True))).convert("RGB")
+                except Exception as e:
+                    print("  sin imagen", c["id"], e)
+                    continue
+                finally:
+                    time.sleep(PAUSA_IMAGEN)
+                previo = {"tamanos": {ancho: webp(im, ancho) for ancho in TAMANOS} if r2 else {}, "vector": None}
+                por_imagen[c["imagen"]] = previo
+                if c["id"] not in con_huella:
+                    grande = im if im.width <= 709 else im.resize((709, round(im.height * 709 / im.width)), Image.LANCZOS)
+                    imagenes.append(np.array(grande)[:, :, ::-1].copy())
+                    ids.append(c)
+            elif c["id"] not in con_huella and previo["vector"]:
+                filas.append({"carta_id": c["id"], "vector": previo["vector"]})
+            if r2 and c["id"] not in con_imagen:
+                for ancho, datos in previo["tamanos"].items():
+                    r2.put_object(Bucket=BUCKET_R2, Key=f"{ancho}/{c['id']}.webp", Body=datos,
+                                  ContentType="image/webp", CacheControl="public, max-age=2592000, immutable")
+                con_imagen.add(c["id"])
+                subidas += 1
         if imagenes:
             for c, v in zip(ids, embebedor(imagenes)):
                 texto = "[" + ",".join(f"{x:.5f}" for x in v) + "]"
-                por_imagen[c["imagen"]] = texto
+                por_imagen[c["imagen"]]["vector"] = texto
                 filas.append({"carta_id": c["id"], "vector": texto})
             del imagenes
-        if not filas:
-            continue
-        upsert("huellas", filas, "carta_id")
-        print(f"  huellas {i + len(lote)}/{len(pendientes)}")
+        if filas:
+            upsert("huellas", filas, "carta_id")
+            con_huella.update(f["carta_id"] for f in filas)
+        print(f"  {i + len(lote)}/{len(pendientes)} · imágenes subidas {subidas}")
 
+
+def cliente_r2():
+    if not (os.environ.get("R2_ACCESS_KEY_ID") and os.environ.get("R2_SECRET_ACCESS_KEY")):
+        print("R2 sin credenciales: solo huellas")
+        return None
+    import boto3
+    return boto3.client("s3", endpoint_url=os.environ.get("R2_ENDPOINT", ENDPOINT_R2), region_name="auto",
+                        aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"], aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"])
+
+
+def imagenes_en_r2(r2):
+    ids, token = set(), None
+    while True:
+        extra = {"ContinuationToken": token} if token else {}
+        resp = r2.list_objects_v2(Bucket=BUCKET_R2, Prefix=f"{TAMANOS[-1]}/", **extra)
+        ids.update(o["Key"].split("/", 1)[1].removesuffix(".webp") for o in resp.get("Contents", []))
+        if not resp.get("IsTruncated"):
+            return ids
+        token = resp["NextContinuationToken"]
+
+
+def webp(im, ancho):
+    chica = im.resize((ancho, round(im.height * ancho / im.width)), Image.LANCZOS) if im.width > ancho else im
+    salida = io.BytesIO()
+    chica.save(salida, "WEBP", quality=80, method=6)
+    return salida.getvalue()
 
 if __name__ == "__main__":
     main()

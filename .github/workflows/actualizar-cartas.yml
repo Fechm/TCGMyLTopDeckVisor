@@ -43,5 +43,7 @@ jobs:
         env:
           SUPABASE_URL: https://nzehvfrlbmltxfqkovtu.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           HISTORICAS: ${{ inputs.historicas && '1' || '0' }}
         run: python actualizar_supabase.py
