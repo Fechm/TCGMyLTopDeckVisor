@@ -1,5 +1,6 @@
 (() => {
-  const ANCHO = 240;
+  const ANCHO = 320;
+  const REFUERZO = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) ? 1.6 : 1;
 
   function suave(a, b, x) {
     const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -75,13 +76,13 @@
       const centro = 0.5 + (ry * 0.9 - rx * 0.5) / 40;
       const inv = 64 / (0.12 + aspecto.tam * 0.25);
       const desfase = aspecto.h + ry * 9 + rx * 6 + 3600;
-      const kColor = fuerza * aspecto.sat * 0.38 * 255, kBlanco = fuerza * aspecto.blanco * 0.34 * 255;
+      const kColor = fuerza * aspecto.sat * 0.38 * 255 * REFUERZO, kBlanco = fuerza * aspecto.blanco * 0.34 * 255 * REFUERZO;
       for (let i = 0, k = 0; i < n; i++, k += 4) {
         const p = proy[i];
         const d = Math.abs(p - centro) * inv;
         const barrido = d < 255 ? campana[d | 0] : 0;
         const e = oro[i] > 0 ? nx[i] * lx + ny[i] * ly : 0;
-        const brillo = e > 0 ? oro[i] * e * Math.sqrt(e) * 561 : 0;
+        const brillo = e > 0 ? oro[i] * e * Math.sqrt(e) * 561 * REFUERZO : 0;
         if (barrido < 0.01 && brillo === 0) { o[k + 3] = 0; continue; }
         const c = (((desfase + p * 90) | 0) % 360) * 3;
         const color = base[i] * barrido * kColor, blanco = barrido * kBlanco;

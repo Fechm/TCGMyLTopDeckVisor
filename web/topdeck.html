@@ -320,7 +320,8 @@ function mostrar() {
     img.src = alta.src;
     if (aspecto) { try { foil = Foil.crear(lienzo, alta, aspecto); aplicar(false); } catch (e) { foil = null; } }
   };
-  alta.src = x.img || `img/400/${encodeURIComponent(x.id)}.webp`;
+  alta.src = `img/hd/${encodeURIComponent(x.id)}.webp`;
+  alta.onerror = () => { if (!alta.dataset.respaldo) { alta.dataset.respaldo = 1; alta.src = x.img || `img/400/${encodeURIComponent(x.id)}.webp`; } };
   img.alt = x.nombre;
 }
 
