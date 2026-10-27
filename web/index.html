@@ -7,99 +7,70 @@
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#12151d">
+<meta name="theme-color" content="#0e1220">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.wasm.min.js"></script>
 <script src="cuenta.js"></script>
+<link rel="stylesheet" href="tema.css">
 <style>
-  /* Layout: una columna de herramienta; visor de cámara arriba, registro de la sesión y colección abajo. Paleta de tinta azul y oro de moneda MyL. */
-  :root {
-    --bg: #f4f2ee;
-    --surface: #ffffff;
-    --ink: #1c2230;
-    --muted: #5e6675;
-    --line: #dcd8cf;
-    --gold: #a8740f;
-    --gold-soft: #f3e6c4;
-    --ok: #2f7d4f;
-    --warn: #a6501c;
-    --visor: #07090d;
-    --visor-ink: #f5f2ea;
-    --display: "Cinzel", "Trajan Pro", Georgia, serif;
-    --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #12151d; --surface: #1b202b; --ink: #ece8df; --muted: #a2a8b5; --line: #2f3542;
-      --gold: #e2b24d; --gold-soft: #3a2f17; --ok: #6cc28f; --warn: #e89a6a; color-scheme: dark;
-    }
-  }
-  :root[data-theme="dark"] {
-    --bg: #12151d; --surface: #1b202b; --ink: #ece8df; --muted: #a2a8b5; --line: #2f3542;
-    --gold: #e2b24d; --gold-soft: #3a2f17; --ok: #6cc28f; --warn: #e89a6a; color-scheme: dark;
-  }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 16px; line-height: 1.45;
-    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
-    padding-block: max(16px, env(safe-area-inset-top, 0px)) max(40px, env(safe-area-inset-bottom, 0px));
-  }
-  [hidden] { display: none !important; }
-  .pestanas { display: flex; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 4px; width: fit-content; }
-  .pestanas a { padding: 8px 14px; border-radius: 9px; color: var(--muted); text-decoration: none; font-weight: 600; }
-  .pestanas a[aria-current="page"] { background: var(--gold); color: var(--surface); }
-  .credito { color: var(--muted); font-size: 0.8rem; text-align: center; margin: 0; }
-  .credito a { color: inherit; }
-  main { max-width: 640px; margin: 0 auto; display: grid; gap: 18px; }
-  h1, h2 { font-family: var(--display); margin: 0; text-wrap: balance; letter-spacing: 0.02em; }
-  h1 { font-size: 1.5rem; }
-  h2 { font-size: 1.05rem; }
+  main { max-width: 640px; margin: 0 auto; display: grid; gap: 16px; }
   .cabecera { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
-  .sub { color: var(--muted); font-size: 0.9rem; margin: 2px 0 0; }
-  .chip { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 10px; border-radius: 999px; background: var(--gold-soft); color: var(--gold); white-space: nowrap; }
-  .chip.ok { background: transparent; border: 1px solid var(--ok); color: var(--ok); }
-  .chip.mal { background: transparent; border: 1px solid var(--warn); color: var(--warn); }
-  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 14px; min-width: 0; }
   .botones { display: flex; flex-wrap: wrap; gap: 10px; }
-  .boton { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 18px; border-radius: 10px; font: 600 1rem var(--body); cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
-  .boton.principal { background: var(--gold); border-color: var(--gold); color: var(--surface); flex: 1 1 180px; }
-  .boton:disabled, .boton[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; }
-  .boton:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+  .botones .boton { flex: 1 1 140px; font-size: 0.92rem; padding: 0 12px; }
+  .acciones-escaner {
+    position: sticky; bottom: calc(var(--nav-alto) + env(safe-area-inset-bottom, 0px) + 8px); z-index: 5; display: grid; grid-template-columns: 1fr auto; gap: 10px;
+    padding: 10px; margin: 0 -6px; border-radius: 16px; background: rgb(14 18 32 / 0.88); border: 1px solid var(--line); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  }
+  .acciones-escaner .principal { min-height: 54px; font-size: 1.05rem; }
   input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-  .consejo { color: var(--muted); font-size: 0.9rem; margin: 0; }
+  .consejo { color: var(--muted); font-size: 0.88rem; margin: 0; }
 
-  .visor { position: relative; width: min(100%, calc(60vh * 3 / 4)); aspect-ratio: 3 / 4; margin: 0 auto; background: var(--visor); border-radius: 12px; overflow: hidden; }
+  .visor { position: relative; width: 100%; max-width: calc(68vh * 3 / 4); aspect-ratio: 3 / 4; margin: 0 auto; background: var(--visor); border-radius: 14px; overflow: hidden; border: 1px solid var(--line-fuerte); box-shadow: 0 14px 40px rgb(0 0 0 / 0.5); }
   .visor video { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .marco { position: absolute; left: 50%; top: 46%; height: 78%; aspect-ratio: 709 / 1016; max-width: 92%; transform: translate(-50%, -50%); border: 3px solid var(--visor-ink); border-radius: 12px; box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.38); transition: border-color 0.15s, box-shadow 0.15s; }
-  .marco.registrada { border-color: var(--ok); box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.38), inset 0 0 0 4px var(--ok); }
-  .marco.viendo { border-color: var(--gold); }
-  .marco.foil { border-image: linear-gradient(135deg, #ff6ec7, #ffd86e, #6effa8, #6ec8ff, #b06eff) 1; }
-  .foil-boton[aria-pressed="true"] { background: linear-gradient(135deg, #ffe3f4, #fff3cf, #dcffe9, #dceeff, #efe1ff); border-color: var(--gold); color: #3a2a00; }
+  .marco { position: absolute; left: 50%; top: 46%; height: 78%; aspect-ratio: 709 / 1016; max-width: 92%; transform: translate(-50%, -50%); border-radius: 12px; box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.42); transition: box-shadow 0.15s; --c: var(--pergamino); }
+  .marco::before { content: ""; position: absolute; inset: -3px; border-radius: 14px; pointer-events: none;
+    background:
+      linear-gradient(var(--c), var(--c)) top left / 28px 3px no-repeat, linear-gradient(var(--c), var(--c)) top left / 3px 28px no-repeat,
+      linear-gradient(var(--c), var(--c)) top right / 28px 3px no-repeat, linear-gradient(var(--c), var(--c)) top right / 3px 28px no-repeat,
+      linear-gradient(var(--c), var(--c)) bottom left / 28px 3px no-repeat, linear-gradient(var(--c), var(--c)) bottom left / 3px 28px no-repeat,
+      linear-gradient(var(--c), var(--c)) bottom right / 28px 3px no-repeat, linear-gradient(var(--c), var(--c)) bottom right / 3px 28px no-repeat; }
+  .marco.viendo { --c: var(--gold); }
+  .marco.registrada { --c: var(--ok); box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.42), inset 0 0 0 3px var(--ok); }
+  .marco.foil { --c: #f0b6ff; }
+  .foil-boton[aria-pressed="true"] { background: linear-gradient(135deg, #3b2a52, #2c3a52, #3a3424); border-color: var(--gold); color: var(--gold-claro); }
   .pregunta-foil { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
   .pregunta-foil span { font-weight: 700; }
-  .pregunta-foil button { min-height: 40px; padding: 0 14px; border-radius: 8px; border: 0; font: 600 0.95rem var(--body); cursor: pointer; background: var(--visor-ink); color: var(--visor); }
+  .pregunta-foil button { min-height: 44px; padding: 0 14px; border-radius: 10px; border: 0; font: 600 0.95rem var(--body); cursor: pointer; background: var(--gold); color: #23180a; }
   .pregunta-foil button + button { background: transparent; color: var(--visor-ink); border: 1px solid var(--visor-ink); }
   .casilla { display: flex; gap: 8px; align-items: flex-start; font-size: 0.9rem; color: var(--muted); }
   .casilla input { margin-top: 3px; accent-color: var(--gold); width: 18px; height: 18px; }
   .brillo-foil { color: var(--gold); font-weight: 700; }
-  .banda { position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 14px 12px; background: linear-gradient(transparent, rgb(0 0 0 / 0.78)); color: var(--visor-ink); display: grid; gap: 2px; }
-  .banda strong { font-size: 1.05rem; overflow-wrap: anywhere; }
+  .banda { position: absolute; left: 0; right: 0; bottom: 0; padding: 26px 14px 12px; background: linear-gradient(transparent, rgb(0 0 0 / 0.82)); color: var(--visor-ink); display: grid; gap: 2px; }
+  .banda strong { font: 700 1.05rem var(--display); letter-spacing: 0.02em; overflow-wrap: anywhere; }
   .banda small { opacity: 0.8; font-variant-numeric: tabular-nums; }
-  .estado-legal { justify-self: start; margin-top: 4px; padding: 2px 8px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; color: #fff; }
-  .estado-legal.vigente { background: #1d7a3e; }
-  .estado-legal.reimpresion { background: #2f6db5; }
-  .estado-legal.limitada { background: #a86a00; }
-  .estado-legal.rotada { background: #6b6b6b; }
-  .estado-legal.prohibida { background: #b3261e; }
-  .estado-legal.otro { background: #5a4a8a; }
-  .registro .estado-legal, .fila .estado-legal, .candidato .estado-legal { display: inline-block; margin: 4px 0 0; font-size: 0.72rem; }
-  .visor .apagado { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; color: var(--visor-ink); padding: 24px; gap: 6px; }
+  .registro .estado-legal, .fila .estado-legal, .candidato .estado-legal { margin: 4px 0 0; font-size: 0.72rem; }
+  .visor .apagado { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; color: var(--visor-ink); padding: 24px; gap: 8px; }
+  .visor .apagado strong { font: 700 1.1rem var(--display); color: var(--pergamino); }
+
+  .aviso-registro {
+    position: fixed; left: 50%; bottom: calc(var(--nav-alto) + env(safe-area-inset-bottom, 0px) + 92px); z-index: 30; transform: translate(-50%, 20px); opacity: 0;
+    display: grid; gap: 2px; justify-items: center; text-align: center; min-width: 220px; max-width: calc(100vw - 32px); padding: 12px 18px; border-radius: 14px;
+    background: linear-gradient(180deg, #23304a, #161b2c); border: 1px solid var(--ok); box-shadow: 0 14px 40px rgb(0 0 0 / 0.55); pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+  }
+  .aviso-registro.visible { opacity: 1; transform: translate(-50%, 0); }
+  .aviso-registro strong { font: 700 1.05rem var(--display); color: var(--pergamino); }
+  .aviso-registro small { color: var(--muted); }
+  .aviso-registro .estado-legal { justify-self: center; }
+
+  .guia { display: grid; gap: 10px; }
 
   .ajuste { display: grid; gap: 4px; font-size: 0.9rem; color: var(--muted); }
   .ajuste input { width: 100%; accent-color: var(--gold); }
   details { border-top: 1px solid var(--line); padding-top: 10px; }
-  summary { cursor: pointer; font-weight: 600; min-height: 32px; }
-  details[open] > summary { margin-bottom: 12px; }
+  summary { cursor: pointer; font-weight: 600; min-height: 44px; display: flex; align-items: center; color: var(--pergamino); }
+  details[open] > summary { margin-bottom: 8px; }
   details > div { display: grid; gap: 12px; }
 
   .registros { display: grid; gap: 0; }
@@ -107,57 +78,76 @@
   .registro:first-child { border-top: 0; }
   .registro .nombre { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
   .registro .nombre small { display: block; font-weight: 400; color: var(--muted); }
-  .registro .total { font-variant-numeric: tabular-nums; color: var(--muted); }
+  .registro .total { font-variant-numeric: tabular-nums; color: var(--gold); font-weight: 700; }
   .registro.nuevo { animation: entra 0.6s ease-out; }
   @keyframes entra { from { background: var(--gold-soft); } to { background: transparent; } }
 
   .resultado { display: grid; grid-template-columns: 110px 1fr; gap: 14px; align-items: start; }
   .resultado canvas { width: 110px; height: auto; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
   .candidatos { display: grid; gap: 8px; min-width: 0; }
-  .candidato { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+  .candidato { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: rgb(255 255 255 / 0.02); color: var(--ink); font: inherit; cursor: pointer; }
   .candidato[aria-pressed="true"] { border-color: var(--gold); box-shadow: inset 0 0 0 1px var(--gold); background: var(--gold-soft); }
   .candidato strong { font-weight: 700; overflow-wrap: anywhere; }
   .candidato .meta { grid-column: 1 / -1; color: var(--muted); font-size: 0.85rem; }
-  .candidato .estado-legal { grid-column: 1 / -1; justify-self: start; }
+  .candidato .estado-legal { grid-column: 1 / -1; }
   .similitud { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.85rem; }
   .agregar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-  .contador { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .contador { display: inline-flex; align-items: center; border: 1px solid var(--line-fuerte); border-radius: 10px; overflow: hidden; }
   .contador button { width: 44px; height: 44px; border: 0; background: transparent; color: var(--ink); font-size: 1.3rem; cursor: pointer; }
   .contador output { min-width: 32px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .buscar { width: 100%; min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; box-sizing: border-box; }
-  .estado { margin: 0; font-size: 0.95rem; }
+  .estado { margin: 0; font-size: 0.92rem; color: var(--muted); }
   .resumen { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--muted); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
-  .resumen b { color: var(--ink); }
-  .grupo h3 { margin: 6px 0; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .resumen b { color: var(--gold-claro); }
+  .grupo h3 { margin: 8px 0 4px; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--gold); }
   .fila { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
   .fila .nombre { min-width: 0; overflow-wrap: anywhere; }
   .fila .nombre small { display: block; color: var(--muted); }
   .vacio { color: var(--muted); margin: 0; }
   @media (max-width: 420px) { .resultado { grid-template-columns: 1fr; } .resultado canvas { width: 140px; } }
-  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
 <main>
-  <nav class="pestanas" aria-label="Secciones">
-    <a href="./" aria-current="page">Escanear</a>
-    <a href="topdeck.html">Mi Top Deck</a>
-  </nav>
-  <header class="cabecera">
-    <div>
-      <h1>Escáner MyL</h1>
+  <header class="cabecera-app">
+    <img src="logo.png" alt="" width="40" height="40">
+    <div class="titulo">
+      <h1>MyL Top Deck</h1>
       <p class="sub" id="subtitulo">Imperio · cargando catálogo</p>
     </div>
     <span class="chip" id="chip-modelo">Preparando</span>
   </header>
 
+  <section class="portada" id="portada" hidden aria-labelledby="t-portada">
+    <img src="logo.png" alt="" width="220" height="287">
+    <h2 id="t-portada">Tu colección, carta a carta</h2>
+    <p>Escanea tus cartas de Imperio con la cámara y arma tu Top Deck digital. Se guarda en tu cuenta y lo puedes compartir con un enlace.</p>
+    <ol class="pasos">
+      <li><b>1</b><span>Apunta la carta al marco de la cámara.</span></li>
+      <li><b>2</b><span>Se reconoce y se registra sola, con su legalidad.</span></li>
+      <li><b>3</b><span>Mírala en tu Top Deck, en 3D y con foil.</span></li>
+    </ol>
+    <div class="acciones">
+      <button type="button" class="boton principal" id="portada-crear">Crear cuenta</button>
+      <button type="button" class="boton" id="portada-entrar">Ya tengo cuenta</button>
+    </div>
+  </section>
+
+  <div id="app" hidden>
   <section class="panel" aria-labelledby="t-escanear">
-    <h2 id="t-escanear">Escanear cartas</h2>
+    <div class="cabecera"><h2 id="t-escanear">Escanear cartas</h2><span class="sub" id="sesion-total">0 cartas</span></div>
+    <div class="guia" id="guia" hidden>
+      <ol class="pasos">
+        <li><b>1</b><span>Encaja la carta en el marco, de frente y con buena luz.</span></li>
+        <li><b>2</b><span>Cuando la reconoce suena, vibra y la suma.</span></li>
+        <li><b>3</b><span>Sácala del marco antes de pasar la siguiente.</span></li>
+      </ol>
+      <button type="button" class="boton" id="guia-ok">Entendido</button>
+    </div>
     <div class="visor" id="visor">
       <video id="video" playsinline muted autoplay></video>
       <div class="apagado" id="apagado">
         <strong>La cámara está apagada</strong>
-        <span>Toca «Iniciar escáner» y pasa las cartas por el marco, una a una.</span>
+        <span>Toca «Escanear» y pasa las cartas por el marco, una a una.</span>
       </div>
       <div class="marco" id="marco" hidden></div>
       <div class="banda" id="banda" hidden>
@@ -172,36 +162,15 @@
       </div>
     </div>
     <div class="botones">
-      <button type="button" class="boton principal" id="iniciar" disabled>Iniciar escáner</button>
-      <button type="button" class="boton foil-boton" id="modo-foil" aria-pressed="false">✨ Foil: no</button>
       <button type="button" class="boton" id="forzar" disabled>Agregar la que veo</button>
       <button type="button" class="boton" id="deshacer" disabled>Deshacer último</button>
     </div>
-    <p class="consejo">Encaja la carta en el marco, de frente y con buena luz. Cuando la reconoce suena, vibra y la suma. Sácala del marco antes de pasar la siguiente; para sumar otra copia de la misma, sácala y vuelve a mostrarla.</p>
     <p class="estado" id="estado" role="status"></p>
 
     <div aria-labelledby="t-sesion">
-      <div class="cabecera"><h2 id="t-sesion">Esta sesión</h2><span class="sub" id="sesion-total">0 cartas</span></div>
+      <h2 id="t-sesion">Esta sesión</h2>
       <div class="registros" id="registros"><p class="vacio">Las cartas que registres aparecerán aquí, la última arriba.</p></div>
     </div>
-
-    <details>
-      <summary>Ajustes del reconocimiento</summary>
-      <div>
-        <label class="ajuste" for="umbral">
-          <span>Exigencia para registrar: <b id="umbral-valor">0,68</b> (súbela si registra cartas equivocadas, bájala si no registra nada)</span>
-          <input type="range" id="umbral" min="0.60" max="0.82" step="0.01" value="0.68">
-        </label>
-        <label class="casilla" for="foil-auto">
-          <input type="checkbox" id="foil-auto" checked>
-          <span>Detectar foil: después de registrar, inclina la carta 4 segundos y te avisa si parece foil. Si la retiras antes, no pregunta.</span>
-        </label>
-        <label class="ajuste" for="umbral-foil">
-          <span>Sensibilidad foil: <b id="umbral-foil-valor">8,0</b> (bájala si no detecta tus foil, súbela si pregunta demasiado)</span>
-          <input type="range" id="umbral-foil" min="5.5" max="11" step="0.1" value="8.0">
-        </label>
-      </div>
-    </details>
 
     <details id="modo-foto">
       <summary>¿No la reconoce? Usa una foto</summary>
@@ -236,19 +205,59 @@
         </div>
       </div>
     </details>
+
+    <details>
+      <summary>Ajustes</summary>
+      <div>
+        <label class="ajuste" for="umbral">
+          <span>Exigencia para registrar: <b id="umbral-valor">0,68</b> (súbela si registra cartas equivocadas, bájala si no registra nada)</span>
+          <input type="range" id="umbral" min="0.60" max="0.82" step="0.01" value="0.68">
+        </label>
+        <label class="casilla" for="foil-auto">
+          <input type="checkbox" id="foil-auto" checked>
+          <span>Detectar foil: después de registrar, inclina la carta 4 segundos y te avisa si parece foil. Si la retiras antes, no pregunta.</span>
+        </label>
+        <label class="ajuste" for="umbral-foil">
+          <span>Sensibilidad foil: <b id="umbral-foil-valor">8,0</b> (bájala si no detecta tus foil, súbela si pregunta demasiado)</span>
+          <input type="range" id="umbral-foil" min="5.5" max="11" step="0.1" value="8.0">
+        </label>
+        <button type="button" class="boton" id="ver-guia">Ver la guía otra vez</button>
+      </div>
+    </details>
+
+    <div class="acciones-escaner">
+      <button type="button" class="boton principal" id="iniciar" disabled>Escanear</button>
+      <button type="button" class="boton foil-boton" id="modo-foil" aria-pressed="false">✨ Foil: no</button>
+    </div>
   </section>
 
   <section class="panel" aria-labelledby="t-coleccion">
     <div class="cabecera">
       <h2 id="t-coleccion">Mi colección</h2>
-      <span class="chip">En este teléfono</span>
+      <span class="chip">En tu cuenta</span>
     </div>
     <div class="resumen" id="resumen"></div>
     <input class="buscar" id="filtro" type="search" placeholder="Filtrar por nombre" autocomplete="off">
-    <div id="lista"><p class="vacio">Todavía no hay cartas. Inicia el escáner y pasa tu primera carta por el marco.</p></div>
+    <div id="lista"><p class="vacio">Todavía no hay cartas. Inicia el escaneo y pasa tu primera carta por el marco.</p></div>
   </section>
+  </div>
+  <div class="filigrana" aria-hidden="true"><span>❖</span></div>
   <p class="credito">Datos e imágenes de cartas: <a href="https://codicetcg.org" target="_blank" rel="noopener">Códice TCG</a>. Mitos y Leyendas es marca de sus respectivos dueños.</p>
 </main>
+
+<div class="aviso-registro" id="aviso-registro" role="status" aria-live="polite"></div>
+
+<nav class="nav-app" aria-label="Secciones">
+  <a href="./" aria-current="page">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><rect x="8.5" y="7" width="7" height="10" rx="1"/></svg>
+    Escanear
+  </a>
+  <a href="topdeck.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="7" height="9" rx="1"/><rect x="14" y="4" width="7" height="9" rx="1"/><rect x="3" y="15" width="7" height="5" rx="1"/><rect x="14" y="15" width="7" height="5" rx="1"/></svg>
+    Top Deck
+  </a>
+  <div id="nav-cuenta"></div>
+</nav>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -360,7 +369,10 @@ async function iniciarModelo() {
     nombreDe = [];
     cartas.forEach(registrarEnCatalogo);
     cartasConArchivos = cartas.length;
-    $("subtitulo").textContent = `Imperio · ${meta.cartas.length.toLocaleString("es-CL")} cartas reconocibles`;
+    $("subtitulo").textContent = "Imperio · todas las ediciones";
+    fetch(`${SUPABASE_URL}/rest/v1/huellas?select=carta_id`, { method: "HEAD", headers: { apikey: SUPABASE_CLAVE, Prefer: "count=exact", Range: "0-0" } })
+      .then(r => { const n = Number((r.headers.get("content-range") || "").split("/")[1]); if (n) $("subtitulo").textContent = `Imperio · ${n.toLocaleString("es-CL")} cartas reconocibles`; })
+      .catch(() => {});
     ort.env.wasm.numThreads = 1;
     sesion = await ort.InferenceSession.create(modelo, { executionProviders: ["wasm"] });
     chip("chip-modelo", "Listo", "ok");
@@ -801,7 +813,21 @@ async function registrar(k, j) {
   $("deshacer").disabled = false;
   scan.modo = "registrada"; scan.registrada = k; scan.ventana = []; scan.salida = 0; scan.cambio = 0; scan.votosDibujo = [];
   pintarLectura(`✓ ${foil ? "✨ " : ""}${carta.nombre}`, `Registrada${foil ? " como foil" : ""} · tienes ${nueva} · retira la carta`, "registrada", j);
+  avisarRegistro(registro);
   iniciarMedicionFoil(registro);
+}
+
+let avisoTimer = null;
+function avisarRegistro(r) {
+  const el = $("aviso-registro");
+  const nombre = document.createElement("strong"); nombre.textContent = `✓ ${r.foil ? "✨ " : ""}${r.carta.nombre}`;
+  const detalle = document.createElement("small"); detalle.textContent = `Tienes ${r.total}${r.foil ? " · foil" : ""}`;
+  el.replaceChildren(nombre, detalle);
+  const ins = insigniaLegal(r.legal); if (ins) el.append(ins);
+  el.style.borderColor = r.legal?.estado === "rotada" || r.legal?.estado === "prohibida" ? "var(--warn)" : "var(--ok)";
+  el.classList.add("visible");
+  clearTimeout(avisoTimer);
+  avisoTimer = setTimeout(() => el.classList.remove("visible"), 1800);
 }
 
 async function cuadro() {
@@ -884,7 +910,7 @@ async function iniciarEscaner() {
   try { scan.audio = scan.audio || new (window.AudioContext || window.webkitAudioContext)(); await conLimite(scan.audio.resume()); } catch (e) {}
   try { scan.wake = await conLimite(navigator.wakeLock?.request("screen")); } catch (e) {}
   $("apagado").hidden = true; $("marco").hidden = false; $("banda").hidden = false;
-  $("iniciar").textContent = "Pausar escáner";
+  $("iniciar").textContent = "Pausar";
   $("forzar").disabled = false;
   cargarOpenCV().catch(() => estado("No se pudo cargar la verificación por dibujo; el escáner sigue funcionando sin ella."));
   scan.activo = true; scan.modo = "buscando"; scan.ventana = []; scan.votosDibujo = []; scan.cuadros = 0; scan.t0 = performance.now();
@@ -903,7 +929,7 @@ function detenerEscaner() {
   scan.wake = null;
   $("video").srcObject = null;
   $("apagado").hidden = false; $("marco").hidden = true; $("banda").hidden = true;
-  $("iniciar").textContent = "Iniciar escáner";
+  $("iniciar").textContent = "Escanear";
   $("forzar").disabled = true;
 }
 
@@ -1164,8 +1190,22 @@ try {
   if (localStorage.getItem("foil-auto-myl") === "0") { foilAuto = false; $("foil-auto").checked = false; }
 } catch (e) {}
 renderColeccion();
+function aplicarSesion(s) {
+  $("portada").hidden = !!s;
+  $("app").hidden = !s;
+  if (!s && scan.activo) detenerEscaner();
+  let vista = false;
+  try { vista = localStorage.getItem("guia-vista") === "1"; } catch (e) {}
+  $("guia").hidden = !s || vista;
+}
+$("portada-crear").addEventListener("click", () => Cuenta.abrir("crear"));
+$("portada-entrar").addEventListener("click", () => Cuenta.abrir("entrar"));
+$("guia-ok").addEventListener("click", () => { $("guia").hidden = true; try { localStorage.setItem("guia-vista", "1"); } catch (e) {} });
+$("ver-guia").addEventListener("click", () => { $("guia").hidden = false; $("guia").scrollIntoView({ behavior: "smooth", block: "center" }); });
+
 Cuenta.iniciar({
-  contenedor: document.querySelector(".cabecera"),
+  contenedor: $("nav-cuenta"),
+  alSesion: aplicarSesion,
   alCambiar: () => {
     try { coleccion = JSON.parse(localStorage.getItem("coleccion-myl") || "{}") || {}; } catch (e) { coleccion = {}; }
     renderColeccion();

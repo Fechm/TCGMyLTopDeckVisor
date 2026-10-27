@@ -23,7 +23,7 @@
     "¿Cuál fue tu primer mazo?",
   ];
 
-  let opciones = { alCambiar: () => {} }, sesion = leer(K_SESION), temporizador = null, enviando = false;
+  let opciones = { alCambiar: () => {}, alSesion: () => {} }, sesion = leer(K_SESION), temporizador = null, enviando = false;
 
   function leer(k, defecto = null) {
     try { return JSON.parse(localStorage.getItem(k)) ?? defecto; } catch (e) { return defecto; }
@@ -73,6 +73,7 @@
     escribir(K_SESION, null);
     escribir(K_PENDIENTES, null);
     pintarBoton();
+    opciones.alSesion(null);
   }
 
   async function enviarPendientes() {
@@ -153,6 +154,7 @@
     sesion = { usuario: datos.usuario, token: datos.token, enlace: null };
     escribir(K_SESION, sesion);
     pintarBoton();
+    opciones.alSesion(sesion);
   }
 
   async function salir() {
@@ -384,12 +386,15 @@
     boton = el("button", { type: "button", class: "cta-boton", on: { click: () => (sesion ? verCuenta() : verEntrar()) } });
     (opciones.contenedor || document.body).append(boton);
     pintarBoton();
+    opciones.alSesion(sesion);
     window.addEventListener("online", enviarPendientes);
     window.addEventListener("storage", e => {
-      if (e.key === K_SESION) { sesion = leer(K_SESION); pintarBoton(); }
+      if (e.key === K_SESION) { sesion = leer(K_SESION); pintarBoton(); opciones.alSesion(sesion); }
     });
     return refrescar();
   }
 
-  window.Cuenta = { iniciar, marcar, refrescar, get sesion() { return sesion; }, rpc };
+  const abrir = modo => (sesion ? verCuenta() : modo === "crear" ? verCrear() : verEntrar());
+
+  window.Cuenta = { iniciar, marcar, refrescar, abrir, get sesion() { return sesion; }, rpc };
 })();
