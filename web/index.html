@@ -331,13 +331,14 @@ async function cargarReferenciasLocales() {
   refs = new Int8Array(r); escalas = new Float32Array(s);
 }
 
-async function buscarRemoto(q) {
+async function buscarRemoto(q, intento = 0) {
   const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/buscar_cartas`, {
     method: "POST",
     headers: { apikey: SUPABASE_CLAVE, Authorization: `Bearer ${SUPABASE_CLAVE}`, "Content-Type": "application/json" },
     body: JSON.stringify({ consulta: "[" + Array.from(q, x => x.toFixed(5)).join(",") + "]", cantidad: 12 }),
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(15000),
   });
+  if (r.status >= 500 && intento === 0) return buscarRemoto(q, 1);
   if (!r.ok) throw new Error(`la base respondió ${r.status}`);
   return r.json();
 }
