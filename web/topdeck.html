@@ -264,15 +264,11 @@ function pintarGrilla() {
     const b = document.createElement("button");
     b.type = "button"; b.className = "bolsillo" + (x.foil ? " es-foil" : "");
     b.setAttribute("aria-label", `${x.nombre}, ${x.cantidad} ${x.cantidad === 1 ? "copia" : "copias"}${x.foil ? `, ${x.foil} foil` : ""}`);
-    if (catalogo.has(String(x.id))) {
-      const img = document.createElement("img");
-      img.loading = "lazy"; img.decoding = "async"; img.alt = "";
-      img.src = miniatura(x);
-      img.onerror = () => { img.remove(); b.prepend(placeholder(x.nombre)); };
-      b.append(img);
-    } else {
-      b.append(placeholder(x.nombre));
-    }
+    const img = document.createElement("img");
+    img.loading = "lazy"; img.decoding = "async"; img.alt = "";
+    img.onerror = () => { img.remove(); b.prepend(placeholder(x.nombre)); };
+    img.src = miniatura(x);
+    b.append(img);
     const n = document.createElement("span"); n.className = "cantidad"; n.textContent = `×${x.cantidad}`;
     b.append(n);
     if (x.foil) { const f = document.createElement("span"); f.className = "marca-foil"; f.textContent = "✨"; b.append(f); }
