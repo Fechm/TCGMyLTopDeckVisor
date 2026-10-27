@@ -305,8 +305,9 @@ function mostrar() {
   aplicar(true);
   $("ficha-nombre").textContent = x.nombre;
   const partes = [x.tipo];
-  if (x.tipo === "Aliado") partes.push(`coste ${x.coste} · fuerza ${x.fuerza}`, x.raza);
-  else if (x.coste != null && x.coste !== "") partes.push(`coste ${x.coste}`);
+  if (x.coste != null && x.coste !== "") partes.push(`coste ${x.coste}`);
+  if (x.tipo === "Aliado" && x.fuerza != null && x.fuerza !== "") partes.push(`fuerza ${x.fuerza}`);
+  if (x.tipo === "Aliado") partes.push(x.raza);
   partes.push(x.edicion);
   $("ficha-detalle").textContent = partes.filter(Boolean).join(" · ");
   $("ficha-tienes").textContent = `Tienes ×${x.cantidad}${x.foil ? ` · ✨ ${x.foil} foil` : ""}`;
