@@ -278,6 +278,7 @@ function placeholder(nombre) {
 const visor = { i: 0, girada: false, rx: 0, ry: 0, giro: false, arrastre: null };
 
 function abrir(i) {
+  giro.neutro = null;
   visor.i = i;
   $("visor3d").hidden = false;
   document.body.style.overflow = "hidden";
@@ -332,7 +333,7 @@ function aspectoFoil(id) {
   for (const ch of id) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
   const azar = n => { h = Math.imul(h ^ (h >>> 15), 2246822519) >>> 0; return (h % 1000) / 1000 * n; };
   const tonos = [215, 265, 330, 175, 40, 0];
-  return { id, h: tonos[Math.floor(azar(tonos.length))] + azar(20) - 10, sat: 0.45 + azar(0.45), blanco: 0.35 + azar(0.5), tam: azar(1), ang: 100 + azar(60) };
+  return { id, h: tonos[Math.floor(azar(tonos.length))] + azar(20) - 10, sat: 0.6 + azar(0.35), blanco: 0.5 + azar(0.4), tam: 0.25 + azar(0.75), ang: 100 + azar(60) };
 }
 
 function aplicar(suave) {
@@ -393,9 +394,16 @@ carta.addEventListener("pointerup", e => {
 });
 carta.addEventListener("pointerleave", e => { if (e.pointerType === "mouse" && !visor.giro) { visor.rx = 0; visor.ry = 0; aplicar(true); } });
 
+const giro = { neutro: null, x: 0, y: 0 };
+
 function alOrientar(e) {
-  if ($("visor3d").hidden || e.gamma == null) return;
-  inclinar(e.gamma * 0.9, (e.beta - 45) * 0.7);
+  if ($("visor3d").hidden || e.gamma == null || e.beta == null) return;
+  if (!giro.neutro) giro.neutro = { b: e.beta, g: e.gamma };
+  giro.neutro.b += (e.beta - giro.neutro.b) * 0.004;
+  giro.neutro.g += (e.gamma - giro.neutro.g) * 0.004;
+  giro.x += ((e.gamma - giro.neutro.g) * 1.1 - giro.x) * 0.35;
+  giro.y += ((e.beta - giro.neutro.b) * 1.1 - giro.y) * 0.35;
+  inclinar(giro.x, giro.y);
 }
 
 $("giroscopio").addEventListener("click", async () => {

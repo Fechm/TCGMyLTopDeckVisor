@@ -36,7 +36,7 @@
         if (hue < 0) hue += 360;
       }
       lum[i] = l;
-      tinte[i] = Math.pow(1 - l, 1.3) * (1 - 0.75 * sat);
+      tinte[i] = 0.3 + 0.7 * Math.pow(1 - l, 1.3) * (1 - 0.75 * sat);
       oro[i] = (hue > 28 && hue < 62 ? 1 : 0) * suave(0.3, 0.55, sat) * suave(0.28, 0.5, l) * (1 - suave(0.85, 0.97, l));
     }
     let semilla = 0;
@@ -71,7 +71,7 @@
     for (let k = 0; k < 256; k++) { const d = k / 64; campana[k] = Math.exp(-d * d); }
 
     function dibujar(rx, ry) {
-      const fuerza = Math.min(1, Math.hypot(rx, ry) / 18);
+      const fuerza = 0.25 + 0.75 * Math.min(1, Math.hypot(rx, ry) / 15);
       const lx = ry / 25, ly = -rx / 25;
       const centro = 0.5 + (ry * 0.9 - rx * 0.5) / 40;
       const inv = 64 / (0.12 + aspecto.tam * 0.25);
