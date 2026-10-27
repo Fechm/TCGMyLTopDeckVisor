@@ -175,7 +175,7 @@
     <p class="tienes" id="ficha-tienes"></p>
     <div class="barra" style="gap:12px">
       <button type="button" class="control" id="anterior" aria-label="Carta anterior">‹</button>
-      <span class="ayuda">Arrastra para inclinar · toca para dar vuelta</span>
+      <span class="ayuda" id="ayuda-visor">Arrastra para inclinar · toca para dar vuelta</span>
       <button type="button" class="control" id="siguiente" aria-label="Carta siguiente">›</button>
     </div>
   </div>
@@ -279,6 +279,7 @@ const visor = { i: 0, girada: false, rx: 0, ry: 0, giro: false, arrastre: null }
 
 function abrir(i) {
   giro.neutro = null;
+  if (matchMedia("(pointer: coarse)").matches) activarGiro(true);
   visor.i = i;
   $("visor3d").hidden = false;
   document.body.style.overflow = "hidden";
@@ -406,17 +407,21 @@ function alOrientar(e) {
   inclinar(giro.x, giro.y);
 }
 
-$("giroscopio").addEventListener("click", async () => {
+async function activarGiro(silencioso) {
+  if (visor.giro || !("DeviceOrientationEvent" in window)) return;
   try {
     if (typeof DeviceOrientationEvent.requestPermission === "function") {
       const r = await DeviceOrientationEvent.requestPermission();
-      if (r !== "granted") { $("giroscopio").textContent = "Permiso denegado"; return; }
+      if (r !== "granted") { if (!silencioso) $("giroscopio").textContent = "Permiso denegado"; return; }
     }
     window.addEventListener("deviceorientation", alOrientar);
     visor.giro = true;
     $("giroscopio").hidden = true;
-  } catch (e) { $("giroscopio").textContent = "No disponible"; }
-});
+    $("ayuda-visor").textContent = "Mueve el teléfono para inclinar · toca para dar vuelta";
+  } catch (e) { if (!silencioso) $("giroscopio").textContent = "No disponible"; }
+}
+
+$("giroscopio").addEventListener("click", () => activarGiro(false));
 $("cerrar").addEventListener("click", cerrar);
 $("anterior").addEventListener("click", () => pasar(-1));
 $("siguiente").addEventListener("click", () => pasar(1));
