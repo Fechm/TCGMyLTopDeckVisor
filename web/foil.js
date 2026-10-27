@@ -68,7 +68,6 @@
     }
     const campana = new Float32Array(256);
     for (let k = 0; k < 256; k++) { const d = k / 64; campana[k] = Math.exp(-d * d); }
-    for (let i = 0; i < n * 4; i += 4) o[i + 3] = 255;
 
     function dibujar(rx, ry) {
       const fuerza = Math.min(1, Math.hypot(rx, ry) / 18);
@@ -83,12 +82,16 @@
         const barrido = d < 255 ? campana[d | 0] : 0;
         const e = oro[i] > 0 ? nx[i] * lx + ny[i] * ly : 0;
         const brillo = e > 0 ? oro[i] * e * Math.sqrt(e) * 561 : 0;
-        if (barrido < 0.01 && brillo === 0) { o[k] = o[k + 1] = o[k + 2] = 0; continue; }
+        if (barrido < 0.01 && brillo === 0) { o[k + 3] = 0; continue; }
         const c = (((desfase + p * 90) | 0) % 360) * 3;
         const color = base[i] * barrido * kColor, blanco = barrido * kBlanco;
-        o[k] = paleta[c] * color + blanco + brillo;
-        o[k + 1] = paleta[c + 1] * color + blanco + brillo * 0.92;
-        o[k + 2] = paleta[c + 2] * color + blanco + brillo * 0.7;
+        const r = Math.min(255, paleta[c] * color + blanco + brillo);
+        const g = Math.min(255, paleta[c + 1] * color + blanco + brillo * 0.92);
+        const b = Math.min(255, paleta[c + 2] * color + blanco + brillo * 0.7);
+        const a = Math.max(r, g, b);
+        if (a < 1) { o[k + 3] = 0; continue; }
+        const f = 255 / a;
+        o[k] = r * f; o[k + 1] = g * f; o[k + 2] = b * f; o[k + 3] = a;
       }
       ctx.putImageData(salida, 0, 0);
     }
