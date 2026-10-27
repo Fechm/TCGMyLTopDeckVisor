@@ -99,18 +99,16 @@
   .trasera .lema { font: 600 0.8rem var(--body); color: #e9c46a; opacity: 0.8; letter-spacing: 0.3em; text-transform: uppercase; margin-top: 6px; }
   .reflejo { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: soft-light;
     background: radial-gradient(circle at var(--mx, 50%) var(--my, 30%), rgb(255 255 255 / 0.75), rgb(255 255 255 / 0.1) 35%, transparent 60%); }
-  .holo { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: color-dodge; opacity: var(--ho, 0.4); transition: opacity 0.2s;
+  .holo { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: screen; opacity: var(--ho, 0.4); transition: opacity 0.2s;
     background-image:
-      repeating-linear-gradient(115deg, hsl(0 90% 62%) 0%, hsl(40 95% 60%) 3.5%, hsl(90 85% 58%) 7%, hsl(170 85% 58%) 10.5%,
-        hsl(220 90% 64%) 14%, hsl(280 85% 66%) 17.5%, hsl(330 90% 62%) 21%, hsl(360 90% 62%) 24.5%),
-      repeating-linear-gradient(55deg, rgb(0 0 0 / 0.6) 0%, rgb(255 255 255 / 0.3) 2.5%, rgb(0 0 0 / 0.6) 5%);
-    background-size: 300% 300%, 220% 220%;
-    background-position: var(--hx, 50%) var(--hy, 50%), calc(100% - var(--hx, 50%)) calc(100% - var(--hy, 50%));
-    background-blend-mode: overlay;
-    filter: brightness(0.7) contrast(1.4) saturate(1.1);
-    -webkit-mask-image: radial-gradient(farthest-corner circle at var(--mx, 50%) var(--my, 50%), #000 0%, rgb(0 0 0 / 0.5) 35%, rgb(0 0 0 / 0.1) 80%);
-    mask-image: radial-gradient(farthest-corner circle at var(--mx, 50%) var(--my, 50%), #000 0%, rgb(0 0 0 / 0.5) 35%, rgb(0 0 0 / 0.1) 80%); }
-  .holo::after { content: ""; position: absolute; inset: 0; mix-blend-mode: color-dodge; opacity: 0.4;
+      radial-gradient(circle at var(--mx, 50%) var(--my, 50%), rgb(255 255 255 / var(--blanco, 0.4)), transparent var(--tam, 55%)),
+      linear-gradient(var(--ang, 125deg), hsl(var(--h, 220) var(--sat, 70%) 52%) 0%, hsl(calc(var(--h, 220) + 50) var(--sat, 70%) 56%) 30%,
+        hsl(calc(var(--h, 220) + 130) var(--sat, 70%) 52%) 62%, hsl(calc(var(--h, 220) + 190) var(--sat, 70%) 56%) 100%);
+    background-size: 100% 100%, 260% 260%;
+    background-position: center, var(--hx, 50%) var(--hy, 50%);
+    -webkit-mask-image: radial-gradient(circle at var(--mx, 50%) var(--my, 50%), #000 0%, rgb(0 0 0 / 0.6) calc(var(--tam, 55%) * 0.6), transparent calc(var(--tam, 55%) * 1.5));
+    mask-image: radial-gradient(circle at var(--mx, 50%) var(--my, 50%), #000 0%, rgb(0 0 0 / 0.6) calc(var(--tam, 55%) * 0.6), transparent calc(var(--tam, 55%) * 1.5)); }
+  .holo::after { content: ""; position: absolute; inset: 0; mix-blend-mode: color-dodge; opacity: var(--chispa, 0.3);
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='1' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 10 -7'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
     background-size: 180px 180px; background-position: var(--hx, 50%) var(--hy, 50%); }
   .ficha { text-align: center; display: grid; gap: 4px; justify-items: center; }
@@ -318,6 +316,7 @@ function mostrar() {
   $("ficha-tienes").textContent = `Tienes ×${x.cantidad}${x.foil ? ` · ✨ ${x.foil} foil` : ""}`;
   $("posicion").textContent = `${visor.i + 1} de ${visibles.length}`;
   $("holo").hidden = !x.foil;
+  if (x.foil) aspectoFoil($("holo"), String(x.id));
   const img = $("imagen");
   $("sin-imagen").hidden = true;
   img.hidden = false;
@@ -329,6 +328,20 @@ function mostrar() {
   img.alt = x.nombre;
 }
 
+function aspectoFoil(el, id) {
+  let h = 2166136261;
+  for (const ch of id) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  const azar = n => { h = Math.imul(h ^ (h >>> 15), 2246822519) >>> 0; return (h % 1000) / 1000 * n; };
+  const tonos = [215, 265, 330, 175, 40, 0];
+  const p = { h: tonos[Math.floor(azar(tonos.length))] + azar(20) - 10, sat: 35 + azar(45), blanco: 0.25 + azar(0.5), tam: 30 + azar(45), chispa: azar(0.55), ang: 100 + azar(60) };
+  el.style.setProperty("--h", p.h.toFixed(0));
+  el.style.setProperty("--sat", `${p.sat.toFixed(0)}%`);
+  el.style.setProperty("--blanco", p.blanco.toFixed(2));
+  el.style.setProperty("--tam", `${p.tam.toFixed(0)}%`);
+  el.style.setProperty("--chispa", p.chispa.toFixed(2));
+  el.style.setProperty("--ang", `${p.ang.toFixed(0)}deg`);
+}
+
 function aplicar(suave) {
   const c = $("carta3d");
   c.classList.toggle("girando", !!suave);
@@ -338,7 +351,7 @@ function aplicar(suave) {
   c.style.setProperty("--my", `${my}%`);
   c.style.setProperty("--hx", `${50 + visor.ry * 3}%`);
   c.style.setProperty("--hy", `${50 + visor.rx * 3}%`);
-  c.style.setProperty("--ho", (0.25 + 0.5 * Math.min(1, Math.hypot(visor.rx, visor.ry) / 20)).toFixed(2));
+  c.style.setProperty("--ho", (0.2 + 0.6 * Math.min(1, Math.hypot(visor.rx, visor.ry) / 20)).toFixed(2));
 }
 
 function inclinar(dx, dy) {
