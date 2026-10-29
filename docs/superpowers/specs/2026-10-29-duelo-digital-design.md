@@ -83,3 +83,7 @@ Textos y datos de las cartas: tabla `cartas` en Supabase (lectura pública con l
 3. Bot de etapa 1 y autojuego de 500 partidas sin errores.
 4. Mesa en `web/duelo.html` y pestaña «Duelo».
 5. Después: bot Monte Carlo y, si hace falta, red por self-play.
+
+## Estado
+
+- **Etapa 1 (2026-10-29): lista.** `web/duelo/motor.js` + `web/duelo/cartas-base.js` (generado con `node scripts/duelo-cartas-base.mjs`, toma la edición IMP más reciente de cada nombre), 18 pruebas en `node --test pruebas/*.test.mjs` y `node scripts/duelo-autojuego.mjs 500` con bot al azar: 500/500 con ganador, 0 errores, 0 bucles, ~37 turnos por partida (Dragón 470, Caballero 30: sin habilidades las armas suman 0 y los aliados Caballero son más chicos). Reglas dudosas, resueltas así por ahora: (1) se pierde apenas el Castillo llega a 0 (DAR §2.1), no recién al intentar robar o botar; (2) las armas solo se juegan en aliados propios; (3) el pago toma Oros cualquiera de la Reserva (hasta que haya Oros con habilidad que importen); (4) el mulligan normal se permite mientras la mano tenga más de 1 carta; (5) la fuerza de las armas viene del texto de habilidad y queda en 0 hasta la etapa 2; (6) Tótems y Talismanes se pagan y no hacen nada; (7) quien empieza se sortea con la semilla, sin elegir.
