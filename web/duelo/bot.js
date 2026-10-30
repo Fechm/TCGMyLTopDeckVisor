@@ -1,7 +1,34 @@
-import { accionesLegales, aplicar, jugadorQueDecide } from "./motor.js";
+import { accionesLegales, aplicar, jugadorQueDecide, costeDe } from "./motor.js";
 import * as N from "./nucleo.js";
 
 const MEJORA_MINIMA = 0.05;
+
+export const PESOS = {
+  castillo: 1,
+  peligro: 0.5,
+  fuerza: 1.2,
+  aliado: 0.5,
+  arma: 1,
+  totem: 2.5,
+  oro: 1,
+  oroHabilidad: 0.3,
+  carta: 0.6,
+  valorCarta: 0.08,
+  respuestaLista: 0.8,
+  amenaza: 0,
+};
+
+export const OPCIONES = { simAtaque: true, simBloqueo: true, pesos: PESOS };
+
+export function configurar(o) {
+  Object.assign(OPCIONES, o, { pesos: { ...PESOS, ...(o.pesos ?? {}) } });
+}
+
+export function amenaza(e, k) {
+  const atacantes = N.aliadosDe(e, N.rival(k)).map((a) => N.fuerza(e, a)).sort((a, b) => b - a);
+  const bloqueadores = e.jugadores[k].defensa.map((b) => N.fuerza(e, b)).sort((a, b) => b - a);
+  return atacantes.reduce((s, fa, i) => s + (i < bloqueadores.length ? Math.max(0, fa - bloqueadores[i]) : fa), 0);
+}
 
 export function valor(e, uid) {
   const c = N.carta(e, uid);
@@ -12,17 +39,32 @@ export function valor(e, uid) {
   return 2 + coste;
 }
 
-export function evaluar(e, j) {
+function respuestaLista(e, k) {
+  const p = e.jugadores[k];
+  return p.mano.some((u) => {
+    const c = N.carta(e, u);
+    if (c.sinHabilidad) return false;
+    if (c.respuesta && c.tipo === "Talismán") return costeDe(e, k, u).pagar <= p.reserva.length;
+    if (c.respuestaMano) return c.respuestaMano.oros <= p.reserva.length;
+    return false;
+  });
+}
+
+export function evaluar(e, j, w = OPCIONES.pesos) {
   if (e.ganador !== null) return e.ganador === j ? 1000 : -1000;
   const lado = (k) => {
     const p = e.jugadores[k];
     const aliados = N.aliadosDe(e, k);
     const fuerza = aliados.reduce((s, a) => s + N.fuerza(e, a), 0);
-    const oros = N.orosDe(e, k).reduce((s, o) => s + (N.activa(e, o) && !N.carta(e, o).sinHabilidad ? 1.3 : 1), 0);
-    const mano = p.mano.reduce((s, u) => s + 0.6 + 0.08 * valor(e, u), 0);
+    const oros = N.orosDe(e, k).reduce((s, o) => s + w.oro + (N.activa(e, o) && !N.carta(e, o).sinHabilidad ? w.oroHabilidad : 0), 0);
+    const mano = p.mano.reduce((s, u) => s + w.carta + w.valorCarta * valor(e, u), 0);
     const castillo = p.castillo.length;
-    const peligro = castillo < 10 ? (10 - castillo) * 0.5 : 0;
-    return castillo - peligro + fuerza * 1.2 + aliados.length * 0.5 + N.armasDe(e, k).length + p.apoyo.length * 2.5 + oros + mano;
+    const peligro = castillo < 10 ? (10 - castillo) * w.peligro : 0;
+    const guardia = e.activo === k && respuestaLista(e, k) ? w.respuestaLista : 0;
+    const riesgo = Math.min(amenaza(e, k), castillo) * w.amenaza;
+    return (
+      castillo * w.castillo - peligro - riesgo + fuerza * w.fuerza + aliados.length * w.aliado + N.armasDe(e, k).length * w.arma + p.apoyo.length * w.totem + oros + mano + guardia
+    );
   };
   return lado(j) - lado(N.rival(j));
 }
@@ -51,7 +93,7 @@ export function mejorEleccion(e, prof = 0) {
   let mejorPuntaje = -Infinity;
   opciones.forEach((o, i) => {
     let s = aplicar(e, { tipo: "elegir", i });
-    if (opciones.length <= 4 && prof < 2) s = asentar(s, prof);
+    if (opciones.length <= 4 && prof === 0) s = asentar(s, prof);
     const puntaje = evaluar(s, j) - (o.valor === null ? 0.01 : 0);
     if (puntaje > mejorPuntaje) {
       mejorPuntaje = puntaje;
@@ -75,27 +117,10 @@ function mejorJugada(e, j, candidatas) {
   return mejor;
 }
 
-function bloqueadoresRivales(e, j) {
-  return e.jugadores[N.rival(j)].defensa.filter((b) => !e.efectos.some((f) => f.tipo === "noAtacarBloquear" && f.uid === b));
-}
-
-function atacantesDeseados(e, j, posibles) {
-  const blo = bloqueadoresRivales(e, j).map((b) => N.fuerza(e, b)).sort((a, b) => b - a);
-  const castilloRival = e.jugadores[N.rival(j)].castillo.length;
-  const fuerzas = posibles.map((u) => N.fuerza(e, u)).sort((a, b) => b - a);
-  const total = fuerzas.slice(blo.length).reduce((s, f) => s + f, 0);
-  if (total >= castilloRival) return posibles;
-  const mayor = blo[0] ?? -1;
-  return posibles.filter((u) => {
-    const f = N.fuerza(e, u);
-    if (f === 0) return false;
-    return f > mayor || N.tiene(e, u, "Imbloqueable") || N.tiene(e, u, "Indestructible");
-  });
-}
-
-function decidirBloqueo(e, j, legales) {
+function reglaBloqueo(e, j, legales) {
   const bloquear = legales.filter((a) => a.tipo === "bloquear");
-  if (!bloquear.length) return legales.find((a) => a.tipo === "finBloqueo");
+  const fin = legales.find((a) => a.tipo === "finBloqueo");
+  if (!bloquear.length) return fin;
   const bloqueados = new Set(Object.values(e.bloqueos));
   const libres = e.atacantes.filter((a) => !bloqueados.has(a) && e.jugadores[N.rival(j)].ataque.includes(a));
   const entrante = libres.reduce((s, a) => s + N.fuerza(e, a), 0);
@@ -108,15 +133,87 @@ function decidirBloqueo(e, j, legales) {
     if (sobrevive && !N.tiene(e, a.atacante, "Indestructible")) return a;
   }
   for (const a of opciones) {
-    const fa = N.fuerza(e, a.atacante);
-    const fb = N.fuerza(e, a.uid);
-    if (fb === fa && valor(e, a.atacante) >= valor(e, a.uid)) return a;
+    if (N.fuerza(e, a.uid) === N.fuerza(e, a.atacante) && valor(e, a.atacante) >= valor(e, a.uid)) return a;
   }
   if (letal) {
     const chica = [...opciones].sort((x, y) => valor(e, x.uid) - valor(e, y.uid) || N.fuerza(e, y.atacante) - N.fuerza(e, x.atacante));
     return chica.find((a) => N.fuerza(e, a.atacante) === N.fuerza(e, opciones[0].atacante)) ?? chica[0];
   }
-  return legales.find((a) => a.tipo === "finBloqueo") ?? opciones[0];
+  return fin ?? opciones[0];
+}
+
+function decidirDescarte(e, j, legales) {
+  return [...legales].sort((x, y) => valor(e, x.uid) - valor(e, y.uid))[0];
+}
+
+function cerrarTurno(s, j) {
+  for (let k = 0; k < 80 && s.ganador === null && s.activo === j; k++) {
+    if (s.pendiente) {
+      s = aplicar(s, { tipo: "elegir", i: mejorEleccion(s, 2) });
+      continue;
+    }
+    const top = s.pila.at(-1);
+    if (top && !top.cerrada) {
+      s = aplicar(s, { tipo: "noResponder" });
+      continue;
+    }
+    const legales = accionesLegales(s);
+    const quien = jugadorQueDecide(s);
+    let a;
+    if (s.fase === "bloqueo") a = reglaBloqueo(s, quien, legales);
+    else if (s.fase === "final") a = decidirDescarte(s, quien, legales);
+    else a = legales.find((x) => ["pasar", "finAtaque", "terminar", "finBloqueo"].includes(x.tipo)) ?? legales[0];
+    s = aplicar(s, a);
+  }
+  return s;
+}
+
+function probar(e, j, acciones) {
+  try {
+    let s = e;
+    for (const a of acciones) s = asentar(aplicar(s, a), 1);
+    return evaluar(cerrarTurno(s, j), j);
+  } catch {
+    return -Infinity;
+  }
+}
+
+function reglaAtaque(e, j, posibles) {
+  const blo = e.jugadores[N.rival(j)].defensa.filter((b) => !e.efectos.some((f) => f.tipo === "noAtacarBloquear" && f.uid === b)).map((b) => N.fuerza(e, b)).sort((a, b) => b - a);
+  const castilloRival = e.jugadores[N.rival(j)].castillo.length;
+  const fuerzas = [...posibles, ...e.atacantes].map((u) => N.fuerza(e, u)).sort((a, b) => b - a);
+  if (fuerzas.slice(blo.length).reduce((s, f) => s + f, 0) >= castilloRival) return posibles;
+  const mayor = blo[0] ?? -1;
+  return posibles.filter((u) => {
+    const f = N.fuerza(e, u);
+    return f > 0 && (f > mayor || N.tiene(e, u, "Imbloqueable") || N.tiene(e, u, "Indestructible"));
+  });
+}
+
+function planAtaque(e, j, posibles) {
+  if (!OPCIONES.simAtaque) return reglaAtaque(e, j, posibles);
+  const previo = e.fase === "vigilia" ? [{ tipo: "batalla" }] : [];
+  const atacar = (us) => [...previo, ...us.map((uid) => ({ tipo: "atacar", uid }))];
+  let elegidos = [];
+  let mejor = probar(e, j, e.fase === "vigilia" ? [{ tipo: "terminar" }] : [{ tipo: "finAtaque" }]);
+  const todos = probar(e, j, atacar(posibles));
+  for (;;) {
+    let paso = null;
+    let puntaje = mejor;
+    for (const u of posibles) {
+      if (elegidos.includes(u)) continue;
+      const p = probar(e, j, atacar([...elegidos, u]));
+      if (p > puntaje + MEJORA_MINIMA) {
+        puntaje = p;
+        paso = u;
+      }
+    }
+    if (!paso) break;
+    elegidos.push(paso);
+    mejor = puntaje;
+  }
+  if (todos > mejor + MEJORA_MINIMA) return [...posibles].sort((x, y) => N.fuerza(e, y) - N.fuerza(e, x));
+  return elegidos;
 }
 
 function decidirRespuesta(e, j, legales) {
@@ -148,30 +245,56 @@ function decidirVigilia(e, j, legales) {
   const jugada = mejorJugada(e, j, legales.filter((a) => a.tipo === "jugar" || a.tipo === "habilidad"));
   if (jugada) return jugada;
   const batalla = legales.find((a) => a.tipo === "batalla");
+  const terminar = legales.find((a) => a.tipo === "terminar");
   if (batalla) {
+    if (!terminar) return batalla;
     const posibles = accionesLegales(aplicar(e, batalla)).filter((a) => a.tipo === "atacar").map((a) => a.uid);
-    if (atacantesDeseados(e, j, posibles).length || !legales.some((a) => a.tipo === "terminar")) return batalla;
+    if (planAtaque(e, j, posibles).length) return batalla;
   }
-  return legales.find((a) => a.tipo === "terminar") ?? legales[0];
+  return terminar ?? legales[0];
 }
 
 function decidirAtaque(e, j, legales) {
   const posibles = legales.filter((a) => a.tipo === "atacar").map((a) => a.uid);
-  const deseados = atacantesDeseados(e, j, [...posibles, ...e.atacantes]).filter((u) => posibles.includes(u));
-  if (deseados.length) return { tipo: "atacar", uid: deseados[0] };
   const fin = legales.find((a) => a.tipo === "finAtaque");
+  if (!posibles.length) return fin;
+  const plan = planAtaque(e, j, posibles);
+  if (plan.length) return { tipo: "atacar", uid: plan[0] };
   if (fin) return fin;
-  const mejor = [...posibles].sort((x, y) => N.fuerza(e, y) - N.fuerza(e, x))[0];
-  return { tipo: "atacar", uid: mejor };
+  const puntajes = posibles.map((uid) => [uid, probar(e, j, [{ tipo: "atacar", uid }])]);
+  return { tipo: "atacar", uid: puntajes.sort((x, y) => y[1] - x[1])[0][0] };
+}
+
+function decidirBloqueo(e, j, legales) {
+  const fin = legales.find((a) => a.tipo === "finBloqueo");
+  const bloquear = legales.filter((a) => a.tipo === "bloquear");
+  if (!bloquear.length) return fin;
+  if (!OPCIONES.simBloqueo) return reglaBloqueo(e, j, legales);
+  const atacante = N.rival(j);
+  const puntaje = (a) => {
+    try {
+      let s = aplicar(e, a);
+      if (a.tipo === "bloquear") s = aplicar(s, reglaBloqueo(s, j, accionesLegales(s)) ?? { tipo: "finBloqueo" });
+      return -evaluar(cerrarTurno(s, atacante), atacante);
+    } catch {
+      return -Infinity;
+    }
+  };
+  let mejor = fin ?? null;
+  let mejorPuntaje = fin ? puntaje(fin) : -Infinity;
+  for (const a of bloquear) {
+    const p = puntaje(a);
+    if (p > mejorPuntaje + (mejor ? MEJORA_MINIMA : 0)) {
+      mejorPuntaje = p;
+      mejor = a;
+    }
+  }
+  return mejor ?? reglaBloqueo(e, j, legales);
 }
 
 function decidirTalismanes(e, j, legales) {
   const jugada = mejorJugada(e, j, legales.filter((a) => a.tipo !== "pasar"));
   return jugada ?? { tipo: "pasar" };
-}
-
-function decidirDescarte(e, j, legales) {
-  return [...legales].sort((x, y) => valor(e, x.uid) - valor(e, y.uid))[0];
 }
 
 export function elegirAccion(e) {

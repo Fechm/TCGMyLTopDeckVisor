@@ -126,3 +126,24 @@ test("bot: juega una partida entera contra sí mismo sin acciones ilegales", () 
   for (let i = 0; i < 3000 && e.ganador === null; i++) e = aplicar(e, elegirAccion(e));
   assert.notEqual(e.ganador, null);
 });
+
+test("bot: valora guardar un Oro para Anular en su turno", () => {
+  const e = mesa();
+  poner(e, 0, "mano", "Ciempiés-SP");
+  const sin = evaluar(e, 0);
+  oros(e, 0, 1);
+  const con = evaluar(e, 0);
+  assert.ok(con - sin > 1);
+});
+
+test("bot: obligado a atacar por Cráneo de Cristal, ataca con el que no pierde", () => {
+  let e = mesa();
+  poner(e, 1, "reserva", "Cráneo de Cristal");
+  poner(e, 1, "defensa", "Padre Dagón");
+  poner(e, 0, "defensa", "El Dracul");
+  const balaur = poner(e, 0, "defensa", "Balaur");
+  assert.ok(!accionesLegales(e).some((a) => a.tipo === "terminar"));
+  e = aplicar(e, elegirAccion(e));
+  assert.equal(e.fase, "ataque");
+  assert.deepEqual(elegirAccion(e), { tipo: "atacar", uid: balaur });
+});
