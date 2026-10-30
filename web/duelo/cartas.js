@@ -41,6 +41,7 @@ const carcosa = [
 const barajarCementerios = [sel(["todos:cementerio"], {}, "c", { nf: "nOros", hasta: true }), mov("barajar", "c")];
 
 const alFondoYRobar = {
+  texto: "Poner esta y otra carta de tu mano al fondo del Castillo y robar dos",
   zona: "mano",
   veces: "turnoNombre",
   requiere: "otraEnMano",
@@ -60,6 +61,7 @@ export const HABILIDADES = {
     disparadas: [{ cuando: ["entra"], hacer: [{ op: "robarHasta", n: 3 }] }],
     activadas: [
       {
+        texto: "Buscar un Oro en tu Castillo para tu Oro Pagado; hasta tu próximo turno el oponente paga un Oro por sus habilidades disparadas",
         momento: "tuTurno",
         veces: "turno",
         hacer: [...buscar(["yo:castillo"], { tipo: "Oro" }, "pagado"), { op: "efecto", efecto: { tipo: "disparadasCuestan" }, jugador: "rival", fin: "proximoTurno" }],
@@ -78,13 +80,14 @@ export const HABILIDADES = {
         ],
       },
     ],
-    activadas: [{ zona: "cementerio", oros: 1, hacer: [sel(["fuente"], {}, "yo"), { op: "convertir", var: "yo", en: "Oro", a: "pagado" }] }],
+    activadas: [{ texto: "Pagar un Oro: desde el Cementerio, convertirlo en un Oro sin habilidad en tu Oro Pagado", zona: "cementerio", oros: 1, hacer: [sel(["fuente"], {}, "yo"), { op: "convertir", var: "yo", en: "Oro", a: "pagado" }] }],
     continuas: [{ orosRivalSinHabilidad: true }],
   },
   "Padre Dagón": {
     claves: ["NoAnulable"],
     activadas: [
       {
+        texto: "Una carta oponente que no sea Oro pierde su habilidad y es destruida",
         veces: "turno",
         requiere: { de: ["rival:enJuego"], filtro: { noTipo: ["Oro"] } },
         hacer: [sel(["rival:enJuego"], { noTipo: ["Oro"] }), efecto("x", { tipo: "pierdeHabilidad" }, "mientras"), mov("destruir")],
@@ -101,6 +104,7 @@ export const HABILIDADES = {
     claves: ["Furia"],
     activadas: [
       {
+        texto: "Convertir una carta en juego que no sea Oro en un Oro sin habilidad en tu Oro Pagado (si era de coste 3 o más, barajas un Oro tuyo)",
         momento: "tuTurno",
         veces: "turno",
         requiere: { de: ["todos:enJuego"], filtro: { noTipo: ["Oro"], noFuente: true }, para: "tomar" },
@@ -111,6 +115,7 @@ export const HABILIDADES = {
         ],
       },
       {
+        texto: "Barajar o desterrar hasta tres cartas de los Cementerios y robar una",
         veces: "turno",
         hacer: [
           sel(["todos:cementerio"], {}, "c", { n: 3, hasta: true }),
@@ -150,13 +155,14 @@ export const HABILIDADES = {
   },
   "Gusano Rojo": {
     claves: ["Furia", "Imbloqueable", "DanoAlDestierro"],
-    activadas: [{ veces: "turno", hacer: buscar(["todos:castillo"], { tipo: "Oro" }, "pagado") }],
+    activadas: [{ texto: "Buscar un Oro en un Castillo y ponerlo en tu Oro Pagado", veces: "turno", hacer: buscar(["todos:castillo"], { tipo: "Oro" }, "pagado") }],
   },
   "Martillo Sacro": {
     claves: ["Exhumar"],
     portador: { fuerza: 1, claves: ["Indestructible"] },
     activadas: [
       {
+        texto: "Destruir un Aliado oponente de coste 2 o menos (si tiene Exhumar, desterrarlo)",
         momento: "vigilia",
         veces: "turno",
         requiere: { de: ["rival:aliados"], filtro: { costeMax: 2 } },
@@ -237,7 +243,7 @@ export const HABILIDADES = {
     requiere: { de: ["todos:enJuego"], filtro: { costeMax: 3 } },
     talisman: [sel(["todos:enJuego"], { costeMax: 3 }), mov("barajar")],
     respuesta: { anula: { tipo: "Talismán" } },
-    activadas: [{ zona: "cementerio", oros: 1, hacer: [sel(["fuente"], {}, "yo"), mov("mano", "yo"), robar(1)] }],
+    activadas: [{ texto: "Pagar un Oro: subirla del Cementerio a tu mano y robar una", zona: "cementerio", oros: 1, hacer: [sel(["fuente"], {}, "yo"), mov("mano", "yo"), robar(1)] }],
   },
   "Cuervo Nocturno": {
     claves: ["NoAnulable"],
@@ -339,6 +345,7 @@ export const HABILIDADES = {
     ],
     activadas: [
       {
+        texto: "Desterrar un Oro con habilidad de tu Reserva y buscar un Oro en tu Castillo para tu Reserva",
         veces: "turno",
         requiere: { de: ["yo:reserva"], filtro: { tipo: "Oro", conHabilidad: true } },
         hacer: [sel(["yo:reserva"], { tipo: "Oro", conHabilidad: true }), mov("desterrar"), ...buscar(["yo:castillo"], { tipo: "Oro" }, "reserva")],
@@ -368,12 +375,13 @@ export const HABILIDADES = {
   },
   "Agua Sagrada": {
     disparadas: [{ cuando: ["entra", "sale"], hacer: [sel(["todos:cementerio"], {}, "c", { n: 3, hasta: true }), mov("barajar", "c")] }],
-    activadas: [{ veces: "turno", oros: 1, hacer: buscar(["yo:castillo", "yo:cementerio"], { tipo: ["Oro", "Arma", "Tótem"] }) }],
+    activadas: [{ texto: "Pagar un Oro: buscar un Oro, Arma o Tótem en tu Castillo o Cementerio", veces: "turno", oros: 1, hacer: buscar(["yo:castillo", "yo:cementerio"], { tipo: ["Oro", "Arma", "Tótem"] }) }],
   },
   Tetramorfo: {
     disparadas: [{ cuando: ["entra"], hacer: [robar(1)] }],
     activadas: [
       {
+        texto: "Desterrar una carta de tu Cementerio: una carta que no sea Oro y sus copias pierden su habilidad hasta la Fase Final",
         momento: "tuTurno",
         veces: "turno",
         requiere: "puede",
@@ -408,8 +416,8 @@ export const HABILIDADES = {
   },
   "Hem Hem Real": {
     activadas: [
-      { veces: "turno", requiere: { de: ["todos:aliados"], filtro: {} }, hacer: [sel(["todos:aliados"]), efecto("x", { tipo: "sinDano" })] },
-      { coste: [sel(["fuente"], {}, "yo"), mov("mano", "yo")], hacer: [robar(2), sel(["todos:aliados"], {}, "a"), efecto("a", { tipo: "fuerza", n: 2 })] },
+      { texto: "Un Aliado no hace daño de combate este turno", veces: "turno", requiere: { de: ["todos:aliados"], filtro: {} }, hacer: [sel(["todos:aliados"]), efecto("x", { tipo: "sinDano" })] },
+      { texto: "Subir este Oro a tu mano: robar dos y un Aliado gana 2 de Fuerza este turno", coste: [sel(["fuente"], {}, "yo"), mov("mano", "yo")], hacer: [robar(2), sel(["todos:aliados"], {}, "a"), efecto("a", { tipo: "fuerza", n: 2 })] },
     ],
   },
   "Patrulla Nocturna": {
@@ -472,6 +480,7 @@ export const HABILIDADES = {
     continuas: [{ aliadosNoCambian: true }],
     activadas: [
       {
+        texto: "Barajar un Aliado oponente de coste 2 o menos y robar una",
         momento: "vigilia",
         veces: "turno",
         requiere: { de: ["rival:aliados"], filtro: { costeMax: 2 } },
@@ -490,7 +499,7 @@ export const HABILIDADES = {
         hacer: [{ op: "mostrarHasta", n: 2, filtro: { tipo: "Tótem", costeMax: 2 }, distintoNombre: true, como: "m" }, { op: "jugarGratis", var: "m" }, barajar()],
       },
     ],
-    activadas: [{ veces: "turno", hacer: [castilloElegido((quien) => [{ op: "desterrarTope", quien, nf: "totems" }])] }],
+    activadas: [{ texto: "Desterrar del tope de un Castillo tantas cartas como Tótems controles", veces: "turno", hacer: [castilloElegido((quien) => [{ op: "desterrarTope", quien, nf: "totems" }])] }],
     fns: { totems: (e, ctx) => e.jugadores[ctx.ctrl].apoyo.length },
   },
   "Llamada Sombría": {
@@ -574,6 +583,7 @@ export const HABILIDADES = {
     disparadas: [{ cuando: ["entra"], hacer: buscar(["yo:castillo"], { tipo: ["Arma", "Oro"] }) }],
     activadas: [
       {
+        texto: "Pagar este Oro: un Oro pierde su habilidad este turno y pasa al Oro Pagado",
         requiere: "enReserva",
         coste: [sel(["fuente"], {}, "yo"), mov("pagado", "yo")],
         hacer: [sel(["todos:reserva"], { tipo: "Oro", noFuente: true }), efecto("x", { tipo: "pierdeHabilidad" }), mov("pagado")],
@@ -625,6 +635,7 @@ export const HABILIDADES = {
     disparadas: [{ cuando: ["entra"], hacer: buscar(["yo:castillo"], { noTipo: ["Aliado", "Talismán"] }) }],
     activadas: [
       {
+        texto: "Destruir este Oro: barajar o desterrar hasta cinco cartas de los Cementerios",
         coste: [sel(["fuente"], {}, "yo"), mov("destruir", "yo")],
         hacer: [
           sel(["todos:cementerio"], {}, "c", { n: 5, hasta: true }),

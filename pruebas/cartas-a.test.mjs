@@ -767,3 +767,44 @@ test("Abadía de Carfax: sí puede ser afectada por cartas de coste distinto de 
   e = sinRespuesta(hacer(e, jugar(carcosa), 0));
   assert.ok(e.pendiente.opciones.map((o) => o.valor).includes(abadia));
 });
+
+test("White Worm: la conversión no se puede usar en el turno del oponente", () => {
+  let e = mesa();
+  e.activo = 1;
+  e.fase = "talismanes";
+  e.prioridad = 0;
+  const w = poner(e, 0, "defensa", "White Worm");
+  poner(e, 1, "defensa", "Valefor");
+  poner(e, 0, "cementerio", "Valefor");
+  const usables = accionesLegales(e).filter((a) => a.tipo === "habilidad" && a.uid === w).map((a) => a.h);
+  assert.deepEqual(usables, [1]);
+});
+
+test("White Worm: no puede convertirse a sí mismo", () => {
+  let e = mesa();
+  const w = poner(e, 0, "defensa", "White Worm");
+  poner(e, 1, "defensa", "Valefor");
+  poner(e, 1, "defensa", "Sir Galahad");
+  e = aplicar(e, habilidad(w, "White Worm"));
+  assert.ok(e.pendiente);
+  assert.ok(!e.pendiente.opciones.some((o) => o.valor === w));
+});
+
+test("White Worm: no puede tomar Aliados oponentes si controlan Hacha Danesa, pero sí el Hacha", () => {
+  let e = mesa();
+  const w = poner(e, 0, "defensa", "White Worm");
+  const rival = poner(e, 1, "defensa", "Sir Galahad");
+  const hacha = poner(e, 1, "arma", "Hacha Danesa", { portador: rival });
+  e = aplicar(e, habilidad(w, "White Worm"));
+  const valores = (e.pendiente?.opciones ?? []).map((o) => o.valor);
+  assert.ok(!valores.includes(rival));
+  assert.ok(valores.includes(hacha) || zonaDe(e, hacha) === "pagado");
+});
+
+test("White Worm: con Abu Simbel en juego no puede tomar cartas que no son suyas", () => {
+  const e = mesa();
+  const w = poner(e, 0, "defensa", "White Worm");
+  poner(e, 1, "defensa", "Sir Galahad");
+  poner(e, 1, "reserva", "Abu Simbel");
+  assert.ok(!accionesLegales(e).some((a) => a.tipo === "habilidad" && a.uid === w && a.h === 0));
+});

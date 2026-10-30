@@ -48,6 +48,7 @@ for (const [mazo, lista] of Object.entries(mazosFuente)) {
       razas: f.razas ?? [],
       oroInicial: f.tipo === "Oro" && /oro inicial/i.test(f.habilidad ?? ""),
       sinHabilidad: !(f.habilidad ?? "").trim(),
+      texto: (f.habilidad ?? "").replace(/\s+/g, " ").trim(),
     };
     for (let i = 0; i < copias; i++) mazos[mazo].push(f.id);
   }
