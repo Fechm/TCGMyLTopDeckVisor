@@ -1,72 +1,23 @@
-import { accionesLegales, aplicar, jugadorQueDecide, costeDe } from "./motor.js";
+import { accionesLegales, aplicar, jugadorQueDecide } from "./motor.js";
 import * as N from "./nucleo.js";
 
+import { MODELO } from "./modelo.js";
+import { rasgos, logit, valor, ESCALA } from "./aprendizaje.js";
+
+export { valor };
+
 const MEJORA_MINIMA = 0.05;
+const MAX_CANDIDATOS_ATAQUE = 4;
 
-export const PESOS = {
-  castillo: 1,
-  peligro: 0.5,
-  fuerza: 1.2,
-  aliado: 0.5,
-  arma: 1,
-  totem: 2.5,
-  oro: 1,
-  oroHabilidad: 0.3,
-  carta: 0.6,
-  valorCarta: 0.08,
-  respuestaLista: 0.8,
-  amenaza: 0,
-};
-
-export const OPCIONES = { simAtaque: true, simBloqueo: true, pesos: PESOS };
+export const OPCIONES = { simAtaque: true, simBloqueo: true, modelo: MODELO };
 
 export function configurar(o) {
-  Object.assign(OPCIONES, o, { pesos: { ...PESOS, ...(o.pesos ?? {}) } });
+  Object.assign(OPCIONES, o);
 }
 
-export function amenaza(e, k) {
-  const atacantes = N.aliadosDe(e, N.rival(k)).map((a) => N.fuerza(e, a)).sort((a, b) => b - a);
-  const bloqueadores = e.jugadores[k].defensa.map((b) => N.fuerza(e, b)).sort((a, b) => b - a);
-  return atacantes.reduce((s, fa, i) => s + (i < bloqueadores.length ? Math.max(0, fa - bloqueadores[i]) : fa), 0);
-}
-
-export function valor(e, uid) {
-  const c = N.carta(e, uid);
-  const coste = c.coste ?? 0;
-  if (c.tipo === "Aliado") return (c.fuerza ?? 0) + coste;
-  if (c.tipo === "Oro") return c.sinHabilidad ? 1 : 1.5;
-  if (c.tipo === "Tótem") return 3 + coste;
-  return 2 + coste;
-}
-
-function respuestaLista(e, k) {
-  const p = e.jugadores[k];
-  return p.mano.some((u) => {
-    const c = N.carta(e, u);
-    if (c.sinHabilidad) return false;
-    if (c.respuesta && c.tipo === "Talismán") return costeDe(e, k, u).pagar <= p.reserva.length;
-    if (c.respuestaMano) return c.respuestaMano.oros <= p.reserva.length;
-    return false;
-  });
-}
-
-export function evaluar(e, j, w = OPCIONES.pesos) {
+export function evaluar(e, j, modelo = OPCIONES.modelo) {
   if (e.ganador !== null) return e.ganador === j ? 1000 : -1000;
-  const lado = (k) => {
-    const p = e.jugadores[k];
-    const aliados = N.aliadosDe(e, k);
-    const fuerza = aliados.reduce((s, a) => s + N.fuerza(e, a), 0);
-    const oros = N.orosDe(e, k).reduce((s, o) => s + w.oro + (N.activa(e, o) && !N.carta(e, o).sinHabilidad ? w.oroHabilidad : 0), 0);
-    const mano = p.mano.reduce((s, u) => s + w.carta + w.valorCarta * valor(e, u), 0);
-    const castillo = p.castillo.length;
-    const peligro = castillo < 10 ? (10 - castillo) * w.peligro : 0;
-    const guardia = e.activo === k && respuestaLista(e, k) ? w.respuestaLista : 0;
-    const riesgo = Math.min(amenaza(e, k), castillo) * w.amenaza;
-    return (
-      castillo * w.castillo - peligro - riesgo + fuerza * w.fuerza + aliados.length * w.aliado + N.armasDe(e, k).length * w.arma + p.apoyo.length * w.totem + oros + mano + guardia
-    );
-  };
-  return lado(j) - lado(N.rival(j));
+  return ESCALA * logit(modelo, rasgos(e, j), j);
 }
 
 function asentar(e, prof) {
@@ -197,10 +148,11 @@ function planAtaque(e, j, posibles) {
   let elegidos = [];
   let mejor = probar(e, j, e.fase === "vigilia" ? [{ tipo: "terminar" }] : [{ tipo: "finAtaque" }]);
   const todos = probar(e, j, atacar(posibles));
-  for (;;) {
+  const candidatos = [...posibles].sort((x, y) => N.fuerza(e, y) - N.fuerza(e, x)).slice(0, MAX_CANDIDATOS_ATAQUE);
+  for (let ronda = 0; ronda < MAX_CANDIDATOS_ATAQUE; ronda++) {
     let paso = null;
     let puntaje = mejor;
-    for (const u of posibles) {
+    for (const u of candidatos) {
       if (elegidos.includes(u)) continue;
       const p = probar(e, j, atacar([...elegidos, u]));
       if (p > puntaje + MEJORA_MINIMA) {

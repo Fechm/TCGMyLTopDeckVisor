@@ -175,12 +175,16 @@
 <script type="module">
 import { crearPartida, accionesLegales, aplicar, jugadorQueDecide, costeDe } from "./duelo/motor.js";
 import { CATALOGO, MAZOS } from "./duelo/cartas.js";
-import { elegirAccion } from "./duelo/bot.js";
+import { elegirAccion, configurar } from "./duelo/bot.js";
+import { MODELO } from "./duelo/modelo.js";
+import { foto, ajustar, muestrasDePartida } from "./duelo/aprendizaje.js";
 import * as N from "./duelo/nucleo.js";
 
 const $ = (id) => document.getElementById(id);
 const YO = 0, IA = 1;
 const GUARDADO = "duelo-partida";
+const MEMORIA = "duelo-aprendizaje";
+const PARTIDAS_RECORDADAS = 15;
 const PAUSA_IA = 800;
 const DURACION = 420;
 const SIN_MOVIMIENTO = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -192,6 +196,9 @@ const PILAS = ["castillo", "cementerio", "destierro"];
 
 let e = null;
 let registro = [];
+let fotos = [];
+let aprendizaje = cargarAprendizaje();
+configurar({ modelo: aprendizaje.modelo });
 let seleccion = null;
 let iaTrabajando = false;
 let zonaPrevia = new Map();
@@ -216,10 +223,36 @@ function avisar(texto) {
   avisoTimer = setTimeout(() => a.classList.remove("visible"), 1400);
 }
 
+function cargarAprendizaje() {
+  try {
+    const m = JSON.parse(localStorage.getItem(MEMORIA) || "null");
+    if (m && m.base === MODELO.version) return m;
+  } catch (x) {}
+  return { base: MODELO.version, modelo: MODELO, recuerdos: [], aprendidas: 0 };
+}
+
+function aprender() {
+  if (!fotos.length || e.ganador === null) return;
+  aprendizaje.recuerdos.push(muestrasDePartida(fotos, e.ganador));
+  aprendizaje.recuerdos = aprendizaje.recuerdos.slice(-PARTIDAS_RECORDADAS);
+  aprendizaje.modelo = ajustar(aprendizaje.modelo, aprendizaje.recuerdos.flat(), { pasos: 40, tasa: 0.1, l2: 0.3, ancla: MODELO });
+  aprendizaje.aprendidas += 1;
+  fotos = [];
+  configurar({ modelo: aprendizaje.modelo });
+  try { localStorage.setItem(MEMORIA, JSON.stringify(aprendizaje)); } catch (x) {}
+  anotar(`La IA aprendió de esta partida (${aprendizaje.aprendidas} partida${aprendizaje.aprendidas === 1 ? "" : "s"} contigo en este teléfono).`, "sistema");
+}
+
+function fotografiar() {
+  if (e.ganador !== null || e.fase !== "vigilia" || e.pendiente) return;
+  if (fotos.length && fotos.at(-1).turno === e.turno) return;
+  fotos.push({ turno: e.turno, ...foto(e) });
+}
+
 function guardar() {
   try {
     const { catalogo, ...resto } = e;
-    localStorage.setItem(GUARDADO, JSON.stringify({ e: resto, registro }));
+    localStorage.setItem(GUARDADO, JSON.stringify({ e: resto, registro, fotos }));
   } catch (x) {}
 }
 
@@ -229,6 +262,7 @@ function cargar() {
     if (!g?.e) return false;
     e = { ...g.e, catalogo: CATALOGO };
     registro = g.registro ?? [];
+    fotos = g.fotos ?? [];
     return true;
   } catch (x) {
     return false;
@@ -239,6 +273,7 @@ function nuevaPartida() {
   const semilla = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
   e = crearPartida({ semilla, mazos: [MAZOS.dragon, MAZOS.caballero] });
   registro = [];
+  fotos = [];
   seleccion = null;
   zonaPrevia = new Map();
   for (const el of elementos.values()) el.remove();
@@ -303,9 +338,11 @@ function hacer(accion) {
     anotar(t, "sistema");
     avisar(t);
   }
+  fotografiar();
   if (e.ganador !== null) {
     anotar(e.ganador === YO ? "¡Ganaste!" : "La IA gana.", "sistema");
     avisar(e.ganador === YO ? "¡Ganaste!" : "La IA gana");
+    aprender();
   }
   seleccion = null;
   guardar();
