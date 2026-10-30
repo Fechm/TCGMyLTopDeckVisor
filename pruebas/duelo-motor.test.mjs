@@ -8,7 +8,7 @@ const cat = {
   oro: { id: "oro", tipo: "Oro", coste: 0, fuerza: 0, oroInicial: false, sinHabilidad: true },
   a3: { id: "a3", tipo: "Aliado", coste: 2, fuerza: 3 },
   a5: { id: "a5", tipo: "Aliado", coste: 3, fuerza: 5 },
-  arma: { id: "arma", tipo: "Arma", coste: 1, fuerza: 2 },
+  arma: { id: "arma", tipo: "Arma", coste: 1, fuerza: 0, portador: { fuerza: 2 } },
   tot: { id: "tot", tipo: "Tótem", coste: 1, fuerza: 0 },
   tal: { id: "tal", tipo: "Talismán", coste: 1, fuerza: 0 },
 };
@@ -178,7 +178,7 @@ test("bloqueador más fuerte destruye al atacante sin daño; el arma va al cemen
   const [a3] = conUids(e0, 0, "defensa", ["a3"]);
   const [w] = conUids(e0, 0, "apoyo", ["arma"]);
   e0.jugadores[0].apoyo = [];
-  e0.armas[a3] = w;
+  e0.armas[a3] = [w];
   const [b5] = conUids(e0, 1, "defensa", ["a5"]);
   const antes = e0.jugadores[1].castillo.length;
   const e = hastaCombate(e0, [a3], [[b5, a3]]);
