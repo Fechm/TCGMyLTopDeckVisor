@@ -98,3 +98,18 @@ Textos y datos de las cartas: tabla `cartas` en Supabase (lectura pública con l
   - **Tus partidas:** la mesa guarda una foto de la mesa al comenzar cada turno y, al terminar la partida, ajusta el modelo de ese teléfono con las últimas 15 partidas, anclado al modelo base. Queda en `localStorage` (`duelo-aprendizaje`) y se reinicia si se publica una versión base nueva.
 
   **Resultado medido:** 10 generaciones con ~4.200 partidas. La pérdida bajó de 0,52 a 0,29, pero el único candidato aceptado (v1) empató con v0 en una comparación independiente de 840 partidas (48,6 % ± 3,4). Predecir quién gana no enseña a jugar mejor, así que se publica v0. Además, el plan de ataque quedó limitado a los 4 Aliados más fuertes, porque con pesos extremos algunas partidas se pegaban más de 90 s. Para que el bot mejore de verdad hay que optimizar directo la tasa de victorias (estrategias evolutivas sobre los pesos) o agregar búsqueda (Monte Carlo); eso queda en el plan siguiente. 241 pruebas.
+- **Cartas nuevas desde el Top Deck (2026-10-30).** Se transcribieron las 35 cartas de la colección de Felipe que faltaban (95 en total). Flujo para cartas nuevas:
+  1. `node scripts/duelo-pendientes.mjs <colección.json> <salida.md>` lista las cartas legales (catálogo escaneable, sin banlist) que el motor no conoce, con su texto oficial.
+  2. Agregar los nombres a `web/duelo/transcritas.json` y correr `node scripts/duelo-cartas-base.mjs`.
+  3. Transcribir en una tanda nueva `web/duelo/tandas/tanda-NN.js`, importada en `cartas.js`, con sus pruebas en `pruebas/cartas-tanda-NN.test.mjs`. El brief para subagentes está en las notas de la sesión.
+
+  Los ayudantes del formato pasaron a `web/duelo/formato.js`. Ganchos nuevos del motor:
+  - Eventos `juega`, `saleDelJuego`, `alCementerio` y `busca`. `entra` informa si se pagó el coste y desde dónde.
+  - En las disparadas, `quien: "otra" | "cualquiera"` y `veces`. En las continuas, `si`, `zona` y `raza`.
+  - Oros generados (`op: "generar"`), impuestos por jugar sin pagar y por Talismán.
+  - `NoSale`, `noCambia`, `NoPortaArmas`, `debeBloquearA` y `debeAtacar` por Aliado.
+  - Silencio de entradas de Aliados baratos, límite de barajado desde Cementerios, «botar uno es botar dos», Cementerio rival sin habilidad y no barajable.
+  - Oros que silencian a los demás (Manu Tara), daño no prevenible, límite de dos Aliados que salen por efecto oponente (Plaga Inmunda), coste fijado al convertir y Anular lo jugado sin pagar desde un Oro (Santa Diestra, se ofrece como elección al rival).
+  - Exhumar ganado por efecto ya permite jugar desde el Cementerio.
+
+  Además, una habilidad cuyo coste mueve la propia carta (por ejemplo «Destrúyelo para…») solo se puede usar si ese movimiento es posible (DAR §7: los costes deben pagarse completos). Sin eso, Plaga de Ratas Indestructible entraba en un bucle. 403 pruebas, 0 pendientes. Estrés con mazos al azar de las 95 cartas: 300/300 con bot al azar y 40/40 con bot heurístico, sin errores ni bucles, y se usaron las 35 nuevas. Autojuego Dragón contra Caballero: 500/500 con ganador, 0 errores, 0 bucles (Dragón 428, Caballero 72). Simplificaciones de las tandas: «sólo pagando su coste impreso» no se modela (Ama del Tyn, Legua Muerta); «Única» es de construcción; varios «y/o» se resuelven en un orden fijo; Ileana es activada en Guerra de Talismanes; Perugia cuenta «próximos dos turnos» como este y el siguiente.

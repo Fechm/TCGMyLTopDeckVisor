@@ -14,7 +14,7 @@ export function def(e, id) {
 export function carta(e, uid) {
   const b = def(e, e.instancias[uid]);
   const c = e.conv[uid];
-  return c ? { ...b, tipo: c.tipo, fuerza: c.fuerza ?? b.fuerza, sinHabilidad: c.sinHabilidad || b.sinHabilidad } : b;
+  return c ? { ...b, tipo: c.tipo, fuerza: c.fuerza ?? b.fuerza, coste: c.coste ?? b.coste, sinHabilidad: c.sinHabilidad || b.sinHabilidad } : b;
 }
 
 export function azar(e) {
@@ -80,12 +80,25 @@ function noPuedePerder(e, uid, prof) {
 export function activa(e, uid, prof = 0) {
   const c = carta(e, uid);
   if (c.sinHabilidad) return false;
-  if (prof > 3 || !enJuego(e, uid)) return true;
+  if (prof > 3) return true;
+  if (!enJuego(e, uid)) {
+    const u = ubicar(e, uid);
+    if (u?.zona === "cementerio" && hay(e, u.j, (k, propio) => !propio && k.cementerioRivalSinHabilidad)) return false;
+    return true;
+  }
   if (noPuedePerder(e, uid, prof)) return true;
   if (e.efectos.some((f) => f.tipo === "pierdeHabilidad" && efectoSobre(f, e, uid))) return false;
   if (c.tipo === "Oro") {
     const j = controlador(e, uid);
     if (aliadosDe(e, rival(j)).some((a) => carta(e, a).continuas.some((k) => k.orosRivalSinHabilidad) && activa(e, a, prof + 1))) return false;
+    for (const k of [0, 1]) {
+      for (const o of e.jugadores[k].reserva) {
+        if (o === uid) continue;
+        const d = carta(e, o);
+        const silencia = d.continuas.some((x) => x.otrosOrosSinHabilidad && (!x.si || d.fns[x.si](e, { ctrl: k, fuente: o, def: d.id })));
+        if (silencia && activa(e, o, prof + 1)) return false;
+      }
+    }
   }
   return true;
 }
@@ -101,7 +114,14 @@ export function habilidades(e, uid) {
 
 export function* continuas(e) {
   for (const uid of todoEnJuego(e)) {
-    for (const d of habilidades(e, uid)) for (const k of d.continuas) yield { uid, j: controlador(e, uid), k };
+    const j = controlador(e, uid);
+    for (const d of habilidades(e, uid)) {
+      for (const k of d.continuas) {
+        if (k.si && !d.fns[k.si](e, { ctrl: j, fuente: uid, def: d.id })) continue;
+        if (k.zona && !e.jugadores[j][k.zona].includes(uid)) continue;
+        yield { uid, j, k };
+      }
+    }
   }
 }
 
@@ -129,10 +149,12 @@ export function fuerza(e, uid) {
   const c = carta(e, uid);
   let f = c.fuerza ?? 0;
   for (const a of e.armas[uid] ?? []) if (activa(e, a)) f += carta(e, a).portador?.fuerza ?? 0;
-  for (const { uid: fu, j, k } of continuas(e)) if (k.fuerza && alcanza(e, k.a, fu, j, uid)) f += k.fuerza;
+  for (const { uid: fu, j, k } of continuas(e)) if (k.fuerza && alcanza(e, k.a, fu, j, uid) && (!k.raza || (c.razas ?? []).includes(k.raza))) f += k.fuerza;
   for (const j of [0, 1]) {
     for (const x of e.jugadores[j].cementerio) {
-      for (const k of carta(e, x).continuasCementerio ?? []) {
+      const cc = carta(e, x).continuasCementerio;
+      if (!cc?.length || !activa(e, x)) continue;
+      for (const k of cc) {
         if (k.fuerza && (c.coste ?? 0) <= k.costeMax && (!k.conClave || tiene(e, uid, k.conClave))) f += k.fuerza;
       }
     }
@@ -146,11 +168,25 @@ export function hay(e, j, pred) {
   return false;
 }
 
+export function cuantas(e, j, pred) {
+  let n = 0;
+  for (const { j: jj, k } of continuas(e)) if (pred(k, jj === j)) n += 1;
+  return n;
+}
+
+export function puedeSalir(e, uid) {
+  if (!enJuego(e, uid)) return true;
+  if (tiene(e, uid, "NoSale")) return false;
+  return !e.efectos.some((f) => f.tipo === "noSale" && f.uid === uid);
+}
+
 export function puedeTomar(e, uid, j) {
   if (dueno(uid) !== j && hay(e, j, (k) => k.noTomarControl)) return false;
   if (!enJuego(e, uid) || controlador(e, uid) === j) return true;
   if (carta(e, uid).tipo === "Aliado") {
     if (hay(e, controlador(e, uid), (k, propio) => propio && k.aliadosNoCambian)) return false;
+    if (tiene(e, uid, "Furia") && hay(e, controlador(e, uid), (k, propio) => propio && k.furiaNoCambia)) return false;
+    if (e.efectos.some((f) => f.tipo === "noCambia" && f.uid === uid)) return false;
     if ((e.armas[uid] ?? []).some((a) => activa(e, a) && carta(e, a).portador?.noCambia)) return false;
   }
   return true;
@@ -221,7 +257,11 @@ export function mover(e, uid, zona, { j, fondo = false } = {}) {
   const lista = e.jugadores[destino][zona];
   if (zona === "castillo" && !fondo) lista.unshift(uid);
   else lista.push(uid);
-  if (sale) dispararSalida(e, uid, defsSalida, ctrlAntes);
+  if (sale) {
+    dispararSalida(e, uid, defsSalida, ctrlAntes);
+    disparar(e, "saleDelJuego", { uid, j: ctrlAntes, tipo: carta(e, uid).tipo });
+  }
+  if (zona === "cementerio") disparar(e, "alCementerio", { uid, j: dueno(uid) });
 }
 
 export function robar(e, j, n) {
@@ -237,6 +277,7 @@ function limiteCastillo(e, j, n) {
 
 export function quitarDelCastillo(e, j, n, zona, fondo = false) {
   const p = e.jugadores[j];
+  if (zona === "cementerio" && n === 1 && hay(e, j, (k, propio) => !propio && k.botarUnoEsDos)) n = 2;
   const k = limiteCastillo(e, j, n);
   const cartas = fondo ? p.castillo.splice(Math.max(0, p.castillo.length - k), k) : p.castillo.splice(0, k);
   p[zona].push(...cartas);
@@ -261,23 +302,39 @@ export function impuestoHabilidad(e, ctrl, uid, tipo) {
   return n;
 }
 
+function silenciada(e, uid, evento, datos) {
+  if (evento !== "entra" || datos.uid !== uid) return false;
+  const c = carta(e, uid);
+  if (c.tipo !== "Aliado") return false;
+  return hay(e, 0, (k) => k.silenciaEntradaCosteMax !== undefined && (c.coste ?? 0) <= k.silenciaEntradaCosteMax);
+}
+
 function framesDe(e, uid, defs, evento, datos, ctrl) {
   const frames = [];
+  if (silenciada(e, uid, evento, datos)) return frames;
   for (const d of defs) {
-    for (const t of d.disparadas) {
-      if (!t.cuando.includes(evento)) continue;
+    d.disparadas.forEach((t, indice) => {
+      if (!t.cuando.includes(evento)) return;
       const quien = t.quien ?? (["entra", "ataca", "sale", "haceDano"].includes(evento) ? "propia" : "yo");
-      if (quien === "propia" && datos.uid !== uid) continue;
-      if (quien === "yo" && datos.j !== ctrl) continue;
-      if (quien === "rival" && datos.j === ctrl) continue;
+      if (quien === "propia" && datos.uid !== uid) return;
+      if (quien === "yo" && datos.j !== ctrl) return;
+      if (quien === "rival" && datos.j === ctrl) return;
+      if (quien === "otra" && datos.uid === uid) return;
       const ctx = { ctrl, fuente: uid, def: d.id, costeFuente: d.coste ?? 0, datos };
-      if (t.si && !d.fns[t.si](e, ctx)) continue;
+      if (t.si && !d.fns[t.si](e, ctx)) return;
+      if (t.veces) {
+        const clave = `${uid}|${d.id}|d${indice}`;
+        const uso = e.usos[clave];
+        const n = uso?.turno === e.turno ? uso.n : 0;
+        if (n >= t.veces) return;
+        e.usos[clave] = { turno: e.turno, n: n + 1 };
+      }
       let pasos = t.hacer;
       if (t.opcional) pasos = [{ op: "opcional", texto: `${d.nombre}`, pasos }];
       const imp = impuestoHabilidad(e, ctrl, uid, "disparada");
       if (imp) pasos = [{ op: "opcional", texto: `${d.nombre} (paga ${imp})`, pagar: imp, pasos }];
       frames.push(nuevoFrame(pasos, ctx));
-    }
+    });
   }
   return frames;
 }
@@ -290,8 +347,8 @@ export function disparar(e, evento, datos = {}) {
       for (const uid of e.jugadores[j][z]) {
         const d = carta(e, uid);
         if (d.sinHabilidad) continue;
-        const fuera = { ...d, disparadas: d.disparadas.filter((t) => t.zona?.includes(z)) };
-        if (fuera.disparadas.length) frames.push(...framesDe(e, uid, [fuera], evento, datos, j));
+        const fuera = { ...d, disparadas: d.disparadas.filter((t) => t.zona?.includes(z) && t.cuando.includes(evento)) };
+        if (fuera.disparadas.length && activa(e, uid)) frames.push(...framesDe(e, uid, [fuera], evento, datos, j));
       }
     }
   }

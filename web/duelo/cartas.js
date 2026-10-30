@@ -1,27 +1,11 @@
 import { CARTAS, MAZOS } from "./cartas-base.js";
 import * as N from "./nucleo.js";
+import { sel, mov, barajar, robar, efecto, buscar, mirar, castilloElegido, aliadoDeCastillo, coste } from "./formato.js";
+import { HABILIDADES as TANDA_01 } from "./tandas/tanda-01.js";
+import { HABILIDADES as TANDA_02 } from "./tandas/tanda-02.js";
+import { HABILIDADES as TANDA_03 } from "./tandas/tanda-03.js";
 
 export { MAZOS };
-
-const sel = (de, filtro = {}, como = "x", extra = {}) => ({ op: "sel", de: [].concat(de), filtro, como, ...extra });
-const mov = (a, v = "x") => ({ op: "mover", var: v, a });
-const barajar = (quien = "yo") => ({ op: "barajarCastillo", quien });
-const robar = (n, quien = "yo") => ({ op: "robar", n, quien });
-const efecto = (v, ef, fin) => ({ op: "efecto", var: v, efecto: ef, fin });
-const buscar = (de, filtro, a = "mano") => [sel(de, filtro, "b"), mov(a, "b"), barajar(), ...(de.includes("todos:castillo") ? [barajar("rival")] : [])];
-const mirar = (n, ...destinos) => [
-  { op: "tope", n, como: "m" },
-  ...destinos.flatMap((a, i) => [sel(["var:m"], { zona: "castillo" }, `m${i}`), mov(a, `m${i}`)]),
-];
-const castilloElegido = (pasosPara) => ({
-  op: "modo",
-  opciones: [
-    { texto: "tu Castillo", pasos: pasosPara("yo") },
-    { texto: "Castillo oponente", pasos: pasosPara("rival") },
-  ],
-});
-const aliadoDeCastillo = (quien) => [{ op: "tope", quien, n: 1, como: "t" }, { op: "convertir", var: "t", en: "Aliado", fuerza: 2, a: "defensa" }];
-const coste = (e, u) => N.carta(e, u).coste ?? 0;
 
 const carcosa = [
   {
@@ -662,13 +646,15 @@ const AZI = {
   disparadas: [{ cuando: ["faseFinal"], hacer: [sel(["todos:cementerio"], {}, "c"), mov("barajar", "c")] }],
 };
 
+const TODAS = { ...HABILIDADES, ...TANDA_01, ...TANDA_02, ...TANDA_03 };
+
 function construir() {
   const porNombre = new Map(Object.values(CARTAS).map((c) => [c.nombre, c.id]));
-  for (const nombre of Object.keys(HABILIDADES)) {
+  for (const nombre of Object.keys(TODAS)) {
     if (!porNombre.has(nombre)) throw new Error(`Habilidad sin carta base: ${nombre}`);
   }
   const catalogo = { azi: AZI };
-  for (const c of Object.values(CARTAS)) catalogo[c.id] = { ...c, ...(HABILIDADES[c.nombre] ?? {}) };
+  for (const c of Object.values(CARTAS)) catalogo[c.id] = { ...c, ...(TODAS[c.nombre] ?? {}) };
   return catalogo;
 }
 

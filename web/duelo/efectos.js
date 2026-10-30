@@ -25,6 +25,7 @@ export function limiteArmas(e, aliado) {
 }
 
 export function armaCabe(e, aliado, arma) {
+  if (N.tiene(e, aliado, "NoPortaArmas")) return false;
   if (N.carta(e, arma).claves.includes("NoCuentaLimite")) return true;
   const usadas = (e.armas[aliado] ?? []).filter((a) => !N.carta(e, a).claves.includes("NoCuentaLimite")).length;
   return usadas < limiteArmas(e, aliado);
@@ -99,6 +100,15 @@ function pedir(e, p, fr) {
 
 OPS.sel = (e, p, fr) => {
   fr.ctx.vars[p.como] = [];
+  const buscaAliado = p.de.some((s) => s === "yo:castillo" || s === "todos:castillo") && (!p.filtro?.tipo || [].concat(p.filtro.tipo).includes("Aliado"));
+  if (buscaAliado && fr.buscoEn !== fr.i) {
+    fr.buscoEn = fr.i;
+    N.disparar(e, "busca", { j: fr.ctx.ctrl, tipo: "Aliado" });
+    if (e.cola[0] !== fr) {
+      fr.i -= 1;
+      return;
+    }
+  }
   pedir(e, p, fr);
 };
 OPS.sel.elegir = (e, cont, valor, fr) => {
@@ -115,7 +125,7 @@ export function entrarOro(e, uid, j, zona) {
   N.disparar(e, "entra", { uid, j });
 }
 
-export function entrarEnJuego(e, uid, j, portador) {
+export function entrarEnJuego(e, uid, j, portador, datos = {}) {
   const c = N.carta(e, uid);
   if (c.tipo === "Aliado") {
     N.mover(e, uid, "defensa", { j });
@@ -132,11 +142,24 @@ export function entrarEnJuego(e, uid, j, portador) {
   } else if (c.tipo === "Oro") {
     return entrarOro(e, uid, j, "reserva");
   }
-  N.disparar(e, "entra", { uid, j });
+  N.disparar(e, "entra", { uid, j, ...datos });
+}
+
+function sePuedeBarajar(e, uid, ctx) {
+  const u = N.ubicar(e, uid);
+  if (u?.zona !== "cementerio") return true;
+  if (N.hay(e, u.j, (k, propio) => !propio && k.cementerioRivalNoBaraja)) return false;
+  const limite = N.hay(e, 0, (k) => k.limiteBarajarCementerio);
+  if (!limite) return true;
+  const p = e.jugadores[ctx.ctrl];
+  if ((p.barajadasCementerio ?? 0) >= 3) return false;
+  p.barajadasCementerio = (p.barajadasCementerio ?? 0) + 1;
+  return true;
 }
 
 function moverA(e, uid, a, ctx) {
   const dentro = N.enJuego(e, uid);
+  if (dentro && !["pagado", "reserva"].includes(a) && !N.puedeSalir(e, uid)) return;
   switch (a) {
     case "destruir":
       if (dentro && !N.tiene(e, uid, "Indestructible")) N.mover(e, uid, "cementerio");
@@ -145,6 +168,7 @@ function moverA(e, uid, a, ctx) {
       if (!(dentro && N.tiene(e, uid, "Indesterrable"))) N.mover(e, uid, "destierro");
       break;
     case "barajar":
+      if (!sePuedeBarajar(e, uid, ctx)) break;
       N.mover(e, uid, "castillo");
       N.barajarCastillo(e, N.dueno(uid));
       break;
@@ -162,8 +186,21 @@ function moverA(e, uid, a, ctx) {
   }
 }
 
+function limiteSalidas(e, ctx) {
+  const salidas = [0, 0];
+  return (uid) => {
+    if (!N.enJuego(e, uid) || N.carta(e, uid).tipo !== "Aliado") return true;
+    const j = N.controlador(e, uid);
+    if (j === ctx.ctrl || !N.hay(e, j, (k, propio) => propio && k.maxSalidasPorEfecto)) return true;
+    if (salidas[j] >= 2) return false;
+    salidas[j] += 1;
+    return true;
+  };
+}
+
 OPS.mover = (e, p, fr) => {
-  for (const uid of fr.ctx.vars[p.var] ?? []) moverA(e, uid, p.a, fr.ctx);
+  const permite = limiteSalidas(e, fr.ctx);
+  for (const uid of fr.ctx.vars[p.var] ?? []) if (permite(uid)) moverA(e, uid, p.a, fr.ctx);
 };
 
 OPS.convertir = (e, p, fr) => {
@@ -175,7 +212,7 @@ OPS.convertir = (e, p, fr) => {
     delete e.ganadas[uid];
     N.mover(e, uid, p.a, { j: ctx.ctrl });
     for (const pj of e.jugadores) pj.nuevos = pj.nuevos.filter((x) => x !== uid);
-    e.conv[uid] = { tipo: p.en, fuerza: p.fuerza, sinHabilidad: !p.como, como: p.como };
+    e.conv[uid] = { tipo: p.en, fuerza: p.fuerza, coste: p.coste, sinHabilidad: !p.como, como: p.como };
     if (p.hasta) Object.assign(e.conv[uid], { hastaInicioDe: ctx.ctrl, desde: e.turno, vuelve: p.vuelve });
     if (p.en === "Aliado") e.jugadores[ctx.ctrl].nuevos.push(uid);
     if (p.en === "Oro") {
@@ -267,10 +304,34 @@ OPS.opcional.elegir = (e, cont, valor, fr) => {
   fr.pasos.splice(fr.i, 0, ...cont.p.pasos);
 };
 
-export function pagarOros(e, j, n) {
+const sirve = (g, tipo) => !g.tipos || (tipo && g.tipos.includes(tipo));
+
+export function disponibles(e, j, tipo) {
   const p = e.jugadores[j];
+  return p.reserva.length + (p.generados ?? []).filter((g) => sirve(g, tipo)).reduce((s, g) => s + g.n, 0);
+}
+
+export function pagarOros(e, j, n, tipo) {
+  const p = e.jugadores[j];
+  for (const g of p.generados ?? []) {
+    if (n <= 0) break;
+    if (!sirve(g, tipo)) continue;
+    const usa = Math.min(g.n, n);
+    g.n -= usa;
+    n -= usa;
+  }
+  p.generados = (p.generados ?? []).filter((g) => g.n > 0);
   p.pagado.push(...p.reserva.splice(0, n));
 }
+
+export function impuestoSinPagar(e, j) {
+  return N.cuantas(e, j, (k) => k.impuestoSinPagar) + e.efectos.filter((f) => f.tipo === "impuestoSinPagar").length;
+}
+
+OPS.generar = (e, p, fr) => {
+  const pj = e.jugadores[jugadorDe(fr.ctx, p.quien)];
+  pj.generados = [...(pj.generados ?? []), { n: p.n ?? 1, tipos: p.tipos ?? null }];
+};
 
 OPS.pagar = (e, p, fr) => pagarOros(e, fr.ctx.ctrl, p.n);
 
@@ -295,23 +356,56 @@ OPS.anular = (e, p, fr) => {
 };
 
 OPS.portar = (e, p, fr) => {
+  if ((fr.ctx.vars._anuladas ?? []).includes(p.arma)) return;
   const [port] = fr.ctx.vars[p.en] ?? [];
-  entrarEnJuego(e, p.arma, fr.ctx.ctrl, port);
+  entrarEnJuego(e, p.arma, fr.ctx.ctrl, port, p.datos ?? {});
 };
 
 OPS.jugarGratis = (e, p, fr) => {
   const pasos = [];
+  const j = fr.ctx.ctrl;
   for (const uid of fr.ctx.vars[p.var] ?? []) {
-    if (N.carta(e, uid).tipo === "Arma") {
-      pasos.push({ op: "sel", de: ["yo:aliados"], filtro: { armaLibre: uid }, como: "_port" }, { op: "portar", arma: uid, en: "_port" });
+    const c = N.carta(e, uid);
+    const imp = impuestoSinPagar(e, j);
+    if (imp > disponibles(e, j, c.tipo)) continue;
+    pagarOros(e, j, imp, c.tipo);
+    const datos = { pagado: false, desde: N.ubicar(e, uid)?.zona ?? null };
+    pasos.push({ op: "ventanaSinPagar", uid });
+    if (c.tipo === "Arma") {
+      pasos.push({ op: "sel", de: ["yo:aliados"], filtro: { armaLibre: uid }, como: "_port" }, { op: "portar", arma: uid, en: "_port", datos });
     } else {
-      pasos.push({ op: "entrar", uid });
+      pasos.push({ op: "entrar", uid, datos });
     }
+    N.disparar(e, "juega", { uid, j, tipo: c.tipo, pagado: false });
   }
   fr.pasos.splice(fr.i, 0, ...pasos);
 };
 
-OPS.entrar = (e, p, fr) => entrarEnJuego(e, p.uid, fr.ctx.ctrl);
+OPS.entrar = (e, p, fr) => {
+  if ((fr.ctx.vars._anuladas ?? []).includes(p.uid)) return;
+  entrarEnJuego(e, p.uid, fr.ctx.ctrl, undefined, p.datos ?? {});
+};
+
+function anuladorSinPagar(e, j) {
+  return N.orosDe(e, j).find((o) => N.carta(e, o).anulaSinPagar && N.activa(e, o) && !N.carta(e, o).sinHabilidad);
+}
+
+OPS.ventanaSinPagar = (e, p, fr) => {
+  const rival = N.rival(fr.ctx.ctrl);
+  const oro = anuladorSinPagar(e, rival);
+  if (!oro) return;
+  e.pendiente = {
+    jugador: rival,
+    opciones: [{ valor: true, texto: `Desterrar ${N.carta(e, oro).nombre} para Anular ${N.carta(e, p.uid).nombre}` }, { valor: false, texto: "no" }],
+    cont: { op: "ventanaSinPagar", uid: p.uid, oro },
+  };
+};
+OPS.ventanaSinPagar.elegir = (e, cont, valor, fr) => {
+  if (!valor) return;
+  N.mover(e, cont.oro, "destierro");
+  N.mover(e, cont.uid, "cementerio");
+  fr.ctx.vars._anuladas = [...(fr.ctx.vars._anuladas ?? []), cont.uid];
+};
 
 OPS.ponerOro = (e, p, fr) => {
   for (const uid of fr.ctx.vars[p.var] ?? []) entrarOro(e, uid, fr.ctx.ctrl, p.a);
@@ -319,7 +413,7 @@ OPS.ponerOro = (e, p, fr) => {
 
 OPS.finTalisman = (e, p) => N.mover(e, p.uid, p.destierro ? "destierro" : "cementerio");
 
-Object.assign(API, N, { entrarOro, entrarEnJuego, fuente, cumple, pagarOros, armaCabe, hayObjetivo });
+Object.assign(API, N, { entrarOro, entrarEnJuego, fuente, cumple, pagarOros, disponibles, impuestoSinPagar, armaCabe, hayObjetivo });
 
 export function ejecutar(e, paso, fr) {
   const f = OPS[paso.op];

@@ -714,6 +714,441 @@ export const CARTAS = {
   "oroInicial": false,
   "sinHabilidad": false,
   "texto": "Cuando entra en juego, muestra cartas del tope de tu Castillo hasta mostar dos cartas que no sean Talismán y ponlas en tu mano. En tu Fase Final, si controlas tres o más Aliados, puedes Desterrar dos cartas de los Cementerios. Esta habilidad no se puede cancelar."
+ },
+ "178_106": {
+  "id": "178_106",
+  "nombre": "Ama del Tyn",
+  "tipo": "Tótem",
+  "coste": 5,
+  "fuerza": 0,
+  "razas": [],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Sólo puedes jugarlo pagando su coste impreso. Cuando entra en juego, busca en tu Castillo un Tótem de coste 3 o menos y juégalo sin pagar su coste. Los Aliados de coste 1 o menos no disparan sus habilidades al entrar en juego."
+ },
+ "178_044": {
+  "id": "178_044",
+  "nombre": "Amo de las Cadenas",
+  "tipo": "Aliado",
+  "coste": 1,
+  "fuerza": 3,
+  "razas": [
+   "Guerrero"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "No puedes controlar más copias de esta carta. Cuando busques un Aliado, puedes jugar este Aliado desde tu mano, sin pagar su coste. Cuando ataca, puedes elegir un Aliado oponente para que lo bloquee si puede. No puede portar Armas."
+ },
+ "172_125": {
+  "id": "172_125",
+  "nombre": "Azi Demoniaco",
+  "tipo": "Aliado",
+  "coste": 0,
+  "fuerza": 1,
+  "razas": [
+   "Dragón"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Única. Una vez en tu turno, convierte este Aliado hasta tu próximo turno en un Oro con la habilidad \"No puede salir del juego. En tu Fase Final, Baraja o Destierra una carta de un Cementerio.\" y ponlo en tu Oro Pagado."
+ },
+ "178_075": {
+  "id": "178_075",
+  "nombre": "Bandidos Szgany",
+  "tipo": "Aliado",
+  "coste": 1,
+  "fuerza": 2,
+  "razas": [
+   "Guerrero"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Furia. Cuando entra en juego o ataca, tu oponente Bota tres cartas. Cuando tu oponente fuera a Botar sólo una carta, en vez de eso Bota dos cartas. Tus Aliados Bandido ganan 1 de Fuerza."
+ },
+ "178_033": {
+  "id": "178_033",
+  "nombre": "Blajini",
+  "tipo": "Aliado",
+  "coste": 2,
+  "fuerza": 2,
+  "razas": [
+   "Bestia"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Furia. Exhumar. Cuando entre en juego desde el Cementerio, Roba dos cartas y Descarta hasta una carta. Cuando entre o salga del juego, un jugador Bota tres cartas y tu sube una carta que no sea Talismán de tu Cementerio a tu mano."
+ },
+ "178_208": {
+  "id": "178_208",
+  "nombre": "Camino del Inca",
+  "tipo": "Oro",
+  "coste": 0,
+  "fuerza": 0,
+  "razas": [],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Sólo puedes controlar una copia de esta carta. Mientras esté en tu Reserva, jugar cartas sin pagar su coste cuesta un Oro adicional."
+ },
+ "178_234": {
+  "id": "178_234",
+  "nombre": "Cathach",
+  "tipo": "Aliado",
+  "coste": 3,
+  "fuerza": 2,
+  "razas": [
+   "Dragón"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Cuando entra en juego, puedes Barajar dos cartas de tu Cementerio en tu Castillo. Los Aliados oponentes pierden 1 de Fuerza mientras sólo controles Aliados de raza Dragón."
+ },
+ "178_056": {
+  "id": "178_056",
+  "nombre": "Comer Insectos",
+  "tipo": "Talismán",
+  "coste": 1,
+  "fuerza": 0,
+  "razas": [],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Exhumar. Destruye hasta dos cartas con habilidad de coste 1 o más que controles. Tus Aliados ganan tanta Fuerza como cartas hayas Destruido de esta forma y su daño no puede ser prevenido."
+ },
+ "178_098": {
+  "id": "178_098",
+  "nombre": "Falso Infante",
+  "tipo": "Aliado",
+  "coste": 3,
+  "fuerza": 1,
+  "razas": [
+   "Sombra"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Reduce su coste en un Oro por cada carta con Exhumar que controles, hasta un mínimo de 1. En tu Fase Final, Destierra una carta del fondo de un Castillo y hasta una carta de un Cementerio."
+ },
+ "178_095": {
+  "id": "178_095",
+  "nombre": "Ghul Leal",
+  "tipo": "Aliado",
+  "coste": 1,
+  "fuerza": 3,
+  "razas": [
+   "Guerrero"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Furia. Hasta tres veces por turno, cuando un Aliado que controles salga del juego, tu oponente Bota una carta. Tus Aliados con Furia no pueden ser convertidos ni cambiar de controlador."
+ },
+ "178_220": {
+  "id": "178_220",
+  "nombre": "Grimorio",
+  "tipo": "Oro",
+  "coste": 0,
+  "fuerza": 0,
+  "razas": [],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Puedes pagar este Oro y Barajar una carta de tu mano para buscar en el Castillo oponente una carta del mismo tipo. Destierra esa carta y todas sus copias del Castillo oponente."
+ },
+ "178_082": {
+  "id": "178_082",
+  "nombre": "Hiemal",
+  "tipo": "Talismán",
+  "coste": 2,
+  "fuerza": 0,
+  "razas": [],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "No puede ser Anulado. Lanza tres dados de seis caras, por cada resultado par, tu oponente Bota tres cartas. Si el resultado de uno o más dados es 1, genera un Oro para jugar Aliados o Talismanes por el turno."
+ },
+ "178_096": {
+  "id": "178_096",
+  "nombre": "Ileana",
+  "tipo": "Aliado",
+  "coste": 2,
+  "fuerza": 3,
+  "razas": [
+   "Héroe"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Indestructible. En Guerra de Talismanes, una vez por turno, tu oponente Bota una carta por cada Aliado en tu Línea de Defensa. En tu Fase Final, puedes Desterrar hasta dos cartas de los Cementerios."
+ },
+ "178_094": {
+  "id": "178_094",
+  "nombre": "Keshalyi",
+  "tipo": "Aliado",
+  "coste": 2,
+  "fuerza": 2,
+  "razas": [
+   "Faerie"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Hasta dos veces por turno, cuando juegues un Talismán, Roba un carta, Baraja una carta de tu mano, y tu oponente Bota tres cartas. En la Fase Final, si jugaste otro Aliado, puedes Desterrar hasta tres cartas del Cementerio. Los Aliados oponentes pierden 1 de Fuerza."
+ },
+ "178_103": {
+  "id": "178_103",
+  "nombre": "Legua Muerta",
+  "tipo": "Talismán",
+  "coste": 7,
+  "fuerza": 0,
+  "razas": [],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Solo puedes jugarlo pagando su coste. Reduce su coste en un Oro por cada Oro con habilidad que controles, hasta un mínimo de 1. Baraja todos los Aliados en juego. Por cada Aliado oponente Barajado, tu oponente Bota una carta de su Castillo."
+ },
+ "162_238": {
+  "id": "162_238",
+  "nombre": "Leon Indiferente",
+  "tipo": "Talismán",
+  "coste": 0,
+  "fuerza": 0,
+  "razas": [
+   "No aplica"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Si controlas Aliados, cuesta un Oro adicional. Convierte dos cartas del tope de un Castillo en Aliados de Fuerza 2 sin habilidad, ponlos bajo tu control y no pueden salir del juego ni cambiar de controlador hasta tu próximo turno. Si pagaste Oros para jugarlo, Roba dos cartas."
+ },
+ "178_031": {
+  "id": "178_031",
+  "nombre": "Lobos de los Cárpatos",
+  "tipo": "Aliado",
+  "coste": 1,
+  "fuerza": 2,
+  "razas": [
+   "Bestia"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Furia. Cuando entra en juego, puedes Descartar o Destruir una carta que controles para Robar dos cartas y este Aliado gana 1 de Fuerza permanentemente. Los jugadores sólo pueden Barajar hasta tres cartas de los Cementerios por turno."
+ },
+ "178_043": {
+  "id": "178_043",
+  "nombre": "Los Szgany",
+  "tipo": "Aliado",
+  "coste": 1,
+  "fuerza": 3,
+  "razas": [
+   "Guerrero"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Furia. Cuando ataca, elige un Aliado para que bloquee y a qué Aliado bloquea este turno. Una vez por turno, cuando uno de tus Aliados salga del juego, puedes hacer que tu oponente Bote tres cartas."
+ },
+ "161_224": {
+  "id": "161_224",
+  "nombre": "Manu Tara",
+  "tipo": "Oro",
+  "coste": 0,
+  "fuerza": 0,
+  "razas": [
+   "No aplica"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Si está en tu Reserva y controlas Aliados de coste 1 o más, los demás Oros en juego pierden su habilidad. Cuando una carta sea puesta en tu Cementerio, hasta una vez por turno, puedes Barajarla en tu Castillo."
+ },
+ "178_097": {
+  "id": "178_097",
+  "nombre": "Monjas de Budapest",
+  "tipo": "Aliado",
+  "coste": 4,
+  "fuerza": 2,
+  "razas": [
+   "Sacerdote"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Cuando entra en juego, juega hasta dos Tótem de tu Cementerio, cuyos costes sumen 3 o menos, sin pagar su coste. En tu Vigilia, una vez por turno, Baraja y/o Destierra hasta tres cartas de los Cementerios."
+ },
+ "178_050": {
+  "id": "178_050",
+  "nombre": "Monjes Ortodoxos",
+  "tipo": "Aliado",
+  "coste": 2,
+  "fuerza": 2,
+  "razas": [
+   "Sacerdote"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Cuando entra en juego, puedes utilizar la habilidad de un Tótem de coste 2 o menos como si estuviera entrando en juego o generar un Oro para jugar Tótem por el turno. Una vez por turno, hasta un Tótem de tu Cementerio gana Exhumar y Roba dos cartas."
+ },
+ "178_078": {
+  "id": "178_078",
+  "nombre": "Moroi",
+  "tipo": "Aliado",
+  "coste": 3,
+  "fuerza": 4,
+  "razas": [
+   "Sombra"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Furia. Cuando entra en juego, puedes buscar un Aliado de coste 2 en tu Castillo y jugarlo sin pagar su coste. Tus Aliados ganan 1 de Fuerza e Imbloqueable."
+ },
+ "178_081": {
+  "id": "178_081",
+  "nombre": "Mortaja",
+  "tipo": "Talismán",
+  "coste": 3,
+  "fuerza": 0,
+  "razas": [],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Baraja todos los Aliados en juego. Si está en tu mano, puedes pagar un Oro y ponerla en el fondo de tu Castillo para subir hasta dos cartas que no sean Talismán de tu Cementerio a tu mano."
+ },
+ "178_100": {
+  "id": "178_100",
+  "nombre": "No Más Magia",
+  "tipo": "Talismán",
+  "coste": 4,
+  "fuerza": 0,
+  "razas": [],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Sólo puede ser jugado desde tu mano y pagando su coste impreso. Cuando lo juegues, Destiérralo. Por el resto del juego, jugar Talismanes y cartas sin pagar su coste cuesta un Oro adicional."
+ },
+ "178_107": {
+  "id": "178_107",
+  "nombre": "Perugia",
+  "tipo": "Tótem",
+  "coste": 3,
+  "fuerza": 0,
+  "razas": [],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Cuando entra en juego, durante los próximos dos turnos, los jugadores sólo pueden jugar una carta de cada tipo por turno. Cuando sea Desterrado por un Aliado, puedes pagar un Oro para buscar un Aliado en cada Castillo, Desterrarlos y Robar una carta."
+ },
+ "178_090": {
+  "id": "178_090",
+  "nombre": "Plaga de Ratas",
+  "tipo": "Aliado",
+  "coste": 1,
+  "fuerza": 1,
+  "razas": [
+   "Bestia"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Cuando entra en juego, puedes buscar un Plaga de Ratas en tu Castillo o Cementerio y juégalo sin pagar su coste. Puedes Destruirlo para Barajar hasta dos cartas de los Cementerios o que un Aliado gane 1 de Fuerza permanentemente."
+ },
+ "178_070": {
+  "id": "178_070",
+  "nombre": "Plaga Inmunda",
+  "tipo": "Aliado",
+  "coste": 1,
+  "fuerza": 2,
+  "razas": [
+   "Bestia"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Cuando entra en juego, puedes poner bajo tu control hasta dos cartas de tu Cementerio como Aliados sin habilidad de Fuerza 1. Por cada efecto oponente, sólo pueden salir del juego hasta dos Aliados que controles."
+ },
+ "178_077": {
+  "id": "178_077",
+  "nombre": "Poeta del Upir",
+  "tipo": "Aliado",
+  "coste": 2,
+  "fuerza": 2,
+  "razas": [
+   "Sacerdote"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Cuando entra en juego, Baraja una carta de coste 2 o menos. Si controlas dos o más Tótems, Baraja una adicional y Roba una carta. En tu Vigilia, puedes Desterrarlo de tu mano o Cementerio para subir un Tótem de tu Cementerio a tu mano."
+ },
+ "178_032": {
+  "id": "178_032",
+  "nombre": "Pricolici",
+  "tipo": "Aliado",
+  "coste": 2,
+  "fuerza": 2,
+  "razas": [
+   "Bestia"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Cuando entra en juego, puedes jugar un Aliado de tu Cementerio reduciendo su coste en un Oro, hasta un mínimo de 0. Las cartas en el Cementerio oponente pierden su habilidad y no pueden ser Barajadas."
+ },
+ "178_211": {
+  "id": "178_211",
+  "nombre": "Santa Diestra",
+  "tipo": "Oro",
+  "coste": 0,
+  "fuerza": 0,
+  "razas": [],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Puedes Desterrar este Oro para Anular una carta jugada sin pagar su coste."
+ },
+ "178_045": {
+  "id": "178_045",
+  "nombre": "Urias",
+  "tipo": "Aliado",
+  "coste": 2,
+  "fuerza": 3,
+  "razas": [
+   "Guerrero"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Furia. Cuando uno de tus Aliado haga daño, puedes Barajar un Aliado que controles para convertir hasta una carta de coste 2 o menos y hasta una carta de un Cementerio en Aliados de Fuerza 2 sin habilidad y gana su control."
+ },
+ "178_076": {
+  "id": "178_076",
+  "nombre": "Valerious",
+  "tipo": "Aliado",
+  "coste": 3,
+  "fuerza": 3,
+  "razas": [
+   "Héroe"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Cuando entra en juego, si pagaste su coste, Baraja las cartas oponentes que no sean Oro. Cuando tu oponente juegue una carta, puedes Desterrar este Aliado de tu mano o en juego para que un Aliado oponente deba atacar este turno si puede."
+ },
+ "178_073": {
+  "id": "178_073",
+  "nombre": "Válva Apei",
+  "tipo": "Aliado",
+  "coste": 2,
+  "fuerza": 3,
+  "razas": [
+   "Eterno"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Una vez por turno, si controlas dos o más Tótem, convierte una carta de coste 2 o menos en un Tótem sin habilidad y gana su control. Cuando salga del juego, cada jugador recupera el control de las cartas de las que sea dueño que no sean Oro."
+ },
+ "178_093": {
+  "id": "178_093",
+  "nombre": "Válva Bailor",
+  "tipo": "Aliado",
+  "coste": 3,
+  "fuerza": 3,
+  "razas": [
+   "Eterno"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Indestructible. Cuando entra en juego convierte hasta dos cartas de coste 2 o menos y/o cartas de los Cementerios en Tótem sin habilidad de coste 5 y ponlos en tu Línea de Apoyo."
+ },
+ "178_074": {
+  "id": "178_074",
+  "nombre": "Zâna",
+  "tipo": "Aliado",
+  "coste": 1,
+  "fuerza": 1,
+  "razas": [
+   "Faerie"
+  ],
+  "oroInicial": false,
+  "sinHabilidad": false,
+  "texto": "Una vez por turno, cuando esta u otra carta de coste 1 o más entre en juego, puedes hacer que los jugadores Roben una carta y Barajen una carta de su mano. Baraja hasta dos cartas de tu Cementerio. Los Aliados oponentes pierden 1 de Fuerza."
  }
 };
 
