@@ -85,8 +85,75 @@ async function comparar(archivoA, archivoB, n) {
   console.log(`A con Dragón ${porLado[0].reduce((s, x) => s + x.gana, 0)}/${porLado[0].length}, A con Caballero ${porLado[1].reduce((s, x) => s + x.gana, 0)}/${porLado[1].length}; errores ${r.filter((x) => x.error).length}; ${((Date.now() - inicio) / 1000).toFixed(0)} s`);
 }
 
+function normal(semilla) {
+  let s = semilla >>> 0;
+  const u = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) + 1) / 4294967297;
+  return () => Math.sqrt(-2 * Math.log(u())) * Math.cos(2 * Math.PI * u());
+}
+
+async function enfrentar(piscina, A, B, n, semillaBase) {
+  const r = await Promise.all(
+    Array.from({ length: n }, (_, i) => {
+      const lado = i % 2;
+      const modelos = lado === 0 ? [A, B] : [B, A];
+      return piscina.pedir({ semilla: semillaBase + Math.floor(i / 2), modelos, epsilon: 0, registrar: false }).then((x) => (x.ganador === lado ? 1 : x.ganador === null ? 0.5 : 0));
+    }),
+  );
+  return r.reduce((a, b) => a + b, 0) / n;
+}
+
+async function evolucionar() {
+  const { MODELO } = await import(new URL("modelo.js", RAIZ));
+  const GENERACIONES = Number(process.argv[3] ?? 12);
+  const LAMBDA = Number(process.argv[4] ?? 8);
+  const POR_CANDIDATO = Number(process.argv[5] ?? 64);
+  const SIGMA = 0.2;
+  const ALFA = 0.6;
+  const VALIDACION = 420;
+  const UMBRAL = 0.53;
+  const piscina = crearPiscina(Math.max(1, availableParallelism() - 1));
+  const esc = MODELO.escala;
+  const aModelo = (ws, base) => ({ ...base, w: ws.map((w, i) => w / esc[i]) });
+  let aceptado = MODELO;
+  let theta = MODELO.w.map((w, i) => w * esc[i]);
+  const azar = normal(20261030 + (MODELO.version ?? 0));
+  const inicio = Date.now();
+  for (let g = 1; g <= GENERACIONES; g++) {
+    const actual = aModelo(theta, aceptado);
+    const ruidos = [];
+    for (let k = 0; k < LAMBDA / 2; k++) {
+      const eps = theta.map(() => azar());
+      ruidos.push(eps, eps.map((x) => -x));
+    }
+    const semillas = 7000000 + g * 10000;
+    const puntajes = [];
+    for (const eps of ruidos) {
+      const cand = aModelo(theta.map((t, i) => t + SIGMA * eps[i] * Math.max(0.05, Math.abs(t))), aceptado);
+      puntajes.push(await enfrentar(piscina, cand, actual, POR_CANDIDATO, semillas));
+    }
+    const grad = theta.map((_, i) => ruidos.reduce((s, eps, k) => s + (puntajes[k] - 0.5) * eps[i], 0) / (LAMBDA * SIGMA));
+    theta = theta.map((t, i) => t + ALFA * grad[i] * Math.max(0.05, Math.abs(t)));
+    console.log(`gen ${g}: candidatos ${puntajes.map((x) => (x * 100).toFixed(0)).join(" ")} · ${((Date.now() - inicio) / 1000).toFixed(0)} s`);
+    if (g % 3 === 0 || g === GENERACIONES) {
+      const nuevo = aModelo(theta, aceptado);
+      const tasa = await enfrentar(piscina, nuevo, aceptado, VALIDACION, 8000000 + g * 10000);
+      const acepta = tasa >= UMBRAL;
+      console.log(`  validación contra el aceptado: ${(tasa * 100).toFixed(1)}% ${acepta ? "ACEPTADO" : "rechazado, vuelvo al aceptado"}`);
+      if (acepta) {
+        aceptado = { ...nuevo, version: (aceptado.version ?? 0) + 1 };
+        writeFileSync(new URL("modelo.js", RAIZ), `export const MODELO = ${JSON.stringify(aceptado)};\n`);
+      } else {
+        theta = aceptado.w.map((w, i) => w * esc[i]);
+      }
+    }
+  }
+  console.log("pesos aceptados", JSON.stringify(aceptado.w.map((x) => +x.toFixed(4))), "versión", aceptado.version);
+  piscina.cerrar();
+}
+
 async function principal() {
   if (process.argv[2] === "comparar") return comparar(process.argv[3], process.argv[4], Number(process.argv[5] ?? 400));
+  if (process.argv[2] === "evolucionar") return evolucionar();
   const { MODELO } = await import(new URL("modelo.js", RAIZ));
   const { ajustar, perdida, muestrasDePartida } = await import(new URL("aprendizaje.js", RAIZ));
   const GENERACIONES = Number(process.argv[2] ?? 6);
