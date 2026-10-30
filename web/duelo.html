@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Duelo MyL Imperio</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0e1220">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap">
+<script src="cuenta.js"></script>
+<link rel="stylesheet" href="tema.css">
+<style>
+  main { display: grid; gap: 10px; max-width: 760px; margin: 0 auto; padding-bottom: 210px; }
+  .marcador { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
+  .marcador .lado { display: grid; gap: 2px; min-width: 0; }
+  .marcador .lado.rival { text-align: right; }
+  .marcador .castillo { font: 700 1.5rem var(--display); color: var(--pergamino); font-variant-numeric: tabular-nums; line-height: 1; }
+  .marcador .castillo small { font: 600 0.7rem var(--body); color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+  .marcador .detalle { color: var(--muted); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+  .fase { display: grid; justify-items: center; gap: 4px; }
+  .fase .chip.tuyo { background: var(--gold); color: #23180a; }
+  .zona { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: rgb(0 0 0 / 0.18); }
+  .zona.mia { border-color: var(--line-fuerte); }
+  .zona h3 { font: 600 0.72rem var(--body); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+  .fila { display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 6px; scrollbar-width: thin; min-height: 30px; }
+  .fila:empty { display: none; }
+  .mano-rival { display: flex; gap: 2px; overflow: hidden; }
+  .carta { position: relative; flex: none; width: 64px; aspect-ratio: 220 / 315; border-radius: 6px; overflow: visible; padding: 0; border: 1px solid var(--line); background: var(--surface); cursor: pointer; }
+  .carta img { width: 100%; height: 100%; object-fit: cover; border-radius: 5px; display: block; }
+  .carta.grande { width: 82px; }
+  .carta.oro { width: 36px; }
+  .carta.pagado img { filter: grayscale(0.6) brightness(0.55); }
+  .carta.puede { border-color: var(--gold); box-shadow: 0 0 0 2px rgb(226 178 77 / 0.55), 0 0 14px rgb(226 178 77 / 0.35); }
+  .carta.elegida { outline: 3px solid var(--gold-claro); outline-offset: 2px; }
+  .carta.atacando { transform: translateY(-6px); }
+  .carta .fz { position: absolute; left: -4px; bottom: -4px; min-width: 22px; height: 22px; padding: 0 4px; border-radius: 11px; display: grid; place-items: center; font: 700 0.8rem var(--display); background: #2a1810; color: var(--gold-claro); border: 1px solid var(--gold-oscuro); }
+  .carta .fz.sube { color: #8be0a8; }
+  .carta .fz.baja { color: #f3a07a; }
+  .carta .armas { position: absolute; right: -4px; top: -4px; min-width: 20px; height: 20px; padding: 0 4px; border-radius: 10px; display: grid; place-items: center; font: 700 0.72rem var(--body); background: #20263c; color: var(--pergamino); border: 1px solid var(--line-fuerte); }
+  .carta .etiqueta { position: absolute; inset: auto 2px 2px 2px; font: 700 0.6rem var(--body); text-align: center; background: rgb(0 0 0 / 0.75); color: var(--gold-claro); border-radius: 3px; padding: 1px 0; }
+  .reverso { width: 16px; aspect-ratio: 220 / 315; border-radius: 5px; flex: none; background: repeating-linear-gradient(45deg, #2b2240, #2b2240 4px, #1b1630 4px, #1b1630 8px); border: 1px solid var(--line-fuerte); }
+  .registro { max-height: 92px; overflow-y: auto; font-size: 0.85rem; display: grid; gap: 2px; padding: 8px 10px; border-radius: 10px; background: rgb(0 0 0 / 0.25); border: 1px solid var(--line); }
+  .registro p { margin: 0; color: var(--muted); }
+  .registro p.yo { color: var(--pergamino); }
+  .registro p.ia { color: #c9b3f0; }
+  .registro p.sistema { color: var(--gold); }
+  .bandeja {
+    position: fixed; left: 0; right: 0; bottom: calc(var(--nav-alto) + env(safe-area-inset-bottom, 0px)); z-index: 12;
+    padding: 8px max(12px, env(safe-area-inset-left, 0px)) 8px; display: grid; gap: 6px;
+    background: linear-gradient(180deg, rgb(14 18 32 / 0.6), rgb(14 18 32 / 0.97) 30%); border-top: 1px solid var(--line);
+  }
+  .bandeja .acciones { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; min-height: 40px; align-items: center; }
+  .bandeja .acciones .boton { min-height: 40px; padding: 0 12px; font-size: 0.9rem; }
+  .bandeja .ayuda { color: var(--muted); font-size: 0.82rem; text-align: center; margin: 0; }
+  .mano { display: flex; gap: 6px; overflow-x: auto; padding: 4px 2px 4px; justify-content: safe center; }
+  .hoja-fondo { position: fixed; inset: 0; z-index: 25; background: rgb(0 0 0 / 0.55); display: grid; align-items: end; }
+  .hoja { max-height: 82dvh; overflow-y: auto; background: linear-gradient(180deg, var(--surface-2), var(--surface)); border-top: 1px solid var(--line-fuerte); border-radius: 16px 16px 0 0; padding: 16px max(16px, env(safe-area-inset-left, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 12px; max-width: 760px; width: 100%; margin: 0 auto; }
+  .hoja h2 { font-size: 1.05rem; }
+  .hoja .sub { margin-top: -6px; }
+  .hoja .opciones { display: grid; gap: 8px; }
+  .hoja .opciones.cartas { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+  .opcion-carta { display: grid; gap: 4px; justify-items: center; padding: 6px; border-radius: 10px; border: 1px solid var(--line); background: rgb(255 255 255 / 0.03); color: var(--ink); font: 600 0.74rem var(--body); cursor: pointer; text-align: center; }
+  .opcion-carta img { width: 72px; border-radius: 5px; }
+  .detalle-carta { display: grid; grid-template-columns: minmax(120px, 200px) 1fr; gap: 14px; align-items: start; }
+  .detalle-carta img { width: 100%; border-radius: 10px; box-shadow: 0 10px 30px rgb(0 0 0 / 0.5); }
+  .detalle-carta dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 0.9rem; }
+  .detalle-carta dt { color: var(--muted); }
+  .detalle-carta dd { margin: 0; }
+  .fin { text-align: center; display: grid; gap: 12px; justify-items: center; padding: 18px; }
+  .fin h2 { font-size: 1.6rem; }
+  @media (max-width: 420px) { .detalle-carta { grid-template-columns: 1fr; justify-items: center; } .detalle-carta img { max-width: 220px; } }
+</style>
+</head>
+<body>
+<main>
+  <header class="cabecera-app">
+    <img src="logo.png" alt="" width="40" height="40">
+    <div class="titulo">
+      <h1>Duelo</h1>
+      <p class="sub" id="resumen">Tu Dragón contra el Caballero de la IA</p>
+    </div>
+    <button type="button" class="boton" id="nueva" hidden>Nueva</button>
+  </header>
+
+  <section class="portada" id="portada" hidden aria-labelledby="t-portada">
+    <img src="logo.png" alt="" width="150" height="196">
+    <h2 id="t-portada">Duelo contra la IA</h2>
+    <p>Juega una partida completa de Imperio Racial con tu mazo Dragón contra el Caballero de la IA, todo en tu teléfono. Entra a tu cuenta para empezar.</p>
+    <div class="acciones">
+      <button type="button" class="boton principal" id="portada-crear">Crear cuenta</button>
+      <button type="button" class="boton" id="portada-entrar">Ya tengo cuenta</button>
+    </div>
+  </section>
+
+  <div id="mesa" hidden>
+    <section class="panel marcador" aria-label="Marcador">
+      <div class="lado">
+        <span class="castillo" id="castillo-yo">—<small> castillo</small></span>
+        <span class="detalle" id="detalle-yo"></span>
+      </div>
+      <div class="fase">
+        <span class="chip" id="fase">—</span>
+        <span class="detalle" id="turno"></span>
+      </div>
+      <div class="lado rival">
+        <span class="castillo" id="castillo-ia">—<small> castillo</small></span>
+        <span class="detalle" id="detalle-ia"></span>
+      </div>
+    </section>
+
+    <section class="zona" aria-label="Mesa de la IA">
+      <h3>IA · Caballero <span class="mano-rival" id="ia-mano"></span></h3>
+      <div class="fila" id="ia-oros"></div>
+      <div class="fila" id="ia-apoyo"></div>
+      <div class="fila" id="ia-defensa"></div>
+      <div class="fila" id="ia-ataque"></div>
+    </section>
+
+    <div class="registro" id="registro" aria-live="polite"></div>
+
+    <section class="zona mia" aria-label="Tu mesa">
+      <div class="fila" id="yo-ataque"></div>
+      <div class="fila" id="yo-defensa"></div>
+      <div class="fila" id="yo-apoyo"></div>
+      <div class="fila" id="yo-oros"></div>
+      <h3>Tú · Dragón</h3>
+    </section>
+  </div>
+</main>
+
+<div class="bandeja" id="bandeja" hidden>
+  <div class="acciones" id="acciones"></div>
+  <div class="mano" id="mano" aria-label="Tu mano"></div>
+</div>
+
+<div class="hoja-fondo" id="hoja-fondo" hidden>
+  <div class="hoja" id="hoja" role="dialog" aria-modal="true"></div>
+</div>
+
+<nav class="nav-app" aria-label="Secciones">
+  <a href="./">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><rect x="8.5" y="7" width="7" height="10" rx="1"/></svg>
+    Escanear
+  </a>
+  <a href="topdeck.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="7" height="9" rx="1"/><rect x="14" y="4" width="7" height="9" rx="1"/><rect x="3" y="15" width="7" height="5" rx="1"/><rect x="14" y="15" width="7" height="5" rx="1"/></svg>
+    Top Deck
+  </a>
+  <a href="duelo.html" aria-current="page">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M9.5 17.5 21 6V3h-3L6.5 14.5M11 19l-6-6M8 16l-4 4M5 21l-2-2"/></svg>
+    Duelo
+  </a>
+  <div id="nav-cuenta"></div>
+</nav>
+
+<script type="module">
+import { crearPartida, accionesLegales, aplicar, jugadorQueDecide, costeDe } from "./duelo/motor.js";
+import { CATALOGO, MAZOS } from "./duelo/cartas.js";
+import { elegirAccion } from "./duelo/bot.js";
+import * as N from "./duelo/nucleo.js";
+
+const $ = (id) => document.getElementById(id);
+const YO = 0, IA = 1;
+const GUARDADO = "duelo-partida";
+const PAUSA_IA = 550;
+const CLAVES_VISIBLES = ["Furia", "Indestructible", "Indesterrable", "Imbloqueable", "Exhumar", "AtacaAlEntrar", "DanoAlDestierro", "NoAnulable"];
+const NOMBRE_CLAVE = { AtacaAlEntrar: "Ataca al entrar", DanoAlDestierro: "Daño al Destierro", NoAnulable: "No se puede Anular" };
+const ZONAS = { castillo: "Castillo", mano: "mano", reserva: "Reserva de Oro", pagado: "Oro Pagado", defensa: "Línea de Defensa", ataque: "Línea de Ataque", apoyo: "Línea de Apoyo", cementerio: "Cementerio", destierro: "Destierro", arma: "portada" };
+const FASES = { mulligan: "Mulligan", vigilia: "Vigilia", ataque: "Ataque", bloqueo: "Bloqueo", talismanes: "Guerra de Talismanes", final: "Fase Final", fin: "Fin" };
+
+let e = null;
+let registro = [];
+let seleccion = null;
+let iaTrabajando = false;
+
+const nombre = (uid) => N.carta(e, uid).nombre;
+const img = (uid, grande) => `${grande ? "cartas" : "miniaturas"}/${e.instancias[uid]}.jpg`;
+const quienDecide = () => (e.pendiente ? e.pendiente.jugador : jugadorQueDecide(e));
+
+function anotar(texto, clase = "") {
+  registro.push({ texto, clase });
+  if (registro.length > 200) registro = registro.slice(-200);
+}
+
+function guardar() {
+  try {
+    const { catalogo, ...resto } = e;
+    localStorage.setItem(GUARDADO, JSON.stringify({ e: resto, registro }));
+  } catch (x) {}
+}
+
+function cargar() {
+  try {
+    const g = JSON.parse(localStorage.getItem(GUARDADO) || "null");
+    if (!g?.e) return false;
+    e = { ...g.e, catalogo: CATALOGO };
+    registro = g.registro ?? [];
+    return true;
+  } catch (x) {
+    return false;
+  }
+}
+
+function nuevaPartida() {
+  const semilla = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
+  e = crearPartida({ semilla, mazos: [MAZOS.dragon, MAZOS.caballero] });
+  registro = [];
+  seleccion = null;
+  anotar(e.inicial === YO ? "Comienzas tú." : "Comienza la IA.", "sistema");
+  guardar();
+  ciclo();
+}
+
+function publica(uid) {
+  const u = N.ubicar(e, uid);
+  return !u || !["mano", "castillo"].includes(u.zona) || u.j === YO;
+}
+
+function describir(accion, quien) {
+  const sujeto = quien === YO ? "Tú" : "IA";
+  const n = (u) => (e.conv[u] ? `${nombre(u)} (convertida en ${e.conv[u].tipo})` : nombre(u));
+  switch (accion.tipo) {
+    case "quedarse": return `${sujeto}: se queda con su mano.`;
+    case "mulligan": return `${sujeto}: mulligan.`;
+    case "mulliganGratis": return `${sujeto}: mulligan gratis.`;
+    case "oro": return `${sujeto}: pone ${n(accion.uid)} como Oro.`;
+    case "jugar": return `${sujeto}: juega ${n(accion.uid)}${accion.portador ? ` en ${n(accion.portador)}` : ""}${accion.desde === "cementerio" ? " desde el Cementerio" : ""}.`;
+    case "habilidad": return `${sujeto}: usa la habilidad de ${N.def(e, accion.def).nombre}.`;
+    case "responder": return `${sujeto}: responde con ${n(accion.uid)} para Anular.`;
+    case "noResponder": return null;
+    case "batalla": return `${sujeto}: inicia la Batalla Mitológica.`;
+    case "atacar": return `${sujeto}: ataca con ${n(accion.uid)} (${N.fuerza(e, accion.uid)}).`;
+    case "finAtaque": return e.atacantes.length ? null : `${sujeto}: no ataca.`;
+    case "bloquear": return `${sujeto}: bloquea a ${n(accion.atacante)} con ${n(accion.uid)}.`;
+    case "finBloqueo": return Object.keys(e.bloqueos).length ? null : `${sujeto}: no bloquea.`;
+    case "pasar": return null;
+    case "terminar": return `${sujeto}: termina su turno.`;
+    case "descartar": return `${sujeto}: descarta ${n(accion.uid)}.`;
+    case "elegir": {
+      const o = e.pendiente.opciones[accion.i];
+      if (o.texto && o.valor !== true && o.valor !== false) return `${sujeto} elige: ${o.texto}.`;
+      if (o.valor === true) return `${sujeto}: sí.`;
+      if (o.valor === false || o.valor === null) return null;
+      if (typeof o.valor === "string") return publica(o.valor) ? `${sujeto} elige ${n(o.valor)}.` : `${sujeto} elige una carta.`;
+      return `${sujeto} elige ${o.valor}.`;
+    }
+    default: return null;
+  }
+}
+
+function hacer(accion) {
+  const quien = quienDecide();
+  const texto = describir(accion, quien);
+  const combates = e.registro.length;
+  try {
+    e = aplicar(e, accion);
+  } catch (x) {
+    anotar(`Error: ${x.message}`, "sistema");
+    return;
+  }
+  if (texto) anotar(texto, quien === YO ? "yo" : "ia");
+  for (const r of e.registro.slice(combates)) {
+    anotar(`Combate: ${r.dano} de daño${r.destruidos ? `, ${r.destruidos} Aliado${r.destruidos > 1 ? "s" : ""} destruido${r.destruidos > 1 ? "s" : ""}` : ""}.`, "sistema");
+  }
+  if (e.ganador !== null) anotar(e.ganador === YO ? "¡Ganaste!" : "La IA gana.", "sistema");
+  seleccion = null;
+  guardar();
+  ciclo();
+}
+
+function ciclo() {
+  pintar();
+  if (e.ganador !== null || iaTrabajando) return;
+  if (quienDecide() === IA) {
+    iaTrabajando = true;
+    setTimeout(() => {
+      iaTrabajando = false;
+      if (e.ganador === null && quienDecide() === IA) hacer(elegirAccion(e));
+    }, PAUSA_IA);
+  } else if (e.pendiente) {
+    abrirEleccion();
+  } else if (e.pila.length && !e.pila.at(-1).cerrada) {
+    abrirRespuesta();
+  }
+}
+
+function accionesDe(uid, legales) {
+  return legales.filter((a) => a.uid === uid || a.portador === uid);
+}
+
+function etiqueta(a) {
+  switch (a.tipo) {
+    case "oro": return "Poner como Oro";
+    case "jugar": {
+      const { pagar } = costeDe(e, YO, a.uid);
+      const base = a.portador ? `Equipar a ${nombre(a.portador)}` : a.desde === "cementerio" ? "Jugar desde el Cementerio" : "Jugar";
+      return `${base} · ${pagar} Oro${pagar === 1 ? "" : "s"}`;
+    }
+    case "habilidad": {
+      const d = N.def(e, a.def);
+      const total = d.activadas.length;
+      return `Usar habilidad${total > 1 ? ` ${a.h + 1}` : ""}${d.id !== e.instancias[a.uid] ? ` de ${d.nombre}` : ""}`;
+    }
+    case "responder": return `Anular con ${nombre(a.uid)}`;
+    case "atacar": return "Atacar";
+    case "bloquear": return `Bloquear a ${nombre(a.atacante)}`;
+    case "descartar": return "Descartar";
+    default: return a.tipo;
+  }
+}
+
+const GLOBALES = {
+  quedarse: "Quedarme con la mano",
+  mulligan: "Mulligan",
+  mulliganGratis: "Mulligan gratis",
+  batalla: "Atacar",
+  terminar: "Terminar turno",
+  finAtaque: "Listo, a bloqueos",
+  finBloqueo: "Listo, sin más bloqueos",
+  pasar: "Pasar",
+};
+
+function boton(texto, alClic, principal = false) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "boton" + (principal ? " principal" : "");
+  b.textContent = texto;
+  b.addEventListener("click", alClic);
+  return b;
+}
+
+function cartaEl(uid, { clase = "", legales = [], oculto = false } = {}) {
+  if (oculto) {
+    const r = document.createElement("span");
+    r.className = "reverso";
+    return r;
+  }
+  const c = N.carta(e, uid);
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = `carta ${clase}`;
+  if (accionesDe(uid, legales).length) b.classList.add("puede");
+  if (seleccion === uid) b.classList.add("elegida");
+  b.setAttribute("aria-label", c.nombre);
+  const i = document.createElement("img");
+  i.src = img(uid);
+  i.alt = "";
+  i.loading = "lazy";
+  b.append(i);
+  if (c.tipo === "Aliado") {
+    const f = N.fuerza(e, uid);
+    const s = document.createElement("span");
+    s.className = "fz" + (f > (c.fuerza ?? 0) ? " sube" : f < (c.fuerza ?? 0) ? " baja" : "");
+    s.textContent = f;
+    b.append(s);
+    const armas = e.armas[uid]?.length;
+    if (armas) {
+      const a = document.createElement("span");
+      a.className = "armas";
+      a.textContent = `⚔${armas > 1 ? armas : ""}`;
+      b.append(a);
+    }
+  }
+  if (e.conv[uid]) {
+    const t = document.createElement("span");
+    t.className = "etiqueta";
+    t.textContent = e.conv[uid].tipo === "Aliado" ? "Convertida" : "Oro";
+    b.append(t);
+  }
+  b.addEventListener("click", () => abrirDetalle(uid, legales));
+  return b;
+}
+
+function llenar(id, uids, opciones) {
+  const fila = $(id);
+  fila.replaceChildren(...uids.map((u) => cartaEl(u, opciones(u))));
+}
+
+function pintar() {
+  if (!e) return;
+  const decido = e.ganador === null && quienDecide() === YO && !e.pendiente;
+  const legales = decido ? accionesLegales(e) : [];
+  const [yo, ia] = e.jugadores;
+  $("castillo-yo").firstChild.textContent = yo.castillo.length;
+  $("castillo-ia").firstChild.textContent = ia.castillo.length;
+  $("detalle-yo").textContent = `Mano ${yo.mano.length} · Cem ${yo.cementerio.length} · Dest ${yo.destierro.length}`;
+  $("detalle-ia").textContent = `Mano ${ia.mano.length} · Cem ${ia.cementerio.length} · Dest ${ia.destierro.length}`;
+  $("fase").textContent = FASES[e.fase] ?? "…";
+  $("fase").classList.toggle("tuyo", e.ganador === null && quienDecide() === YO);
+  $("turno").textContent = e.fase === "mulligan" ? "Antes de empezar" : `Turno ${e.turno + 1} · ${e.activo === YO ? "tuyo" : "de la IA"}`;
+
+  $("ia-mano").replaceChildren(...ia.mano.map(() => cartaEl(null, { oculto: true })));
+  llenar("ia-oros", N.orosDe(e, IA), (u) => ({ clase: "oro" + (ia.pagado.includes(u) ? " pagado" : ""), legales }));
+  llenar("ia-apoyo", ia.apoyo, () => ({ legales }));
+  llenar("ia-defensa", ia.defensa, () => ({ clase: "grande", legales }));
+  llenar("ia-ataque", ia.ataque, () => ({ clase: "grande atacando", legales }));
+  llenar("yo-ataque", yo.ataque, () => ({ clase: "grande atacando", legales }));
+  llenar("yo-defensa", yo.defensa, () => ({ clase: "grande", legales }));
+  llenar("yo-apoyo", yo.apoyo, () => ({ legales }));
+  llenar("yo-oros", N.orosDe(e, YO), (u) => ({ clase: "oro" + (yo.pagado.includes(u) ? " pagado" : ""), legales }));
+  llenar("mano", yo.mano, () => ({ legales }));
+
+  const reg = $("registro");
+  reg.replaceChildren(...registro.slice(-40).map((r) => Object.assign(document.createElement("p"), { textContent: r.texto, className: r.clase })));
+  reg.scrollTop = reg.scrollHeight;
+
+  const acciones = $("acciones");
+  acciones.replaceChildren();
+  if (e.ganador !== null) {
+    acciones.append(boton("Nueva partida", nuevaPartida, true));
+  } else if (!decido) {
+    acciones.append(Object.assign(document.createElement("p"), { className: "ayuda", textContent: e.pendiente && e.pendiente.jugador === YO ? "Tienes una elección pendiente." : "La IA está pensando…" }));
+    if (e.pendiente && e.pendiente.jugador === YO) acciones.append(boton("Ver elección", abrirEleccion, true));
+  } else {
+    const globales = legales.filter((a) => GLOBALES[a.tipo]);
+    for (const a of globales) acciones.append(boton(GLOBALES[a.tipo], () => hacer(a), a.tipo === "quedarse"));
+    if (legales.some((a) => !GLOBALES[a.tipo])) {
+      acciones.append(Object.assign(document.createElement("p"), { className: "ayuda", textContent: ayudaFase() }));
+    }
+  }
+}
+
+function ayudaFase() {
+  if (e.fase === "ataque") return "Toca tus Aliados brillantes para declararlos atacantes.";
+  if (e.fase === "bloqueo") return "Toca un Aliado tuyo para asignarle un bloqueo.";
+  if (e.fase === "final") return "Tienes más de 8 cartas: toca una para descartarla.";
+  return "Las cartas que brillan tienen jugadas: tócalas.";
+}
+
+function abrirHoja(contenido, cerrable = true) {
+  const hoja = $("hoja");
+  hoja.replaceChildren(...contenido);
+  $("hoja-fondo").hidden = false;
+  $("hoja-fondo").onclick = cerrable ? (ev) => { if (ev.target === $("hoja-fondo")) cerrarHoja(); } : null;
+}
+
+function cerrarHoja() {
+  $("hoja-fondo").hidden = true;
+  seleccion = null;
+  pintar();
+}
+
+function abrirDetalle(uid, legales) {
+  seleccion = uid;
+  const c = N.carta(e, uid);
+  const u = N.ubicar(e, uid);
+  const caja = document.createElement("div");
+  caja.className = "detalle-carta";
+  const i = document.createElement("img");
+  i.src = img(uid, true);
+  i.alt = c.nombre;
+  const dl = document.createElement("dl");
+  const fila = (k, v) => { if (v !== "" && v !== undefined && v !== null) dl.append(Object.assign(document.createElement("dt"), { textContent: k }), Object.assign(document.createElement("dd"), { textContent: v })); };
+  fila("Tipo", c.tipo);
+  if (c.tipo !== "Oro") fila("Coste", c.coste ?? 0);
+  if (c.tipo === "Aliado") fila("Fuerza", `${N.fuerza(e, uid)}${N.fuerza(e, uid) !== (c.fuerza ?? 0) ? ` (base ${c.fuerza ?? 0})` : ""}`);
+  if (N.enJuego(e, uid)) {
+    const claves = [...N.claves(e, uid)].filter((k) => CLAVES_VISIBLES.includes(k)).map((k) => NOMBRE_CLAVE[k] ?? k);
+    fila("Claves", claves.join(", "));
+    fila("Habilidad", N.activa(e, uid) ? "" : "Sin habilidad");
+    const armas = (e.armas[uid] ?? []).map(nombre);
+    fila("Armas", armas.join(", "));
+  }
+  if (e.conv[uid]) fila("Convertida", e.conv[uid].tipo === "Aliado" ? `en Aliado de Fuerza ${e.conv[uid].fuerza ?? 0} sin habilidad` : "en Oro");
+  fila("Zona", u ? `${u.j === YO ? "Tuya" : "IA"} · ${ZONAS[u.zona] ?? u.zona}` : "");
+  caja.append(i, dl);
+  const titulo = Object.assign(document.createElement("h2"), { textContent: c.nombre });
+  const opciones = document.createElement("div");
+  opciones.className = "opciones";
+  for (const a of accionesDe(uid, legales)) opciones.append(boton(etiqueta(a), () => { cerrarHoja(); hacer(a); }, true));
+  opciones.append(boton("Cerrar", cerrarHoja));
+  abrirHoja([titulo, caja, opciones]);
+  pintar();
+}
+
+function contextoEleccion() {
+  const fr = e.cola[0];
+  const fuente = fr?.ctx?.def ? N.def(e, fr.ctx.def).nombre : "";
+  const op = e.pendiente.cont.op;
+  const que = op === "sel" ? "Elige una carta" : op === "modo" ? "Elige un efecto" : op === "opcional" ? "¿Usar esta habilidad?" : op === "robarHasta" ? "¿Cuántas cartas robar?" : "Elige";
+  return { fuente, que };
+}
+
+function abrirEleccion() {
+  if (!e.pendiente || e.pendiente.jugador !== YO) return;
+  const { fuente, que } = contextoEleccion();
+  const titulo = Object.assign(document.createElement("h2"), { textContent: fuente || que });
+  const sub = Object.assign(document.createElement("p"), { className: "sub", textContent: fuente ? que : "" });
+  const opciones = e.pendiente.opciones;
+  const sonCartas = opciones.some((o) => typeof o.valor === "string");
+  const lista = document.createElement("div");
+  lista.className = "opciones" + (sonCartas ? " cartas" : "");
+  opciones.forEach((o, i) => {
+    const elegir = () => { $("hoja-fondo").hidden = true; hacer({ tipo: "elegir", i }); };
+    if (typeof o.valor === "string") {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "opcion-carta";
+      const im = document.createElement("img");
+      im.src = img(o.valor);
+      im.alt = "";
+      const u = N.ubicar(e, o.valor);
+      b.append(im, `${nombre(o.valor)}${u ? ` · ${u.j === YO ? "tuya" : "IA"}, ${ZONAS[u.zona] ?? u.zona}` : ""}`);
+      b.addEventListener("click", elegir);
+      lista.append(b);
+    } else {
+      const texto = o.texto && o.valor !== true ? o.texto : o.valor === true ? "Sí" : o.valor === false ? "No" : o.valor === null ? (sonCartas ? "Ninguna / listo" : "Listo") : `${o.valor}`;
+      lista.append(boton(texto, elegir, o.valor !== null && o.valor !== false));
+    }
+  });
+  abrirHoja([titulo, sub, lista], false);
+}
+
+function abrirRespuesta() {
+  const top = e.pila.at(-1);
+  const legales = accionesLegales(e);
+  const titulo = Object.assign(document.createElement("h2"), { textContent: `La IA juega ${nombre(top.uid)}` });
+  const caja = document.createElement("div");
+  caja.className = "detalle-carta";
+  const i = document.createElement("img");
+  i.src = img(top.uid, true);
+  i.alt = nombre(top.uid);
+  caja.append(i, Object.assign(document.createElement("p"), { className: "sub", textContent: `Coste ${top.coste}. Puedes Anularla ahora.` }));
+  const opciones = document.createElement("div");
+  opciones.className = "opciones";
+  for (const a of legales.filter((x) => x.tipo === "responder")) opciones.append(boton(etiqueta(a), () => { $("hoja-fondo").hidden = true; hacer(a); }, true));
+  opciones.append(boton("Dejar pasar", () => { $("hoja-fondo").hidden = true; hacer({ tipo: "noResponder" }); }));
+  abrirHoja([titulo, caja, opciones], false);
+}
+
+function mostrarMesa(si) {
+  $("portada").hidden = si;
+  $("mesa").hidden = !si;
+  $("bandeja").hidden = !si;
+  $("nueva").hidden = !si;
+  if (si && !e) {
+    if (cargar()) ciclo();
+    else nuevaPartida();
+  }
+}
+
+$("nueva").addEventListener("click", () => {
+  if (e?.ganador === null && !confirm("¿Abandonar esta partida y empezar otra?")) return;
+  nuevaPartida();
+});
+$("portada-crear").addEventListener("click", () => Cuenta.abrir("crear"));
+$("portada-entrar").addEventListener("click", () => Cuenta.abrir("entrar"));
+Cuenta.iniciar({ contenedor: $("nav-cuenta"), alSesion: (s) => mostrarMesa(!!s) });
+</script>
+</body>
+</html>

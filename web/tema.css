@@ -99,7 +99,7 @@ h2 { font-size: 1.05rem; }
 .credito a { color: inherit; }
 
 .nav-app {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; display: grid; grid-template-columns: repeat(3, 1fr);
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; display: grid; grid-template-columns: repeat(4, 1fr);
   height: calc(var(--nav-alto) + env(safe-area-inset-bottom, 0px)); padding: 0 max(8px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(8px, env(safe-area-inset-left, 0px));
   background: linear-gradient(180deg, rgb(22 27 44 / 0.92), rgb(14 18 32 / 0.98)); border-top: 1px solid var(--line-fuerte);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
