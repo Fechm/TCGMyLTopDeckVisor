@@ -333,6 +333,7 @@ export function agregarEfecto(e, efecto, ctrl) {
   else if (fin === "dosTurnos") f = { finTurno: e.turno + 1 };
   else if (fin === "proximoTurno") f = { inicioDe: ctrl, desde: e.turno };
   else if (fin === "turnoRival") f = { finTurno: e.activo === ctrl ? e.turno + 1 : e.turno };
+  else if (fin === "finProximoTurno") f = { finTurno: e.activo === ctrl ? e.turno + 2 : e.turno + 1 };
   else f = { [fin]: true };
   e.efectos.push({ ...efecto, fin: f });
 }

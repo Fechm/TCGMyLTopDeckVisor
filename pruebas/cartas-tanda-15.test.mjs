@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, hacer, elegir, sinRespuesta, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
-import { resolver } from "../web/duelo/efectos.js";
+import { resolver, cumple } from "../web/duelo/efectos.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
@@ -212,9 +212,41 @@ test("Pocion del Mal: se Destierra y Baraja una carta de coste 2 o menos", () =>
   assert.equal(zonaDe(e, p), "destierro");
 });
 
-test("Pocion del Mal: puede jugarse al comienzo de cualquier Fase", { todo: "momento: jugar un Talismán al comienzo de cualquier Fase" }, () => {});
+test("Pocion del Mal: puede jugarse al comienzo de cualquier Fase", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  poner(e, 1, "defensa", "Valefor");
+  const p = poner(e, 0, "mano", "Pocion del Mal");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  assert.equal(puedeJugar(e, p), true);
+});
 
-test("Pocion del Mal: hasta el final del turno, cada vez que el oponente juega una carta Barajas o Destierras una de un Cementerio y Robas", { todo: "efecto: disparo diferido hasta el final del turno cuando el oponente juega una carta" }, () => {});
+test("Pocion del Mal: hasta el final del turno, cada vez que el oponente juega una carta Barajas o Destierras una de un Cementerio y Robas", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const v = poner(e, 1, "defensa", "Valefor");
+  const c = poner(e, 1, "cementerio", "Valefor");
+  const x = poner(e, 1, "mano", "Valefor");
+  const p = poner(e, 0, "mano", "Pocion del Mal");
+  e = sinRespuesta(aplicar(e, jugar(p)));
+  e = elegir(e, v);
+  assert.equal(zonaDe(e, p), "destierro");
+  assert.equal(e.jugadores[0].mano.length, 0);
+  e = disparar(e, "juega", { uid: x, j: 1, tipo: "Aliado" });
+  e = elegir(e, "Cementerio oponente");
+  e = elegir(e, c);
+  e = elegir(e, "Desterrar");
+  assert.equal(zonaDe(e, c), "destierro");
+  assert.equal(e.jugadores[0].mano.length, 1);
+  e = disparar(e, "juega", { uid: x, j: 0, tipo: "Aliado" });
+  assert.equal(e.jugadores[0].mano.length, 1);
+  N.expirar(e, "finTurno");
+  e.turno += 1;
+  e = disparar(e, "juega", { uid: x, j: 1, tipo: "Aliado" });
+  assert.equal(e.pendiente, null);
+  assert.equal(e.jugadores[0].mano.length, 1);
+});
 
 test("Pozo Impuro: tiene Exhumar y solo se juega una vez por turno", () => {
   let e = mesa();
@@ -329,7 +361,17 @@ test("Protocolo Totemico: Anula un Tótem de coste 2 o menos", () => {
   assert.equal(zonaDe(e, t), "cementerio");
 });
 
-test("Protocolo Totemico: también Anula un Arma de coste 2 o menos", { todo: "respuesta: filtro de la carta respondida por varios tipos (Tótem o Arma)" }, () => {});
+test("Protocolo Totemico: también Anula un Arma de coste 2 o menos", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  oros(e, 1, 1);
+  const v = poner(e, 0, "defensa", "Valefor");
+  const a = ficticia(e, 0, "mano", { tipo: "Arma", coste: 2, fuerza: 1 });
+  const p = poner(e, 1, "mano", "Protocolo Totemico");
+  e = aplicar(e, jugar(a, { portador: v }));
+  e = aplicar(e, { tipo: "responder", uid: p });
+  assert.equal(zonaDe(e, a), "cementerio");
+});
 
 test("Protocolo Totemico: mostrando cuatro cartas de un mismo tipo de tu mano sube del Cementerio a tu mano", () => {
   let e = mesa();
@@ -422,7 +464,14 @@ test("Pulso Kaiju: busca tres Aliados de distinto nombre, uno a la mano, dos al 
   assert.equal(e.jugadores[0].mano.length, 2);
 });
 
-test("Pulso Kaiju: puede jugarse al comienzo de cualquier Fase", { todo: "momento: jugar un Talismán al comienzo de cualquier Fase" }, () => {});
+test("Pulso Kaiju: puede jugarse al comienzo de cualquier Fase", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const p = poner(e, 0, "mano", "Pulso Kaiju");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  assert.equal(puedeJugar(e, p), true);
+});
 
 test("Pulso Kaiju: en tu Cementerio el oponente no puede Desterrar Aliados de tu Cementerio", { todo: "continua desde el Cementerio: el oponente no puede Desterrar Aliados de tu Cementerio" }, () => {});
 
@@ -562,7 +611,15 @@ test("R L Stevenson: se Destierra, convierte una carta de coste 2 o menos en un 
   assert.equal(zonaDe(e, r), "destierro");
 });
 
-test("R L Stevenson: puede jugarse al comienzo de cualquier Fase", { todo: "momento: jugar un Talismán al comienzo de cualquier Fase" }, () => {});
+test("R L Stevenson: puede jugarse al comienzo de cualquier Fase", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  poner(e, 1, "defensa", "Valefor");
+  const r = poner(e, 0, "mano", "R L Stevenson");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  assert.equal(puedeJugar(e, r), true);
+});
 
 test("Rafaga de Energia: con un Caballero Barajas un Aliado en juego", () => {
   let e = mesa();
@@ -594,7 +651,21 @@ test("Rafaga de Energia: sin las Razas no se ofrecen los efectos", () => {
   assert.equal(zonaDe(e, r), "cementerio");
 });
 
-test("Rafaga de Energia: con un Héroe afectar a tus Aliados cuesta un Oro adicional hasta tu próximo turno", { todo: "efecto: afectar a tus Aliados cuesta un Oro adicional al oponente" }, () => {});
+test("Rafaga de Energia: con un Héroe afectar a tus Aliados cuesta un Oro adicional hasta tu próximo turno", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const h = ficticia(e, 0, "defensa", { razas: ["Héroe"] });
+  const r = poner(e, 0, "mano", "Rafaga de Energia");
+  const d = poner(e, 1, "mano", "Pocion del Mal");
+  const ctx = { ctrl: 1, fuente: d, def: e.instancias[d], costeFuente: 1, vars: {} };
+  assert.equal(cumple(e, ctx, h, {}, "barajar"), true);
+  e = hacer(e, jugar(r), texto("Héroe"));
+  assert.equal(cumple(e, ctx, h, {}, "barajar"), false);
+  oros(e, 1, 1);
+  assert.equal(cumple(e, ctx, h, {}, "barajar"), true);
+  assert.equal(cumple(e, { ...ctx, ctrl: 0 }, h, {}, "barajar"), true);
+  assert.deepEqual(e.efectos.find((f) => f.tipo === "proteccion").fin, { inicioDe: 0, desde: e.turno });
+});
 
 test("Ragnarok: si tus Aliados son de la misma Raza Baraja todos los Aliados, y cada jugador revela dos Aliados de coste 2 o menos, uno a la mano y otro en juego", () => {
   let e = mesa();
@@ -665,7 +736,15 @@ test("Rayo Penetrante: Destierra una carta oponente de coste 3 o más y el opone
   assert.equal(e.jugadores[1].mano.length, 1);
 });
 
-test("Rayo Penetrante: puede jugarse en la Fase Final", { todo: "momento: jugar un Talismán en la Fase Final" }, () => {});
+test("Rayo Penetrante: puede jugarse en la Fase Final", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  poner(e, 1, "defensa", "Valefor");
+  const r = poner(e, 0, "mano", "Rayo Penetrante");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  assert.equal(puedeJugar(e, r), true);
+});
 
 test("Red de Plata: Anula un Aliado y si tenía coste 2 o menos lo Destierra", () => {
   let e = mesa();

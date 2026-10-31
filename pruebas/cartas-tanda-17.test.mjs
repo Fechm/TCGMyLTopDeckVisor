@@ -40,6 +40,17 @@ function ajena(e, j, zona, nombre) {
   return uid;
 }
 
+function enComienzoDeFase(nombre) {
+  let e = mesa();
+  oros(e, 1, 1);
+  const carta = poner(e, 1, "mano", nombre);
+  poner(e, 0, "defensa", "Valefor");
+  e = aplicar(e, { tipo: "batalla" });
+  assert.equal(e.fase, "momento");
+  e = aplicar(e, { tipo: "pasarMomento" });
+  return puedeJugar(e, carta);
+}
+
 function responderCon(e, carta, respuesta) {
   e = aplicar(e, jugar(carta));
   e = aplicar(e, { tipo: "responder", uid: respuesta });
@@ -124,19 +135,30 @@ test("Sheut: no Anula Aliados de coste mayor que 1", () => {
   assert.equal(puedeResponder(e, sheut), false);
 });
 
-test("Sheut: un Talismán de coste 1 respondido no queda Anulado", () => {
+test("Sheut: no puede responder a un Talismán de coste 1", () => {
   let e = mesa();
   oros(e, 0, 1);
   oros(e, 1, 1);
   const manada = poner(e, 0, "mano", "Llamar a la Manada");
   const sheut = poner(e, 1, "mano", "Sheut");
-  e = responderCon(e, manada, sheut);
-  assert.equal(e.jugadores[0].mano.length, 3);
+  e = aplicar(e, jugar(manada));
+  assert.equal(puedeResponder(e, sheut), false);
 });
 
 test("Sheut: cancela la habilidad de una carta", { todo: "respuesta: cancelar una habilidad" }, () => {});
 
-test("Sheut: Anula solo Aliados o Tótems", { todo: "respuesta: filtro de la carta respondida por varios tipos (Aliado o Tótem)" }, () => {});
+test("Sheut: Anula un Tótem de coste 1 o menos", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  oros(e, 1, 1);
+  const totem = ficticia(e, 0, "mano", { tipo: "Tótem", coste: 1, fuerza: null });
+  const sheut = poner(e, 1, "mano", "Sheut");
+  e = aplicar(e, jugar(totem));
+  assert.equal(puedeResponder(e, sheut), true);
+  e = sinRespuesta(aplicar(e, { tipo: "responder", uid: sheut }));
+  assert.equal(zonaDe(e, totem), "cementerio");
+  assert.equal(zonaDe(e, sheut), "destierro");
+});
 
 test("Sidhes del Bosque: Roba una carta", () => {
   let e = mesa();
@@ -273,7 +295,9 @@ test("Sombra Etérea: tiene Exhumar y se juega desde el Cementerio", () => {
   assert.equal(accionesLegales(e).some((a) => a.tipo === "jugar" && a.uid === sombra && a.desde === "cementerio"), true);
 });
 
-test("Sombra Etérea: se puede jugar al comienzo de cualquier Fase", { todo: "momento: jugar un Talismán al comienzo de cualquier Fase" }, () => {});
+test("Sombra Etérea: se puede jugar al comienzo de cualquier Fase", () => {
+  assert.equal(enComienzoDeFase("Sombra Etérea"), true);
+});
 
 test("Sombra Etérea: no se pueden utilizar habilidades de cartas con el nombre nombrado por el turno", { todo: "efecto: no se pueden utilizar habilidades de cartas con un nombre por el turno" }, () => {});
 
@@ -292,7 +316,9 @@ test("Supremacia Kaiju: Baraja y Destierra hasta tres cartas de los Cementerios,
   assert.equal(zonaDe(e, sup), "destierro");
 });
 
-test("Supremacia Kaiju: se puede jugar al comienzo de cualquier Fase", { todo: "momento: jugar un Talismán al comienzo de cualquier Fase" }, () => {});
+test("Supremacia Kaiju: se puede jugar al comienzo de cualquier Fase", () => {
+  assert.equal(enComienzoDeFase("Supremacia Kaiju"), true);
+});
 
 test("Supremacia Kaiju: el próximo Oro del oponente entra sin habilidad por el turno", { todo: "efecto: el próximo Oro que ponga en juego el oponente entra sin habilidad por el turno" }, () => {});
 
@@ -308,7 +334,24 @@ test("Ta Kona: cuesta un Oro adicional por cada Aliado que controles hasta un m�
   assert.equal(costeDe(e, 0, ta).pagar, 3);
 });
 
-test("Ta Kona: solo se juega al comienzo del ataque", { todo: "momento: jugar un Talismán al comienzo del ataque" }, () => {});
+test("Ta Kona: solo se juega al comienzo del ataque", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const v = poner(e, 0, "defensa", "Valefor");
+  const ta = poner(e, 0, "mano", "Ta Kona");
+  assert.equal(puedeJugar(e, ta), false);
+  e = aplicar(e, { tipo: "batalla" });
+  assert.equal(e.fase, "momento");
+  assert.equal(puedeJugar(e, ta), true);
+  e = aplicar(e, { tipo: "pasarMomento" });
+  e = aplicar(e, { tipo: "pasarMomento" });
+  e = aplicar(e, { tipo: "atacar", uid: v });
+  e = aplicar(e, { tipo: "finAtaque" });
+  while (e.fase === "momento") e = aplicar(e, { tipo: "pasarMomento" });
+  e = aplicar(e, { tipo: "finBloqueo" });
+  assert.equal(e.fase, "talismanes");
+  assert.equal(puedeJugar(e, ta), false);
+});
 
 test("Ta Kona: al final de la Batalla agrupas tus Aliados y ganas una Batalla Mitológica adicional", { todo: "efecto: Batalla Mitológica adicional en el turno" }, () => {});
 
@@ -434,7 +477,19 @@ test("Tercer Sello: los Aliados que entran hasta tu próximo turno pierden 3 de 
   assert.equal(N.fuerza(e, v), 3);
 });
 
-test("Tercer Sello: los Aliados de Fuerza 0 no pueden disparar sus habilidades", { todo: "efecto: los Aliados de Fuerza 0 no pueden disparar sus habilidades durante un período" }, () => {});
+test("Tercer Sello: los Aliados de Fuerza 0 no pueden disparar sus habilidades", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  const disparadas = [{ cuando: ["comienzoVigilia"], quien: "yo", hacer: [{ op: "robar", n: 1, quien: "yo" }] }];
+  ficticia(e, 0, "defensa", { fuerza: 3, disparadas });
+  ficticia(e, 0, "defensa", { fuerza: 5, disparadas });
+  const sello = poner(e, 0, "mano", "Tercer Sello");
+  e = sinRespuesta(aplicar(e, jugar(sello)));
+  const mano = e.jugadores[0].mano.length;
+  N.disparar(e, "comienzoVigilia", { j: 0 });
+  resolver(e);
+  assert.equal(e.jugadores[0].mano.length, mano + 1);
+});
 
 test("Terremoto: un Aliado duplica su Fuerza y al atacar Botas tantas cartas como su Fuerza", () => {
   let e = mesa();
@@ -482,7 +537,23 @@ test("Terremoto: solo uno por turno y solo en tu Vigilia", () => {
   assert.equal(puedeJugar(f, c), false);
 });
 
-test("Terremoto: al bloquear también Botas tantas cartas como su Fuerza", { todo: "evento: cuando un Aliado bloquea" }, () => {});
+test("Terremoto: al bloquear también Botas tantas cartas como su Fuerza", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const v = poner(e, 0, "defensa", "Valefor");
+  const atacante = poner(e, 1, "defensa", "Daikaiju Furioso");
+  const t = poner(e, 0, "mano", "Terremoto");
+  e = elegir(sinRespuesta(aplicar(e, jugar(t))), v);
+  assert.equal(N.fuerza(e, v), 6);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.activo, 1);
+  e = aplicar(e, { tipo: "batalla" });
+  e = aplicar(e, { tipo: "atacar", uid: atacante });
+  e = aplicar(e, { tipo: "finAtaque" });
+  const antes = e.jugadores[0].castillo.length;
+  e = aplicar(e, { tipo: "bloquear", uid: v, atacante });
+  assert.equal(e.jugadores[0].castillo.length, antes - 6);
+});
 
 test("Tierra del Fuego: cada jugador Baraja un Aliado de coste 1 o menos y pagas para Desterrar un Arma y Robar tres", () => {
   let e = mesa();
@@ -534,7 +605,9 @@ test("Tifon de Huesos: si es Anulado queda en el Cementerio", () => {
   assert.equal(zonaDe(e, tifon), "cementerio");
 });
 
-test("Tifon de Huesos: se puede jugar al comienzo de cualquier Fase", { todo: "momento: jugar un Talismán al comienzo de cualquier Fase" }, () => {});
+test("Tifon de Huesos: se puede jugar al comienzo de cualquier Fase", () => {
+  assert.equal(enComienzoDeFase("Tifon de Huesos"), true);
+});
 
 test("Toma del Morro: Destierra una carta oponente y juega de tu Castillo una de igual o menor coste reduciéndola en un Oro", () => {
   let e = mesa();
@@ -612,11 +685,14 @@ test("Transformación de Lucy: ganas el control de un Aliado del que eres dueño
   assert.equal(zonaDe(e, t), "destierro");
 });
 
-test("Transformación de Lucy: un Aliado gana 2 de Fuerza permanentemente e Indesterrable", () => {
+test("Transformación de Lucy: al final del turno un Aliado gana 2 de Fuerza permanentemente e Indesterrable", () => {
   let e = mesa();
   const v = poner(e, 0, "defensa", "Valefor");
   const t = poner(e, 0, "mano", "Transformación de Lucy");
-  e = hacer(e, jugar(t), texto("Un Aliado"));
+  e = hacer(e, jugar(t), texto("Al final"));
+  assert.equal(N.fuerza(e, v), 3);
+  assert.equal(N.tiene(e, v, "Indesterrable"), false);
+  e = aplicar(e, { tipo: "terminar" });
   N.expirar(e, "finTurno");
   e.turno += 3;
   N.expirar(e, "inicio");

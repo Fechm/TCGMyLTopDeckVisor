@@ -140,8 +140,22 @@ export const HABILIDADES = {
     },
   },
   "Pocion del Mal": {
+    momentos: ["comienzoFase"],
     destierroAlJugar: true,
-    talisman: [sel(["todos:enJuego"], { costeMax: 2 }), mov("barajar")],
+    talisman: [sel(["todos:enJuego"], { costeMax: 2 }), mov("barajar"), { op: "fn", f: "activar" }],
+    disparadas: [
+      {
+        zona: ["destierro"],
+        cuando: ["juega"],
+        quien: "rival",
+        si: "activa",
+        hacer: [cementerioElegido((quien) => [sel([`${quien}:cementerio`], {}, "c", { hasta: true }), barajarODesterrar("c")]), robar(1)],
+      },
+    ],
+    fns: {
+      activar: (e, ctx) => N.agregarEfecto(e, { tipo: "pocionDelMal", uid: ctx.fuente, fin: "turno" }, ctx.ctrl),
+      activa: (e, ctx) => e.efectos.some((f) => f.tipo === "pocionDelMal" && f.uid === ctx.fuente),
+    },
   },
   "Pozo Impuro": {
     claves: ["Exhumar"],
@@ -180,7 +194,7 @@ export const HABILIDADES = {
     talisman: [sel(["todos:aliados"], { costeMax: 3 }, "x", { para: "tomar" }), { op: "convertir", var: "x", en: "Tótem", a: "apoyo" }, robar(2)],
   },
   "Protocolo Totemico": {
-    respuesta: { anula: { tipo: "Tótem", costeMax: 2 } },
+    respuesta: { anula: { tipo: ["Tótem", "Arma"], costeMax: 2 } },
     talisman: [
       {
         op: "modo",
@@ -246,6 +260,7 @@ export const HABILIDADES = {
     fns: { atacantes: (e, ctx) => 2 * e.jugadores[N.rival(ctx.ctrl)].ataque.length },
   },
   "Pulso Kaiju": {
+    momentos: ["comienzoFase"],
     talisman: [
       sel(["yo:castillo"], { tipo: "Aliado" }, "a"),
       sel(["yo:castillo"], { tipo: "Aliado", f: "distinto" }, "c", { n: 2 }),
@@ -374,6 +389,7 @@ export const HABILIDADES = {
     },
   },
   "R L Stevenson": {
+    momentos: ["comienzoFase"],
     destierroAlJugar: true,
     talisman: [
       sel(["todos:enJuego"], { costeMax: 2 }, "x", { para: "tomar" }),
@@ -387,7 +403,7 @@ export const HABILIDADES = {
     talisman: [
       {
         op: "modo",
-        n: 2,
+        n: 3,
         hasta: true,
         opciones: [
           {
@@ -400,12 +416,19 @@ export const HABILIDADES = {
             requiere: "guerrero",
             pasos: [sel(["todos:aliados"], {}, "g"), { op: "botar", nf: "fuerzaElegida", quien: "rival" }],
           },
+          {
+            texto: "Héroe: afectar a tus Aliados cuesta un Oro adicional hasta tu próximo turno",
+            requiere: "heroe",
+            pasos: [{ op: "fn", f: "proteger" }],
+          },
         ],
       },
     ],
     fns: {
       caballero: (e, ctx) => tieneRaza("Caballero")(e, ctx) && N.todoEnJuego(e).some((u) => N.carta(e, u).tipo === "Aliado"),
       guerrero: tieneRaza("Guerrero"),
+      heroe: tieneRaza("Héroe"),
+      proteger: (e, ctx) => N.agregarEfecto(e, { tipo: "proteccion", de: ctx.ctrl, cuesta: 1, tipoObjetivo: "Aliado", fin: "proximoTurno" }, ctx.ctrl),
       fuerzaElegida: (e, ctx) => (ctx.vars.g ?? []).reduce((s, u) => s + N.fuerza(e, u), 0),
     },
   },
@@ -439,6 +462,7 @@ export const HABILIDADES = {
     talisman: [sel(["yo:aliados"], { costeMax: 2 }, "x", { para: "desterrar" }), mov("desterrar")],
   },
   "Rayo Penetrante": {
+    momentos: ["faseFinal"],
     talisman: [
       {
         op: "modo",

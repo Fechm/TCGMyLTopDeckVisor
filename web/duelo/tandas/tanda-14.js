@@ -22,17 +22,12 @@ const TIPOS = ["Aliado", "Arma", "Tótem", "Oro", "Talismán"];
 export const HABILIDADES = {
   "Maldición Vudú": {
     requiere: "miTurno",
-    talisman: [{ op: "fn", f: "marcar" }, sel(["todos:enJuego"]), efecto("x", { tipo: "pierdeHabilidad" }, "turno")],
-    disparadas: [{ zona: ["cementerio"], cuando: ["faseFinal"], quien: "yo", si: "jugadaHoy", hacer: [{ op: "fn", f: "aPagado" }] }],
+    talisman: [{ op: "diferir", cuando: "faseFinalPropia", pasos: [{ op: "fn", f: "aPagado" }] }, sel(["todos:enJuego"]), efecto("x", { tipo: "pierdeHabilidad" }, "turno")],
     activadas: [
       desdeCementerio("Desterrarlo del Cementerio: Barajar o Desterrar una carta de un Cementerio", [sel(["todos:cementerio"]), barajarODesterrar()], { requiere: "otraEnCementerio" }),
     ],
     fns: {
       miTurno,
-      marcar: (e, ctx) => {
-        e.usos[`vudu|${ctx.fuente}`] = e.turno;
-      },
-      jugadaHoy: (e, ctx) => e.usos[`vudu|${ctx.fuente}`] === e.turno,
       aPagado: (e, ctx) => {
         const p = e.jugadores[ctx.ctrl];
         p.pagado.push(...p.reserva.splice(0));
@@ -43,8 +38,11 @@ export const HABILIDADES = {
   "Manipular Destino": {
     unoPorTurno: true,
     reduce: "red",
-    talisman: [sel(["todos:enJuego"], { costeMax: 2 }), mov("barajar"), robar(2)],
-    fns: { red: (e, ctx) => N.enJuegoDe(e, ctx.ctrl).filter((u) => coste(e, u) >= 2).length },
+    talisman: [sel(["todos:enJuego"], { costeMax: 2 }), mov("barajar"), robar(2), { op: "fn", f: "encarecer" }],
+    fns: {
+      red: (e, ctx) => N.enJuegoDe(e, ctx.ctrl).filter((u) => coste(e, u) >= 2).length,
+      encarecer: (e, ctx) => N.agregarEfecto(e, { tipo: "proteccion", de: ctx.ctrl, tipoObjetivo: "Aliado", cuesta: 1, fin: "proximoTurno" }, ctx.ctrl),
+    },
   },
   "Mano de Destruccion": {
     talisman: [
@@ -103,8 +101,18 @@ export const HABILIDADES = {
       sel(["todos:aliados"], { costeMax: 2 }),
       efecto("x", { tipo: "gana", clave: "Furia" }, "proximoTurno"),
       efecto("x", { tipo: "gana", clave: "Indestructible" }, "proximoTurno"),
+      efecto("x", { tipo: "gana", clave: "NoConvertible" }, "proximoTurno"),
       efecto("x", { tipo: "noCambia" }, "proximoTurno"),
       efecto("x", { tipo: "debeAtacar" }, "turno"),
+    ],
+    activadas: [
+      {
+        texto: "Pagar un Oro y Desterrarlo del Cementerio: Anular un Talismán de coste 1",
+        zona: "cementerio",
+        oros: 1,
+        coste: desterrarFuente,
+        respuesta: { anula: { tipo: "Talismán", coste: 1 } },
+      },
     ],
   },
   "Marca de los Justos": {
@@ -115,6 +123,8 @@ export const HABILIDADES = {
     ],
   },
   "Marcha Sobre Versalles": {
+    momentos: ["faseFinal"],
+    requiere: "fueraDeTuFaseFinal",
     talisman: [
       {
         op: "si",
@@ -123,7 +133,10 @@ export const HABILIDADES = {
         sino: [sel(["rival:enJuego"], { costeMax: 2 }, "x", { para: "desterrar" }), mov("desterrar"), robar(1)],
       },
     ],
-    fns: { masDeUnOro: (e, ctx) => e.jugadores[N.rival(ctx.ctrl)].orosPuestos > 1 },
+    fns: {
+      masDeUnOro: (e, ctx) => e.jugadores[N.rival(ctx.ctrl)].orosPuestos > 1,
+      fueraDeTuFaseFinal: (e, ctx) => e.fase !== "momento" || e.activo !== ctx.ctrl,
+    },
   },
   "Miedo en Whitby": {
     talisman: [{ op: "fn", f: "miedo" }],
@@ -222,11 +235,12 @@ export const HABILIDADES = {
   },
   "Motin a Bordo": {
     destierroAlJugar: true,
+    momentos: ["comienzoVigilia", "comienzoVigiliaRival"],
     talisman: [
       {
         op: "modo",
         opciones: [
-          { texto: "No eres afectado por habilidades y efectos oponentes este turno y Robas una carta", pasos: [robar(1)] },
+          { texto: "No eres afectado por habilidades y efectos oponentes este turno y Robas una carta", pasos: [{ op: "fn", f: "inmune" }, robar(1)] },
           {
             texto: "No pagas costes adicionales este turno y Subes hasta un Aliado de coste 2 o menos a la mano",
             pasos: [sel(["todos:aliados"], { costeMax: 2 }, "x", { hasta: true }), mov("mano")],
@@ -234,6 +248,7 @@ export const HABILIDADES = {
         ],
       },
     ],
+    fns: { inmune: (e, ctx) => N.agregarEfecto(e, { tipo: "proteccion", de: ctx.ctrl, por: "todo", fin: "turno" }, ctx.ctrl) },
   },
   "Muñeco Vudú": {
     requiere: "vigiliaConFuria",
@@ -350,9 +365,11 @@ export const HABILIDADES = {
       barajar(),
     ],
     activadas: [
-      desdeCementerio("Desterrarla del Cementerio: una carta gana Indestructible este turno", [sel(["todos:enJuego"]), efecto("x", { tipo: "gana", clave: "Indestructible" }, "turno")], {
-        requiere: { de: ["todos:enJuego"], filtro: {} },
-      }),
+      desdeCementerio(
+        "Desterrarla del Cementerio: una carta no puede ser afectada por efectos oponentes y gana Indestructible este turno",
+        [sel(["todos:enJuego"]), efecto("x", { tipo: "proteccion", por: "todo" }, "turno"), efecto("x", { tipo: "gana", clave: "Indestructible" }, "turno")],
+        { requiere: { de: ["todos:enJuego"], filtro: {} } },
+      ),
     ],
   },
   Oriflama: {

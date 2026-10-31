@@ -44,12 +44,6 @@ function jugarRebajado(e, ctx, api, uid, rebaja) {
   api.entrarEnJuego(e, uid, j, undefined, { pagado: true, desde });
 }
 
-const marca = (nombre) => (e, ctx) => {
-  e.usos[`${nombre}|${ctx.fuente}`] = e.turno;
-};
-
-const marcada = (nombre) => (e, ctx) => e.usos[`${nombre}|${ctx.fuente}`] === e.turno;
-
 const finTuProximoTurno = (e, ctrl) => ({ finTurno: e.turno + (e.activo === ctrl ? 2 : 1) });
 
 const trempulcahue = {
@@ -95,13 +89,9 @@ export const HABILIDADES = {
     orosMenos: "menosOros",
     destierroAlJugar: true,
     soloRespuesta: true,
-    respuesta: { anula: { costeMax: 1 }, pasos: [{ op: "fn", f: "soloAliadoTotem" }] },
+    respuesta: { anula: { tipo: ["Aliado", "Tótem"], costeMax: 1 } },
     fns: {
       menosOros: (e, ctx) => (N.orosDe(e, ctx.ctrl).length < N.orosDe(e, N.rival(ctx.ctrl)).length ? 1 : 0),
-      soloAliadoTotem: (e, ctx) => {
-        const item = e.pila[ctx.objetivoPila];
-        if (item && !["Aliado", "Tótem"].includes(N.carta(e, item.uid).tipo)) item.anulado = false;
-      },
     },
   },
   "Sidhes del Bosque": {
@@ -168,6 +158,7 @@ export const HABILIDADES = {
   },
   "Sombra Etérea": {
     claves: ["Exhumar"],
+    momentos: ["comienzoFase"],
     talisman: [
       {
         op: "modo",
@@ -179,11 +170,14 @@ export const HABILIDADES = {
     ],
   },
   "Supremacia Kaiju": {
+    momentos: ["comienzoFase"],
     destierroAlJugar: true,
     talisman: [limite(3), ...barajarYDesterrar, ...buscar(["yo:castillo"], {})],
     fns: { ...cementerios },
   },
   "Ta Kona": {
+    momentos: ["comienzoAtaque"],
+    soloMomentos: true,
     costeExtra: "porAliado",
     talisman: [],
     fns: { porAliado: (e, ctx) => Math.min(3, N.aliadosDe(e, ctx.ctrl).length) },
@@ -265,6 +259,7 @@ export const HABILIDADES = {
       debilitarTodos: (e, ctx) => {
         for (const a of [...N.aliadosDe(e, 0), ...N.aliadosDe(e, 1)]) N.agregarEfecto(e, { tipo: "fuerza", uid: a, n: -3, fin: "proximoTurno" }, ctx.ctrl);
         N.agregarEfecto(e, { tipo: "tercerSello", fuente: ctx.fuente, fin: "proximoTurno" }, ctx.ctrl);
+        N.agregarEfecto(e, { tipo: "silenciaDisparos", tipoCarta: "Aliado", fuerzaMax: 0, fin: "proximoTurno" }, ctx.ctrl);
         ctx.vars.z = N.aliadosDe(e, N.rival(ctx.ctrl)).filter((a) => N.fuerza(e, a) === 0);
         return [mov("barajar", "z")];
       },
@@ -279,7 +274,7 @@ export const HABILIDADES = {
     unoPorTurno: true,
     requiere: "enTuVigilia",
     talisman: [sel(["todos:aliados"], {}, "a"), { op: "fn", f: "sacudir" }],
-    disparadas: [{ zona: ["cementerio"], cuando: ["ataca"], quien: "cualquiera", si: "sacudido", hacer: [{ op: "botar", nf: "aBotar", quien: "yo" }] }],
+    disparadas: [{ zona: ["cementerio"], cuando: ["ataca", "bloquea"], quien: "cualquiera", si: "sacudido", hacer: [{ op: "botar", nf: "aBotar", quien: "yo" }] }],
     fns: {
       enTuVigilia: (e, ctx) => e.fase === "vigilia" && e.activo === ctx.ctrl,
       sacudir: (e, ctx) => {
@@ -326,23 +321,20 @@ export const HABILIDADES = {
     fns: { unOro: (e, ctx) => orosLibres(e, ctx.ctrl) >= 1 },
   },
   "Tifon de Huesos": {
-    talisman: [limite(4), ...barajarYDesterrar, robar(1), { op: "fn", f: "marcar" }],
+    momentos: ["comienzoFase"],
+    talisman: [limite(4), ...barajarYDesterrar, robar(1)],
     disparadas: [
       {
         zona: ["cementerio"],
         cuando: ["alCementerio"],
         quien: "propia",
         si: "resuelto",
-        hacer: [{ op: "fn", f: "desmarcar" }, sel(["fuente"], {}, "yo"), mov("barajar", "yo"), ...buscar(["yo:castillo"], { f: "daikaiju" })],
+        hacer: [sel(["fuente"], {}, "yo"), mov("barajar", "yo"), ...buscar(["yo:castillo"], { f: "daikaiju" })],
       },
     ],
     fns: {
       ...cementerios,
-      marcar: marca("tifon"),
-      resuelto: marcada("tifon"),
-      desmarcar: (e, ctx) => {
-        delete e.usos[`tifon|${ctx.fuente}`];
-      },
+      resuelto: (e, ctx) => ctx.datos.desde === null,
       daikaiju: (e, ctx, u) => N.carta(e, u).nombre.includes("Daikaiju"),
     },
   },
@@ -411,9 +403,15 @@ export const HABILIDADES = {
             ],
           },
           {
-            texto: "Un Aliado gana 2 de Fuerza permanentemente e Indesterrable",
+            texto: "Al final del turno, un Aliado gana 2 de Fuerza permanentemente e Indesterrable",
             requiere: { de: ["todos:aliados"], filtro: {} },
-            pasos: [sel(["todos:aliados"], {}, "a"), efecto("a", { tipo: "fuerza", n: 2 }, "juego"), efecto("a", { tipo: "gana", clave: "Indesterrable" }, "juego")],
+            pasos: [
+              {
+                op: "diferir",
+                cuando: "faseFinal",
+                pasos: [sel(["todos:aliados"], {}, "a"), efecto("a", { tipo: "fuerza", n: 2 }, "juego"), efecto("a", { tipo: "gana", clave: "Indesterrable" }, "juego")],
+              },
+            ],
           },
         ],
       },

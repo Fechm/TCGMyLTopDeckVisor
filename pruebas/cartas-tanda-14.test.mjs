@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, hacer, elegir, opciones, sinRespuesta, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
 import { costeDe } from "../web/duelo/motor.js";
-import { resolver } from "../web/duelo/efectos.js";
+import { resolver, OPS } from "../web/duelo/efectos.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
@@ -17,6 +17,32 @@ function con(e, nombre, extra) {
 }
 
 const vainilla = (e, nombre) => con(e, nombre, { claves: [], disparadas: [], continuas: [], activadas: [] });
+
+function resolverTodo(e) {
+  for (let i = 0; i < 20 && (e.pendiente || (e.pila.length && !e.pila.at(-1).cerrada)); i++) {
+    e = e.pendiente ? aplicar(e, { tipo: "elegir", i: 0 }) : aplicar(e, { tipo: "noResponder" });
+  }
+  return e;
+}
+
+function turnoRival(e) {
+  e.activo = 1;
+  e.fase = "vigilia";
+  return e;
+}
+
+function ofrece(e, uid, objetivo) {
+  const f = sinRespuesta(aplicar(e, jugar(uid)));
+  return opciones(f).some((o) => o.valor === objetivo);
+}
+
+function avanzarHasta(e, pred) {
+  for (let i = 0; i < 60 && !pred(e); i++) {
+    const l = accionesLegales(e);
+    e = aplicar(e, l.find((x) => ["terminar", "pasarMomento", "noResponder", "pasar"].includes(x.tipo)) ?? l[0]);
+  }
+  return e;
+}
 
 function fijarCastillo(e, j, nombres) {
   e.jugadores[j].castillo = [];
@@ -94,7 +120,23 @@ test("Manipular Destino: Baraja una carta de coste 2 o menos, Roba dos y solo se
   assert.equal(puedeJugar(e, m2), false);
 });
 
-test("Manipular Destino: afectar a tus Aliados cuesta un Oro adicional hasta tu próximo turno", { todo: "efecto: afectar a los Aliados de un jugador cuesta Oros adicionales" }, () => {});
+test("Manipular Destino: afectar a tus Aliados cuesta un Oro adicional hasta tu próximo turno", () => {
+  let e = vainilla(mesa(), "Ghul Leal");
+  oros(e, 0, 3);
+  const g = poner(e, 0, "defensa", "Ghul Leal");
+  const val = poner(e, 1, "defensa", "Valefor");
+  const m = poner(e, 0, "mano", "Manipular Destino");
+  e = hacer(e, jugar(m), val);
+  turnoRival(e);
+  oros(e, 1, 1);
+  const manzana = poner(e, 1, "mano", "Manzana Envenenada");
+  assert.equal(ofrece(e, manzana, g), false);
+  oros(e, 1, 1);
+  assert.equal(ofrece(e, manzana, g), true);
+  e = hacer(e, jugar(manzana), g);
+  assert.equal(zonaDe(e, g), "destierro");
+  assert.equal(e.jugadores[1].reserva.length, 0);
+});
 
 test("Mano de Destruccion: convierte un Oro oponente en un Oro sin habilidad", () => {
   let e = mesa();
@@ -210,9 +252,42 @@ test("Marca de la Bestia: no puede jugarse sin Aliados de coste 2 o menos", () =
   assert.equal(puedeJugar(e, marca), false);
 });
 
-test("Marca de la Bestia: el Aliado no puede ser convertido", { todo: "efecto: no puede ser convertido" }, () => {});
+test("Marca de la Bestia: el Aliado no puede ser convertido", () => {
+  let e = vainilla(mesa(), "Ghul Leal");
+  const g = poner(e, 0, "defensa", "Ghul Leal");
+  const marca = poner(e, 0, "mano", "Marca de la Bestia");
+  e = sinRespuesta(aplicar(e, jugar(marca)));
+  OPS.convertir(e, { var: "x", en: "Oro", a: "reserva" }, { ctx: { ctrl: 1, vars: { x: [g] } } });
+  assert.equal(zonaDe(e, g), "defensa");
+});
 
-test("Marca de la Bestia: Desterrarlo del Cementerio y pagar un Oro para Anular un Talismán de coste 1", { todo: "respuesta desde el Cementerio: Anular" }, () => {});
+test("Marca de la Bestia: Desterrarlo del Cementerio y pagar un Oro para Anular un Talismán de coste 1", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  oros(e, 1, 1);
+  const val = poner(e, 1, "defensa", "Valefor");
+  const marca = poner(e, 1, "cementerio", "Marca de la Bestia");
+  const marcha = poner(e, 0, "mano", "Marcha Sobre Versalles");
+  e = aplicar(e, jugar(marcha));
+  const r = accionesLegales(e).find((a) => a.tipo === "responder" && a.uid === marca);
+  assert.ok(r);
+  e = resolverTodo(aplicar(e, r));
+  assert.equal(zonaDe(e, marca), "destierro");
+  assert.equal(zonaDe(e, marcha), "cementerio");
+  assert.equal(zonaDe(e, val), "defensa");
+  assert.equal(e.jugadores[1].pagado.length, 1);
+});
+
+test("Marca de la Bestia: no Anula Talismanes de otro coste", () => {
+  let e = mesa();
+  oros(e, 0, 3);
+  oros(e, 1, 1);
+  const marca = poner(e, 1, "cementerio", "Marca de la Bestia");
+  const m = poner(e, 0, "mano", "Momificar");
+  poner(e, 0, "cementerio", "Valefor");
+  e = aplicar(e, jugar(m));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder" && a.uid === marca), false);
+});
 
 test("Marca de los Justos: Desterrarlo del Cementerio para que un Aliado gane 1 de Fuerza por el turno", () => {
   let e = mesa();
@@ -247,7 +322,26 @@ test("Marcha Sobre Versalles: si no, Destierra una carta oponente de coste 2 o m
   assert.equal(e.jugadores[0].mano.length, 1);
 });
 
-test("Marcha Sobre Versalles: jugarlo al comienzo de la Fase Final oponente", { todo: "momento: jugar un Talismán al comienzo de la Fase Final oponente" }, () => {});
+test("Marcha Sobre Versalles: jugarlo al comienzo de la Fase Final oponente", () => {
+  let e = mesa();
+  oros(e, 1, 1);
+  poner(e, 0, "defensa", "Valefor");
+  const m = poner(e, 1, "mano", "Marcha Sobre Versalles");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  e = avanzarHasta(e, (s) => s.fase !== "momento" || puedeJugar(s, m));
+  assert.equal(e.activo, 0);
+  assert.equal(puedeJugar(e, m), true);
+});
+
+test("Marcha Sobre Versalles: no se juega al comienzo de tu propia Fase Final", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  poner(e, 1, "defensa", "Valefor");
+  poner(e, 0, "mano", "Marcha Sobre Versalles");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.notEqual(e.fase, "momento");
+});
 
 test("Miedo en Whitby: el oponente Bota tantas como el mayor coste y tú Robas tantas como el menor", () => {
   let e = mesa();
@@ -410,9 +504,30 @@ test("Motin a Bordo: Subir hasta un Aliado de coste 2 o menos a la mano", () => 
   assert.equal(N.ubicar(e, val).j, 1);
 });
 
-test("Motin a Bordo: jugarlo al comienzo de la Vigilia", { todo: "momento: jugar un Talismán al comienzo de la Vigilia" }, () => {});
+test("Motin a Bordo: jugarlo al comienzo de la Vigilia oponente", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const m = poner(e, 0, "mano", "Motin a Bordo");
+  e = aplicar(e, { tipo: "terminar" });
+  e = avanzarHasta(e, (s) => s.fase === "momento");
+  assert.equal(e.activo, 1);
+  e = avanzarHasta(e, (s) => s.fase !== "momento" || puedeJugar(s, m));
+  assert.equal(puedeJugar(e, m), true);
+});
 
-test("Motin a Bordo: no ser afectado por habilidades y efectos oponentes este turno", { todo: "efecto: un jugador no es afectado por habilidades ni efectos oponentes este turno" }, () => {});
+test("Motin a Bordo: tus cartas no son afectadas por habilidades y efectos oponentes este turno", () => {
+  let e = vainilla(mesa(), "Ghul Leal");
+  oros(e, 0, 1);
+  const g = poner(e, 0, "defensa", "Ghul Leal");
+  const m = poner(e, 0, "mano", "Motin a Bordo");
+  e = hacer(e, jugar(m), "No eres afectado por habilidades y efectos oponentes este turno y Robas una carta");
+  turnoRival(e);
+  oros(e, 1, 2);
+  const manzana = poner(e, 1, "mano", "Manzana Envenenada");
+  assert.equal(ofrece(e, manzana, g), false);
+});
+
+test("Motin a Bordo: el jugador mismo no es afectado por habilidades y efectos oponentes", { todo: "efecto: protección del jugador (robos, Botar, mano), no solo de sus cartas" }, () => {});
 
 test("Motin a Bordo: no pagar costes adicionales este turno", { todo: "efecto: un jugador no paga costes adicionales este turno" }, () => {});
 
@@ -634,7 +749,17 @@ test("Orden Restaurado: Desterrarla del Cementerio para que una carta gane Indes
   assert.equal(zonaDe(e, o), "destierro");
 });
 
-test("Orden Restaurado: la carta no puede ser afectada por efectos oponentes este turno", { todo: "efecto: una carta no puede ser afectada por efectos oponentes" }, () => {});
+test("Orden Restaurado: la carta no puede ser afectada por efectos oponentes este turno", () => {
+  let e = vainilla(mesa(), "Ghul Leal");
+  const o = poner(e, 0, "cementerio", "Orden Restaurado");
+  const g = poner(e, 0, "defensa", "Ghul Leal");
+  e = aplicar(e, habilidad(o, "Orden Restaurado"));
+  turnoRival(e);
+  oros(e, 1, 2);
+  const manzana = poner(e, 1, "mano", "Manzana Envenenada");
+  assert.equal(ofrece(e, manzana, g), false);
+  assert.equal(N.tiene(e, g, "Indestructible"), true);
+});
 
 test("Oriflama: hasta dos Aliados que porten Armas ganan Furia, 1 de Fuerza por cada Arma que controles y no pueden salir del juego", () => {
   let e = vainilla(mesa(), "Ghul Leal");

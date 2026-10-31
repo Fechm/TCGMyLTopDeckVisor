@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, hacer, elegir, sinRespuesta, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
-import { resolver } from "../web/duelo/efectos.js";
+import { resolver, cumple, disponibles } from "../web/duelo/efectos.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
@@ -10,6 +10,7 @@ const texto = (inicio) => (v, o) => (o.texto ?? "").startsWith(inicio);
 const puedeJugar = (e, uid) => accionesLegales(e).some((a) => a.tipo === "jugar" && a.uid === uid);
 const puedeUsar = (e, uid) => accionesLegales(e).some((a) => a.tipo === "habilidad" && a.uid === uid);
 const opcionesDe = (e) => e.pendiente.opciones.map((o) => o.valor);
+const ctxDe = (e, uid, j) => ({ ctrl: j, fuente: uid, def: e.instancias[uid], costeFuente: N.carta(e, uid).coste ?? 0, vars: {} });
 const generados = (e, j) => (e.jugadores[j].generados ?? []).reduce((s, g) => s + g.n, 0);
 
 function alTope(e, j, nombre) {
@@ -111,7 +112,21 @@ test("Viaje en Globo: puede jugarse en la Agrupación", { todo: "momento: jugar 
 
 test("Viaje en Globo: cada vez que fueras a recibir daño puedes Descartar una carta para prevenirlo", { todo: "prevención de daño: Descartar una carta de la mano para prevenir cada daño recibido durante el turno" }, () => {});
 
-test("Viaje en Globo: en la Fase Final Robas dos y, si no Descartaste, Barajas una carta de coste 2 o menos", { todo: "disparo diferido: en la Fase Final de este turno" }, () => {});
+test("Viaje en Globo: en la Fase Final Robas dos y, si no Descartaste, Barajas una carta de coste 2 o menos", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const v = poner(e, 0, "mano", "Viaje en Globo");
+  const suyo = poner(e, 1, "defensa", "Guardia Real");
+  const caro = poner(e, 1, "defensa", "Balaur");
+  e = sinRespuesta(aplicar(e, jugar(v)));
+  assert.equal(e.jugadores[0].mano.length, 0);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(opcionesDe(e).includes(caro), false);
+  e = elegir(e, suyo);
+  assert.equal(zonaDe(e, suyo), "castillo");
+  assert.equal(zonaDe(e, caro), "defensa");
+  assert.equal(e.jugadores[0].mano.length, 3);
+});
 
 test("Vision de Noé: cada jugador conserva un Aliado de cada coste, Baraja el resto, el oponente Destierra cinco y tú Robas tres", () => {
   let e = mesa();
@@ -158,7 +173,7 @@ test("Visión de Enoc: Anula un Talismán de coste 2 o menos y luego se Baraja e
   assert.equal(e.jugadores[1].castillo.length, 31);
 });
 
-test("Visión de Enoc: no responde a Talismanes de coste 3 o más ni se juega por sí sola", () => {
+test("Visión de Enoc: no responde a Talismanes de coste 3 o más ni se juega sin un Aliado que proteger", () => {
   let e = mesa();
   oros(e, 0, 3);
   oros(e, 1, 1);
@@ -172,7 +187,21 @@ test("Visión de Enoc: no responde a Talismanes de coste 3 o más ni se juega po
   assert.equal(puedeJugar(f, propia), false);
 });
 
-test("Visión de Enoc: previene que un Aliado sea afectado por un efecto oponente", { todo: "protección: prevenir que un Aliado sea afectado por un efecto oponente" }, () => {});
+test("Visión de Enoc: previene que un Aliado sea afectado por un efecto oponente y luego se Baraja en tu Castillo", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const enoc = poner(e, 0, "mano", "Visión de Enoc");
+  const mio = poner(e, 0, "defensa", "Valefor");
+  const danza = poner(e, 1, "mano", "Danza del Cuchillo");
+  assert.equal(cumple(e, ctxDe(e, danza, 1), mio, {}, "destruir"), true);
+  e = sinRespuesta(aplicar(e, jugar(enoc)));
+  assert.equal(cumple(e, ctxDe(e, danza, 1), mio, {}, "destruir"), false);
+  assert.equal(zonaDe(e, enoc), "castillo");
+  N.expirar(e, "finTurno");
+  e.turno += 1;
+  N.expirar(e, "finTurno");
+  assert.equal(cumple(e, ctxDe(e, danza, 1), mio, {}, "destruir"), true);
+});
 
 test("Visión de Enoc: cuando la Botas por daño puedes Barajar hasta cinco cartas de los Cementerios", () => {
   let e = mesa();
@@ -265,7 +294,17 @@ test("Voladora: no puede ser Anulada y busca en tu Castillo o Cementerio una car
   assert.equal(zonaDe(e, valefor), "mano");
 });
 
-test("Voladora: genera un Oro para jugar cartas de coste 3 o más", { todo: "generar: Oro restringido por raza y coste mínimo" }, () => {});
+test("Voladora: genera un Oro para jugar cartas de coste 3 o más", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const vol = poner(e, 0, "mano", "Voladora");
+  const valefor = poner(e, 0, "castillo", "Valefor");
+  e = sinRespuesta(aplicar(e, jugar(vol)));
+  e = elegir(e, valefor);
+  assert.equal(generados(e, 0), 1);
+  assert.equal(disponibles(e, 0, { tipo: "Aliado", coste: 2 }), 0);
+  assert.equal(disponibles(e, 0, { tipo: "Aliado", coste: 3 }), 1);
+});
 
 test("Voladora: desde tu Cementerio, pagando un Oro y Desterrándola, busca dos cartas de distinto tipo", () => {
   let e = mesa();
@@ -318,7 +357,25 @@ test("Vínculo de Sangre: se Destierra, Baraja hasta tres cartas de los Cementer
   assert.equal(zonaDe(e, vinculo), "destierro");
 });
 
-test("Vínculo de Sangre: para afectar las cartas elegidas el oponente paga un Oro adicional", { todo: "efecto: afectar a ciertas cartas cuesta un Oro adicional al oponente mientras otra carta siga en juego" }, () => {});
+test("Vínculo de Sangre: para afectar las cartas elegidas el oponente paga un Oro adicional mientras la otra esté en juego", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const vinculo = poner(e, 0, "mano", "Vínculo de Sangre");
+  const a = poner(e, 0, "defensa", "Valefor");
+  const b = poner(e, 0, "defensa", "Guardia Real");
+  const danza = poner(e, 1, "mano", "Danza del Cuchillo");
+  e = sinRespuesta(aplicar(e, jugar(vinculo)));
+  e = elegir(e, 0);
+  assert.equal(e.pendiente, null);
+  assert.equal(cumple(e, ctxDe(e, danza, 1), a, {}, "destruir"), false);
+  assert.equal(cumple(e, ctxDe(e, danza, 1), b, {}, "destruir"), false);
+  oros(e, 1, 1);
+  assert.equal(cumple(e, ctxDe(e, danza, 1), a, {}, "destruir"), true);
+  e.jugadores[1].reserva = [];
+  N.mover(e, b, "cementerio");
+  resolver(e);
+  assert.equal(cumple(e, ctxDe(e, danza, 1), a, {}, "destruir"), true);
+});
 
 test("Y Vivieron Felices: las cartas del tipo elegido pierden su habilidad y son Barajadas", () => {
   let e = mesa();
@@ -338,7 +395,21 @@ test("Y Vivieron Felices: las cartas del tipo elegido pierden su habilidad y son
 
 test("Y Vivieron Felices: tu oponente no puede Desterrar cartas de tu Castillo por efectos por el resto del juego", { todo: "efecto: el oponente no puede Desterrar cartas de tu Castillo por efectos" }, () => {});
 
-test("Y Vivieron Felices: al final de tu turno Robas una carta adicional por el resto del juego", { todo: "efecto permanente: robar una carta adicional al final de tu turno" }, () => {});
+test("Y Vivieron Felices: al final de tu turno Robas una carta adicional por el resto del juego", () => {
+  let e = mesa();
+  oros(e, 0, 3);
+  const felices = poner(e, 0, "mano", "Y Vivieron Felices");
+  e = sinRespuesta(aplicar(e, jugar(felices)));
+  e = elegir(e, "Aliado");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.jugadores[0].mano.length, 2);
+  assert.equal(e.activo, 1);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.jugadores[0].mano.length, 2);
+  assert.equal(e.activo, 0);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.jugadores[0].mano.length, 4);
+});
 
 test("Yo Soy el Rey: no puede ser Anulado, solo entra pagando, se Destierra y Robas tres", () => {
   let e = mesa();
@@ -528,7 +599,33 @@ test("Amuleto de Serpiente: también se dispara al comienzo de tu Vigilia", () =
   assert.equal(zonaDe(e, arma), "mano");
 });
 
-test("Amuleto de Serpiente: si lo haces, jugar Talismanes cuesta un Oro adicional a quien ya jugó Talismanes en el turno", { todo: "efecto: jugar Talismanes cuesta un Oro adicional al jugador que ya jugó un Talismán en el turno" }, () => {});
+test("Amuleto de Serpiente: si lo haces, jugar Talismanes cuesta un Oro adicional a quien ya jugó Talismanes en el turno", () => {
+  let e = mesa();
+  const amuleto = poner(e, 0, "mano", "Amuleto de Serpiente");
+  const arma = alTope(e, 0, "Pedrenyal");
+  e = aplicar(e, { tipo: "oro", uid: amuleto });
+  e = elegir(e, true);
+  e = elegir(e, arma);
+  oros(e, 0, 1);
+  const primera = poner(e, 0, "mano", "Vuelo del Raiquen");
+  const segunda = poner(e, 0, "mano", "Voladora");
+  poner(e, 1, "defensa", "Ileana");
+  assert.equal(puedeJugar(e, primera), true);
+  e = sinRespuesta(aplicar(e, jugar(primera)));
+  assert.equal(e.jugadores[0].reserva.length, 1);
+  assert.equal(puedeJugar(e, segunda), false);
+  oros(e, 0, 1);
+  assert.equal(puedeJugar(e, segunda), true);
+});
+
+test("Amuleto de Serpiente: si no pones una carta en tu mano, jugar Talismanes no se encarece", () => {
+  let e = mesa();
+  const amuleto = poner(e, 0, "mano", "Amuleto de Serpiente");
+  e = aplicar(e, { tipo: "oro", uid: amuleto });
+  e = elegir(e, true);
+  if (e.pendiente) e = elegir(e, null);
+  assert.equal(e.efectos.some((f) => f.tipo === "impuesto"), false);
+});
 
 test("Angelus: al entrar muestra cinco cartas y pone una en tu mano", () => {
   let e = mesa();
@@ -705,4 +802,14 @@ test("Aurora de Chile: al salir del juego busca dos Oros que no sean Aurora, uno
   assert.equal(zonaDe(e, otraAurora), "castillo");
 });
 
-test("Aurora de Chile: en tu turno tus Aliados no pueden ser afectados por Talismanes oponentes", { todo: "protección: los Aliados no pueden ser afectados por Talismanes oponentes" }, () => {});
+test("Aurora de Chile: en tu turno tus Aliados no pueden ser afectados por Talismanes oponentes", () => {
+  const e = mesa();
+  poner(e, 0, "reserva", "Aurora de Chile");
+  const mio = poner(e, 0, "defensa", "Valefor");
+  const danza = poner(e, 1, "mano", "Danza del Cuchillo");
+  const balaur = poner(e, 1, "defensa", "Balaur");
+  assert.equal(cumple(e, ctxDe(e, danza, 1), mio, {}, "destruir"), false);
+  assert.equal(cumple(e, ctxDe(e, balaur, 1), mio, {}, "destruir"), true);
+  e.activo = 1;
+  assert.equal(cumple(e, ctxDe(e, danza, 1), mio, {}, "destruir"), true);
+});

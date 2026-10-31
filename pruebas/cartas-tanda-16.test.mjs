@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, hacer, elegir, sinRespuesta, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
-import { resolver } from "../web/duelo/efectos.js";
+import { resolver, OPS } from "../web/duelo/efectos.js";
 import { costeDe } from "../web/duelo/motor.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
@@ -10,6 +10,8 @@ const texto = (inicio) => (v, o) => (o.texto ?? "").startsWith(inicio);
 const puedeJugar = (e, uid) => accionesLegales(e).some((a) => a.tipo === "jugar" && a.uid === uid);
 const puedeUsar = (e, uid) => accionesLegales(e).some((a) => a.tipo === "habilidad" && a.uid === uid);
 const textos = (e) => e.pendiente.opciones.map((o) => o.texto);
+const puedeResponder = (e) => accionesLegales(e).some((a) => a.tipo === "responder");
+const ctxRival = (e, uid) => ({ ctrl: 1, fuente: uid, def: e.instancias[uid], costeFuente: N.carta(e, uid).coste ?? 0, vars: {} });
 
 function disparar(e, evento, datos) {
   N.disparar(e, evento, datos);
@@ -67,7 +69,17 @@ test("Remate Mortal: con Descanso Solar en tu Cementerio aplica ambos efectos si
   assert.equal(zonaDe(e, v), "defensa");
 });
 
-test("Remate Mortal: con Descanso Solar no puede ser Anulado", { todo: "protección condicional: no puede ser Anulado mientras se cumpla una condición" }, () => {});
+test("Remate Mortal: con Descanso Solar no puede ser Anulado", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  oros(e, 1, 5);
+  poner(e, 1, "mano", "Ciempiés-SP");
+  const remate = poner(e, 0, "mano", "Remate Mortal");
+  assert.equal(puedeResponder(aplicar(e, jugar(remate))), true);
+  ficticia(e, 0, "destierro", { nombre: "Descanso Solar", tipo: "Talismán" });
+  e = aplicar(e, jugar(remate));
+  assert.equal(puedeResponder(e), false);
+});
 
 test("Renace la Fe: sube un Aliado oponente a la mano de su dueño y hasta una carta de tu Cementerio a tu mano", () => {
   let e = mesa();
@@ -120,7 +132,32 @@ test("Resistir: también puede jugar un Arma de tu Cementerio", () => {
   assert.deepEqual(e.armas[v], [arma]);
 });
 
-test("Resistir: hasta tu próximo turno los Talismanes que irían al Cementerio son Desterrados", { todo: "reemplazo: los Talismanes que irían al Cementerio son Desterrados durante un período" }, () => {});
+test("Resistir: hasta tu próximo turno los Talismanes que irían al Cementerio son Desterrados", () => {
+  let e = mesa();
+  oros(e, 0, 3);
+  poner(e, 0, "defensa", "Valefor");
+  const arma = poner(e, 0, "castillo", "Pedrenyal");
+  const resistir = poner(e, 0, "mano", "Resistir");
+  const saltar = poner(e, 0, "mano", "Saltar la Defensa");
+  e = hacer(e, jugar(resistir), arma);
+  assert.equal(zonaDe(e, resistir), "cementerio");
+  e = hacer(e, jugar(saltar), texto("Robar"));
+  assert.equal(zonaDe(e, saltar), "destierro");
+  e.turno += 1;
+  e.activo = 1;
+  N.expirar(e, "inicio");
+  const rival = poner(e, 1, "cementerio", "Renace la Fe");
+  e.jugadores[1].cementerio = [];
+  OPS.finTalisman(e, { uid: rival });
+  assert.equal(zonaDe(e, rival), "destierro");
+  e.turno += 1;
+  e.activo = 0;
+  N.expirar(e, "inicio");
+  const tarde = poner(e, 1, "cementerio", "Renace la Fe");
+  e.jugadores[1].cementerio = e.jugadores[1].cementerio.filter((u) => u !== tarde);
+  OPS.finTalisman(e, { uid: tarde });
+  assert.equal(zonaDe(e, tarde), "cementerio");
+});
 
 test("Revivir Campeon: los Aliados de coste 2 o menos tienen Fuerza 0 por el turno", () => {
   let e = mesa();
@@ -201,7 +238,17 @@ test("Rey del Disfraz: un Aliado pagado de coste 1 o más no lo abarata", () => 
   assert.equal(costeDe(e, 0, rey).pagar, 1);
 });
 
-test("Rey del Disfraz: puede jugarse al comienzo de la Fase Final", { todo: "momento: jugar un Talismán al comienzo de la Fase Final" }, () => {});
+test("Rey del Disfraz: puede jugarse al comienzo de la Fase Final", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const b = poner(e, 1, "defensa", "Balaur");
+  const rey = poner(e, 0, "mano", "Rey del Disfraz");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  assert.equal(puedeJugar(e, rey), true);
+  e = hacer(e, jugar(rey), texto("Desterrar"));
+  assert.equal(zonaDe(e, b), "destierro");
+});
 
 test("Rito de Pontchartrain: convierte una carta oponente en una del mismo tipo sin habilidad y Roba una carta", () => {
   let e = mesa();
@@ -272,7 +319,21 @@ test("Rito del Bandido: al oponente le cuesta un Oro adicional disparar habilida
   assert.equal(N.impuestoHabilidad(e, 1, rv, "disparada"), 0);
 });
 
-test("Rito del Bandido: al oponente le cuesta un Oro adicional jugar Talismanes este turno", { todo: "efecto: impuesto a los Talismanes de un solo jugador" }, () => {});
+test("Rito del Bandido: al oponente le cuesta un Oro adicional jugar Talismanes este turno", () => {
+  let e = mesa();
+  oros(e, 0, 3);
+  const rito = poner(e, 0, "mano", "Rito del Bandido");
+  const suyo = poner(e, 1, "mano", "Remate Mortal");
+  const mio = poner(e, 0, "mano", "Remate Mortal");
+  const aliado = poner(e, 1, "mano", "Valefor");
+  const base = costeDe(e, 1, aliado).pagar;
+  e = sinRespuesta(aplicar(e, jugar(rito)));
+  assert.equal(costeDe(e, 1, suyo).pagar, 2);
+  assert.equal(costeDe(e, 0, mio).pagar, 1);
+  assert.equal(costeDe(e, 1, aliado).pagar, base);
+  N.expirar(e, "finTurno");
+  assert.equal(costeDe(e, 1, suyo).pagar, 1);
+});
 
 test("Rito del Bandido: Desterrándolo de tu Cementerio y pagando un Oro Baraja un Aliado de coste 2 o menos", () => {
   let e = mesa();
@@ -392,7 +453,23 @@ test("Rugido de Titán: reduce su coste por cada Aliado Titán o Ignis que contr
   assert.equal(costeDe(e, 0, rugido).pagar, 1);
 });
 
-test("Rugido de Titán: previene que una carta Ignis o Titán sea Anulada, cancelada o afectada por un efecto oponente", { todo: "protección: prevenir que una carta sea Anulada, cancelada o afectada por efectos oponentes" }, () => {});
+test("Rugido de Titán: previene que una carta Ignis o Titán que controles sea afectada por un efecto oponente", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  const titan = poner(e, 0, "defensa", "Titán Abismal");
+  const v = poner(e, 0, "defensa", "Valefor");
+  const danza = poner(e, 1, "mano", "Danza del Cuchillo");
+  const rugido = poner(e, 0, "mano", "Rugido de Titán");
+  e = sinRespuesta(aplicar(e, jugar(rugido)));
+  assert.equal(e.pendiente.opciones.some((o) => o.valor === v), false);
+  e = elegir(e, titan);
+  assert.equal(N.proteccionContra(e, titan, ctxRival(e, danza)).inmune, true);
+  assert.equal(N.proteccionContra(e, v, ctxRival(e, danza)).inmune, false);
+  N.expirar(e, "finTurno");
+  assert.equal(N.proteccionContra(e, titan, ctxRival(e, danza)).inmune, false);
+});
+
+test("Rugido de Titán: previene que la carta sea Anulada o su habilidad cancelada", { todo: "protección: prevenir que una carta de cierto nombre sea Anulada o su habilidad cancelada" }, () => {});
 
 test("Rugido del Origen: aplica los efectos de Bestia, Dragón y Sombra según tus Razas", () => {
   let e = mesa();
@@ -462,7 +539,28 @@ test("Sabiduria de la Oruga: Destierra hasta dos cartas de coste 2 o menos de la
   assert.equal(zonaDe(e, oruga), "destierro");
 });
 
-test("Sabiduria de la Oruga: hasta el final de tu próximo turno solo se ataca con un Aliado y se Roban hasta tres cartas por efectos", { todo: "efecto: límite de atacantes por turno y límite de cartas Robadas por efectos por turno" }, () => {});
+test("Sabiduria de la Oruga: hasta el final de tu próximo turno los jugadores solo atacan con un Aliado", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  const a1 = poner(e, 0, "defensa", "Valefor");
+  const a2 = poner(e, 0, "defensa", "Valefor");
+  const oruga = poner(e, 0, "mano", "Sabiduria de la Oruga");
+  e = sinRespuesta(aplicar(e, jugar(oruga)));
+  const vigente = (s) => s.efectos.some((f) => f.tipo === "maxAtacantes" && f.n === 1 && f.j === undefined);
+  assert.equal(vigente(e), true);
+  const f = structuredClone({ ...e, catalogo: null });
+  e = aplicar(e, { tipo: "batalla" });
+  while (e.fase === "momento") e = aplicar(e, { tipo: "pasarMomento" });
+  e = aplicar(e, { tipo: "atacar", uid: a1 });
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "atacar" && a.uid === a2), false);
+  for (let t = 0; t < 3; t++) {
+    N.expirar(f, "finTurno");
+    assert.equal(vigente(f), t < 2);
+    f.turno += 1;
+  }
+});
+
+test("Sabiduria de la Oruga: solo se Roban hasta tres cartas por efectos por turno", { todo: "efecto: límite de cartas Robadas por efectos por turno" }, () => {});
 
 test("Sacrificio Solar: Anula una carta de coste 0 y no se puede jugar fuera de respuesta", () => {
   let e = mesa();
@@ -535,7 +633,19 @@ test("Saltar la Defensa: con Castillo de Arena en tu Destierro aplica ambos efec
   assert.equal(e.jugadores[0].mano.length, 2);
 });
 
-test("Saltar la Defensa: no puede ser Anulado con Castillo de Arena y el ataque de tus Aliados no puede ser cancelado", { todo: "protección condicional: no puede ser Anulado mientras se cumpla una condición; efecto: el ataque no puede ser cancelado" }, () => {});
+test("Saltar la Defensa: con Castillo de Arena no puede ser Anulado", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  oros(e, 1, 5);
+  poner(e, 1, "mano", "Ciempiés-SP");
+  const saltar = poner(e, 0, "mano", "Saltar la Defensa");
+  assert.equal(puedeResponder(aplicar(e, jugar(saltar))), true);
+  ficticia(e, 0, "cementerio", { nombre: "Castillo de Arena", tipo: "Talismán" });
+  e = aplicar(e, jugar(saltar));
+  assert.equal(puedeResponder(e), false);
+});
+
+test("Saltar la Defensa: el ataque de tus Aliados no puede ser cancelado este turno", { todo: "efecto: el ataque no puede ser cancelado" }, () => {});
 
 test("Santo Santo Santo: el oponente Descarta tres al azar y puede Desterrar cuatro del tope por cada una para recuperarla; tú Robas", () => {
   let e = mesa();
@@ -666,7 +776,7 @@ test("Sentir Energia: Baraja una carta de tu Cementerio y Roba una carta", () =>
   oros(e, 0, 1);
   const c = poner(e, 0, "cementerio", "Valefor");
   const sentir = poner(e, 0, "mano", "Sentir Energia");
-  e = hacer(e, jugar(sentir), c);
+  e = hacer(e, jugar(sentir), null, c);
   assert.equal(zonaDe(e, c), "castillo");
   assert.equal(e.jugadores[0].mano.length, 1);
 });
@@ -683,7 +793,21 @@ test("Sentir Energia: Barajándolo desde tu Cementerio una carta recupera su hab
   assert.equal(zonaDe(e, sentir), "castillo");
 });
 
-test("Sentir Energia: previene que una carta que controles sea afectada por un efecto oponente", { todo: "protección: prevenir que una carta propia sea afectada por un efecto oponente" }, () => {});
+test("Sentir Energia: previene que una carta que controles sea afectada por un efecto oponente", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const v = poner(e, 0, "defensa", "Valefor");
+  const rv = poner(e, 1, "defensa", "Valefor");
+  const danza = poner(e, 1, "mano", "Danza del Cuchillo");
+  const sentir = poner(e, 0, "mano", "Sentir Energia");
+  e = sinRespuesta(aplicar(e, jugar(sentir)));
+  assert.equal(e.pendiente.opciones.some((o) => o.valor === rv), false);
+  e = elegir(e, v);
+  assert.equal(N.proteccionContra(e, v, ctxRival(e, danza)).inmune, true);
+  assert.equal(e.jugadores[0].mano.length, 1);
+  N.expirar(e, "finTurno");
+  assert.equal(N.proteccionContra(e, v, ctxRival(e, danza)).inmune, false);
+});
 
 test("Septimo Sello: no puede ser Anulado", () => {
   const e = mesa();
@@ -767,6 +891,32 @@ test("Sesión Espiritista: al jugarlo se Destierra", () => {
   assert.equal(zonaDe(e, sesion), "destierro");
 });
 
-test("Sesión Espiritista: cuando el oponente pone cartas en su mano por un efecto puedes poner las mismas del tope de tu Castillo en tu mano", { todo: "evento: cuando un jugador pone cartas en su mano por un efecto" }, () => {});
+test("Sesión Espiritista: hasta tu próximo turno, cuando el oponente Roba por un efecto puedes poner esa cantidad del tope de tu Castillo en tu mano", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const sesion = poner(e, 0, "mano", "Sesión Espiritista");
+  e = sinRespuesta(aplicar(e, jugar(sesion)));
+  assert.equal(zonaDe(e, sesion), "destierro");
+  N.robar(e, 0, 1, true);
+  resolver(e);
+  assert.equal(e.pendiente, null);
+  N.robar(e, 1, 2);
+  resolver(e);
+  assert.equal(e.pendiente, null);
+  const mano = e.jugadores[0].mano.length;
+  const castillo = e.jugadores[0].castillo.length;
+  N.robar(e, 1, 2, true);
+  resolver(e);
+  e = elegir(e, true);
+  assert.equal(e.jugadores[0].mano.length, mano + 2);
+  assert.equal(e.jugadores[0].castillo.length, castillo - 2);
+  e.turno += 2;
+  N.expirar(e, "inicio");
+  N.robar(e, 1, 1, true);
+  resolver(e);
+  assert.equal(e.pendiente, null);
+});
+
+test("Sesión Espiritista: también cuando el oponente sube o busca cartas a su mano por un efecto", { todo: "evento: cuando un jugador pone cartas en su mano por un efecto que no sea Robar" }, () => {});
 
 test("Sesión Espiritista: por el resto del juego el daño de combate a tu Castillo se reduce en dos", { todo: "efecto: reducir el daño de combate recibido por tu Castillo de forma permanente" }, () => {});

@@ -127,6 +127,7 @@ const semilla = (e, ctx) => {
 
 export const HABILIDADES = {
   "Remate Mortal": {
+    noAnulableSi: "descanso",
     talisman: [{ op: "fn", f: "elegir" }],
     fns: {
       elegir: unoOAmbos("descanso", remateOpciones),
@@ -146,8 +147,13 @@ export const HABILIDADES = {
     activadas: [desdeCementerio("Pagar un Oro y Desterrarlo de tu Cementerio: tu oponente Bota cuatro cartas", [{ op: "botar", n: 4, quien: "rival" }], { oros: 1 })],
   },
   Resistir: {
-    talisman: [sel(["yo:castillo", "yo:cementerio"], { tipo: "Arma", f: "pagable" }, "a"), barajar(), { op: "fn", f: "jugar" }],
+    talisman: [{ op: "fn", f: "activar" }, sel(["yo:castillo", "yo:cementerio"], { tipo: "Arma", f: "pagable" }, "a"), barajar(), { op: "fn", f: "jugar" }],
+    continuas: [{ zona: "cementerio", talismanesAlDestierro: true, si: "vigente" }],
     fns: {
+      activar: (e, ctx) => {
+        N.agregarEfecto(e, { tipo: "resistir", uid: ctx.fuente, fin: "proximoTurno" }, ctx.ctrl);
+      },
+      vigente: (e, ctx) => e.efectos.some((f) => f.tipo === "resistir" && f.uid === ctx.fuente),
       pagable: pagableDesde(1, 0),
       jugar: (e, ctx, api) => jugarRebajado(e, ctx, api, 1, 0),
       portarRebajado,
@@ -172,6 +178,7 @@ export const HABILIDADES = {
     },
   },
   "Rey del Disfraz": {
+    momentos: ["faseFinal"],
     orosMenos: "gratis",
     talisman: [
       {
@@ -225,7 +232,10 @@ export const HABILIDADES = {
   },
   "Rito del Bandido": {
     reduce: "bandidos",
-    talisman: [{ op: "efecto", efecto: { tipo: "disparadasCuestan" }, jugador: "rival", fin: "turno" }],
+    talisman: [
+      { op: "efecto", efecto: { tipo: "impuesto", tipoCarta: "Talismán", n: 1 }, jugador: "rival", fin: "turno" },
+      { op: "efecto", efecto: { tipo: "impuestoHabilidad", de: "disparada", n: 1 }, jugador: "rival", fin: "turno" },
+    ],
     activadas: [
       desdeCementerio(
         "Desterrarlo de tu Cementerio y pagar un Oro: Barajar un Aliado de coste 2 o menos",
@@ -303,8 +313,9 @@ export const HABILIDADES = {
   },
   "Rugido de Titán": {
     reduce: "titanes",
-    talisman: [],
+    talisman: [sel(["yo:enJuego"], { f: "titan" }, "p", { hasta: true }), efecto("p", { tipo: "proteccion", por: "todo" })],
     fns: {
+      titan: (e, ctx, u) => nombreIncluye(e, u, "Titán", "Ignis"),
       titanes: (e, ctx) => {
         const enJuego = N.aliadosDe(e, ctx.ctrl).filter((u) => nombreIncluye(e, u, "Titán", "Ignis")).length;
         const enMano = e.jugadores[ctx.ctrl].mano.filter((u) => N.carta(e, u).tipo === "Aliado" && nombreIncluye(e, u, "Titán", "Ignis")).length;
@@ -352,7 +363,12 @@ export const HABILIDADES = {
   },
   "Sabiduria de la Oruga": {
     destierroAlJugar: true,
-    talisman: [sel(["rival:mano"], { costeMax: 2 }, "x", { n: 2, hasta: true }), mov("desterrar")],
+    talisman: [sel(["rival:mano"], { costeMax: 2 }, "x", { n: 2, hasta: true }), mov("desterrar"), { op: "fn", f: "unAtacante" }],
+    fns: {
+      unAtacante: (e, ctx) => {
+        e.efectos.push({ tipo: "maxAtacantes", n: 1, fin: { finTurno: e.turno + (e.activo === ctx.ctrl ? 2 : 1) } });
+      },
+    },
   },
   "Sacrificio Solar": {
     claves: ["UnaCopia"],
@@ -386,6 +402,7 @@ export const HABILIDADES = {
     ],
   },
   "Saltar la Defensa": {
+    noAnulableSi: "arena",
     talisman: [{ op: "fn", f: "elegir" }],
     fns: {
       elegir: unoOAmbos("arena", saltarOpciones),
@@ -485,7 +502,13 @@ export const HABILIDADES = {
     fns: { semilla },
   },
   "Sentir Energia": {
-    talisman: [sel(["yo:cementerio"], {}, "c", { hasta: true }), mov("barajar", "c"), robar(1)],
+    talisman: [
+      sel(["yo:enJuego"], {}, "p", { hasta: true }),
+      efecto("p", { tipo: "proteccion", por: "todo" }),
+      sel(["yo:cementerio"], {}, "c", { hasta: true }),
+      mov("barajar", "c"),
+      robar(1),
+    ],
     activadas: [
       {
         texto: "Barajarlo desde tu Cementerio: una carta recupera su habilidad",
@@ -549,6 +572,24 @@ export const HABILIDADES = {
   },
   "Sesión Espiritista": {
     destierroAlJugar: true,
-    talisman: [],
+    talisman: [{ op: "fn", f: "activar" }],
+    disparadas: [
+      {
+        zona: ["destierro"],
+        cuando: ["roba"],
+        quien: "rival",
+        si: "vigente",
+        hacer: [{ op: "opcional", texto: "Poner la misma cantidad de cartas del tope de tu Castillo en tu mano", pasos: [{ op: "fn", f: "copiar" }] }],
+      },
+    ],
+    fns: {
+      activar: (e, ctx) => {
+        N.agregarEfecto(e, { tipo: "sesionEspiritista", uid: ctx.fuente, fin: "proximoTurno" }, ctx.ctrl);
+      },
+      vigente: (e, ctx) => e.efectos.some((f) => f.tipo === "sesionEspiritista" && f.uid === ctx.fuente),
+      copiar: (e, ctx) => {
+        N.robar(e, ctx.ctrl, ctx.datos.n);
+      },
+    },
   },
 };

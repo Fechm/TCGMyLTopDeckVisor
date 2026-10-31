@@ -19,7 +19,7 @@ const libreParaArma = (e, u) => !N.tiene(e, u, "NoPortaArmas") && !(e.armas[u] ?
 
 const orosLibres = (e, j) => e.jugadores[j].reserva.length + (e.jugadores[j].generados ?? []).reduce((s, g) => s + g.n, 0);
 
-const serpiente = [{ op: "tope", n: 3, como: "m" }, sel(["var:m"], { zona: "castillo", f: "valida" }, "a", { hasta: true }), mov("mano", "a")];
+const serpiente = [{ op: "tope", n: 3, como: "m" }, sel(["var:m"], { zona: "castillo", f: "valida" }, "a", { hasta: true }), mov("mano", "a"), { op: "fn", f: "encarecer" }];
 
 export const HABILIDADES = {
   "Vampiro Eterno": {
@@ -44,7 +44,7 @@ export const HABILIDADES = {
   },
   "Viaje en Globo": {
     destierroAlJugar: true,
-    talisman: [],
+    talisman: [{ op: "diferir", cuando: "faseFinal", pasos: [robar(2), sel(["todos:enJuego"], { costeMax: 2 }, "b", { hasta: true }), mov("barajar", "b")] }],
   },
   "Vision de Noé": {
     talisman: [{ op: "fn", f: "elegir" }, mov("barajar", "b"), { op: "fn", f: "resultado" }],
@@ -75,7 +75,8 @@ export const HABILIDADES = {
     },
   },
   "Visión de Enoc": {
-    soloRespuesta: true,
+    requiere: { de: ["yo:aliados"], filtro: {} },
+    talisman: [sel(["yo:aliados"], {}, "a"), efecto("a", { tipo: "proteccion", por: "todo" }), { op: "fn", f: "marcar" }],
     respuesta: { anula: { tipo: "Talismán", costeMax: 2 }, pasos: [{ op: "fn", f: "marcar" }] },
     disparadas: [
       { zona: ["cementerio"], cuando: ["alCementerio"], quien: "propia", si: "resuelta", hacer: [{ op: "fn", f: "desmarcar" }, ...desdeLaFuente("barajar")] },
@@ -105,7 +106,7 @@ export const HABILIDADES = {
   },
   Voladora: {
     claves: ["NoAnulable"],
-    talisman: buscar(["yo:castillo", "yo:cementerio"], { noTipo: ["Talismán"] }),
+    talisman: [...buscar(["yo:castillo", "yo:cementerio"], { noTipo: ["Talismán"] }), { op: "generar", n: 1, costeMin: 3 }],
     activadas: [
       {
         texto: "Pagar un Oro y Desterrarlo de tu Cementerio: buscar dos cartas de distinto tipo en tu Castillo",
@@ -124,7 +125,20 @@ export const HABILIDADES = {
   },
   "Vínculo de Sangre": {
     destierroAlJugar: true,
-    talisman: [...barajarCementerios(3), { op: "robarHasta", n: 2 }],
+    talisman: [sel(["yo:enJuego"], { noTipo: ["Oro"] }, "v", { n: 2 }), { op: "fn", f: "vincular" }, ...barajarCementerios(3), { op: "robarHasta", n: 2 }],
+    disparadas: [{ zona: ["destierro"], cuando: ["saleDelJuego"], quien: "cualquiera", si: "vinculada", hacer: [{ op: "fn", f: "romper" }] }],
+    fns: {
+      vincular: (e, ctx) => {
+        const [a, b] = ctx.vars.v ?? [];
+        if (!a || !b) return;
+        for (const [uid, otra] of [[a, b], [b, a]]) N.agregarEfecto(e, { tipo: "proteccion", uid, otra, cuesta: 1, vinculo: ctx.fuente, fin: "juego" }, ctx.ctrl);
+      },
+      vinculada: (e, ctx) => e.efectos.some((f) => f.tipo === "proteccion" && f.vinculo === ctx.fuente && (f.uid === ctx.datos.uid || f.otra === ctx.datos.uid)),
+      romper: (e, ctx) => {
+        const u = ctx.datos.uid;
+        e.efectos = e.efectos.filter((f) => !(f.tipo === "proteccion" && f.vinculo === ctx.fuente && (f.uid === u || f.otra === u)));
+      },
+    },
   },
   "Y Vivieron Felices": {
     destierroAlJugar: true,
@@ -136,7 +150,9 @@ export const HABILIDADES = {
           pasos: [sel(["todos:enJuego"], { tipo }, "t", { n: 99 }), efecto("t", { tipo: "pierdeHabilidad" }), mov("barajar", "t")],
         })),
       },
+      { op: "fn", f: "alFinal" },
     ],
+    fns: { alFinal: () => [{ op: "diferir", cuando: "faseFinalPropia", pasos: [robar(1), { op: "fn", f: "alFinal" }] }] },
   },
   "Yo Soy el Rey": {
     claves: ["NoAnulable"],
@@ -272,6 +288,9 @@ export const HABILIDADES = {
       { cuando: ["comienzoVigilia"], opcional: true, hacer: serpiente },
     ],
     fns: {
+      encarecer: (e, ctx) => {
+        if ((ctx.vars.a ?? []).length) N.agregarEfecto(e, { tipo: "impuesto", tipoCarta: "Talismán", yaJugado: true, n: 1, fin: "proximoTurno" }, ctx.ctrl);
+      },
       valida: (e, ctx, u) => {
         const c = N.carta(e, u);
         if (c.tipo === "Arma") return true;
@@ -390,6 +409,7 @@ export const HABILIDADES = {
         ],
       },
     ],
-    fns: { otro: (e, ctx, u) => N.carta(e, u).nombre !== "Aurora de Chile" },
+    continuas: [{ proteccion: { por: ["Talismán"] }, a: "tusAliados", tipoObjetivo: "Aliado", si: "miTurno" }],
+    fns: { otro: (e, ctx, u) => N.carta(e, u).nombre !== "Aurora de Chile", miTurno: (e, ctx) => e.activo === ctx.ctrl },
   },
 };
