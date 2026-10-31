@@ -8,8 +8,11 @@ export { valor };
 
 const MEJORA_MINIMA = 0.05;
 const MAX_CANDIDATOS_ATAQUE = 4;
+const TOPE_SIMULADO = 50;
 
-export const OPCIONES = { simAtaque: true, simBloqueo: true, modelo: MODELO };
+export const OPCIONES = { simAtaque: true, simBloqueo: true, modelo: MODELO, mc: null };
+
+let enSimulacion = false;
 
 export function configurar(o) {
   Object.assign(OPCIONES, o);
@@ -44,7 +47,7 @@ export function mejorEleccion(e, prof = 0) {
   let mejorPuntaje = -Infinity;
   opciones.forEach((o, i) => {
     let s = aplicar(e, { tipo: "elegir", i });
-    if (opciones.length <= 4 && prof === 0) s = asentar(s, prof);
+    if (opciones.length <= 4 && prof === 0 && !enSimulacion) s = asentar(s, prof);
     const puntaje = evaluar(s, j) - (o.valor === null ? 0.01 : 0);
     if (puntaje > mejorPuntaje) {
       mejorPuntaje = puntaje;
@@ -59,7 +62,8 @@ function mejorJugada(e, j, candidatas) {
   let mejor = null;
   let mejorPuntaje = base + MEJORA_MINIMA;
   for (const a of candidatas) {
-    const puntaje = evaluar(asentar(aplicar(e, a), 0), j);
+    const s = aplicar(e, a);
+    const puntaje = evaluar(enSimulacion ? s : asentar(s, 0), j);
     if (puntaje > mejorPuntaje) {
       mejorPuntaje = puntaje;
       mejor = a;
@@ -191,7 +195,7 @@ function decidirMulligan(e, j, legales) {
   return { tipo: "quedarse" };
 }
 
-function decidirVigilia(e, j, legales) {
+function vigiliaHeuristica(e, j, legales) {
   const oros = legales.filter((a) => a.tipo === "oro");
   if (oros.length) return mejorJugada(e, j, oros) ?? oros[0];
   const jugada = mejorJugada(e, j, legales.filter((a) => a.tipo === "jugar" || a.tipo === "habilidad"));
@@ -204,6 +208,88 @@ function decidirVigilia(e, j, legales) {
     if (planAtaque(e, j, posibles).length) return batalla;
   }
   return terminar ?? legales[0];
+}
+
+function determinizar(e, j, k) {
+  const { catalogo, ...resto } = e;
+  const s = { ...structuredClone(resto), catalogo };
+  s.azar = (e.azar ^ Math.imul(k + 1, 0x9e3779b1)) >>> 0;
+  const r = s.jugadores[N.rival(j)];
+  const ocultas = [...r.mano, ...r.castillo];
+  N.barajar(s, ocultas);
+  r.mano = ocultas.slice(0, r.mano.length);
+  r.castillo = ocultas.slice(r.mano.length);
+  N.barajar(s, s.jugadores[j].castillo);
+  return s;
+}
+
+function simular(s, j, horizonte) {
+  for (let k = 0; k < 600 && s.ganador === null && s.turno < horizonte; k++) s = aplicar(s, elegirAccion(s));
+  return Math.max(-TOPE_SIMULADO, Math.min(TOPE_SIMULADO, evaluar(s, j)));
+}
+
+function candidatasMc(e, j, legales, heuristica) {
+  const jugadas = legales.filter((a) => a.tipo === "jugar" || a.tipo === "habilidad" || a.tipo === "oro");
+  const puntuadas = jugadas.map((a) => {
+    try {
+      return [a, evaluar(asentar(aplicar(e, a), 0), j)];
+    } catch {
+      return [a, -Infinity];
+    }
+  });
+  const mejores = puntuadas.sort((x, y) => y[1] - x[1]).slice(0, OPCIONES.mc.candidatos ?? 3).map((x) => x[0]);
+  const cierre = legales.filter((a) => a.tipo === "batalla" || a.tipo === "terminar");
+  const clave = (a) => JSON.stringify(a);
+  const vistas = new Set();
+  return [heuristica, ...mejores, ...cierre].filter((a) => a && !vistas.has(clave(a)) && vistas.add(clave(a)));
+}
+
+function buscarVigilia(e, j, legales) {
+  const heuristica = vigiliaHeuristica(e, j, legales);
+  const candidatas = candidatasMc(e, j, legales, heuristica);
+  if (candidatas.length <= 1) return heuristica;
+  const { simulaciones = 4, margen = 1, msMax = null } = OPCIONES.mc;
+  const horizonte = e.turno + 2;
+  const valores = candidatas.map(() => []);
+  const inicio = Date.now();
+  const respaldo = { ...OPCIONES };
+  enSimulacion = true;
+  Object.assign(OPCIONES, { simAtaque: false, simBloqueo: false });
+  try {
+    for (let k = 0; k < simulaciones; k++) {
+      if (msMax !== null && k > 1 && Date.now() - inicio > msMax) break;
+      candidatas.forEach((a, i) => {
+        let v;
+        try {
+          v = simular(aplicar(determinizar(e, j, k), a), j, horizonte);
+        } catch {
+          v = -TOPE_SIMULADO;
+        }
+        valores[i].push(v);
+      });
+    }
+  } finally {
+    enSimulacion = false;
+    Object.assign(OPCIONES, respaldo);
+  }
+  let mejor = 0;
+  let mejorVentaja = 0;
+  valores.forEach((vs, i) => {
+    if (i === 0 || vs.length < 2) return;
+    const d = vs.map((v, k) => v - valores[0][k]);
+    const media = d.reduce((x, y) => x + y, 0) / d.length;
+    const varianza = d.reduce((x, y) => x + (y - media) ** 2, 0) / (d.length - 1);
+    if (media > margen && media > Math.sqrt(varianza / d.length) && media > mejorVentaja) {
+      mejor = i;
+      mejorVentaja = media;
+    }
+  });
+  return candidatas[mejor];
+}
+
+function decidirVigilia(e, j, legales) {
+  if (OPCIONES.mc && !enSimulacion) return buscarVigilia(e, j, legales);
+  return vigiliaHeuristica(e, j, legales);
 }
 
 function decidirAtaque(e, j, legales) {

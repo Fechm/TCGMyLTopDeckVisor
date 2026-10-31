@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, aplicar, accionesLegales, N } from "./ayuda-duelo.mjs";
-import { elegirAccion, evaluar } from "../web/duelo/bot.js";
+import { elegirAccion, evaluar, configurar, OPCIONES } from "../web/duelo/bot.js";
 
 test("bot: pone un Oro antes que cualquier otra carta", () => {
   const e = mesa();
@@ -146,4 +146,34 @@ test("bot: obligado a atacar por Cráneo de Cristal, ataca con el que no pierde"
   e = aplicar(e, elegirAccion(e));
   assert.equal(e.fase, "ataque");
   assert.deepEqual(elegirAccion(e), { tipo: "atacar", uid: balaur });
+});
+
+test("bot MC: elige una acción legal, es determinista y no altera la configuración", () => {
+  const e = mesa();
+  oros(e, 0, 3);
+  poner(e, 0, "mano", "Balaur");
+  poner(e, 0, "defensa", "El Dracul");
+  poner(e, 1, "defensa", "Sir Galahad");
+  configurar({ mc: { simulaciones: 2, candidatos: 3 } });
+  try {
+    const a = elegirAccion(e);
+    const b = elegirAccion(e);
+    assert.deepEqual(a, b);
+    assert.ok(accionesLegales(e).some((x) => JSON.stringify(x) === JSON.stringify(a)));
+    assert.equal(OPCIONES.simAtaque, true);
+    assert.equal(OPCIONES.simBloqueo, true);
+  } finally {
+    configurar({ mc: null });
+  }
+});
+
+test("bot MC: ataca cuando el daño es letal", () => {
+  const e = mesa({ castillo: 3 });
+  poner(e, 0, "defensa", "El Dracul");
+  configurar({ mc: { simulaciones: 2, candidatos: 3 } });
+  try {
+    assert.equal(elegirAccion(e).tipo, "batalla");
+  } finally {
+    configurar({ mc: null });
+  }
 });
