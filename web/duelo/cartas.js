@@ -1,9 +1,7 @@
 import { CARTAS, MAZOS } from "./cartas-base.js";
 import * as N from "./nucleo.js";
 import { sel, mov, barajar, robar, efecto, buscar, mirar, castilloElegido, aliadoDeCastillo, coste } from "./formato.js";
-import { HABILIDADES as TANDA_01 } from "./tandas/tanda-01.js";
-import { HABILIDADES as TANDA_02 } from "./tandas/tanda-02.js";
-import { HABILIDADES as TANDA_03 } from "./tandas/tanda-03.js";
+import { TANDAS } from "./tandas/index.js";
 
 export { MAZOS };
 
@@ -646,7 +644,7 @@ const AZI = {
   disparadas: [{ cuando: ["faseFinal"], hacer: [sel(["todos:cementerio"], {}, "c"), mov("barajar", "c")] }],
 };
 
-const TODAS = { ...HABILIDADES, ...TANDA_01, ...TANDA_02, ...TANDA_03 };
+const TODAS = { ...HABILIDADES, ...TANDAS };
 
 function construir() {
   const porNombre = new Map(Object.values(CARTAS).map((c) => [c.nombre, c.id]));
@@ -659,3 +657,5 @@ function construir() {
 }
 
 export const CATALOGO = construir();
+
+export const TRANSCRITAS = new Set(Object.keys(TODAS));
