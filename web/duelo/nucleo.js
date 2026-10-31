@@ -119,7 +119,7 @@ export function* continuas(e) {
       for (const k of d.continuas) {
         if (k.si && !d.fns[k.si](e, { ctrl: j, fuente: uid, def: d.id })) continue;
         if (k.zona && !e.jugadores[j][k.zona].includes(uid)) continue;
-        yield { uid, j, k };
+        yield { uid, j, k, d };
       }
     }
   }
@@ -129,7 +129,18 @@ function alcanza(e, a, fuente, jFuente, objetivo) {
   if (a === "aliados") return true;
   if (a === "tusAliados") return controlador(e, objetivo) === jFuente;
   if (a === "aliadosRival") return controlador(e, objetivo) !== jFuente;
+  if (a === "tusDemasAliados") return controlador(e, objetivo) === jFuente && objetivo !== fuente;
+  if (a === "demasAliados") return objetivo !== fuente;
+  if (a === "propia") return objetivo === fuente;
   return false;
+}
+
+function filtraObjetivo(e, k, uid) {
+  const c = carta(e, uid);
+  if (k.raza && !(c.razas ?? []).includes(k.raza)) return false;
+  if (k.costeMin !== undefined && (c.coste ?? 0) < k.costeMin) return false;
+  if (k.costeMax !== undefined && (c.coste ?? 0) > k.costeMax) return false;
+  return true;
 }
 
 export function claves(e, uid) {
@@ -137,7 +148,7 @@ export function claves(e, uid) {
   for (const d of habilidades(e, uid)) d.claves.forEach((k) => s.add(k));
   for (const a of e.armas[uid] ?? []) if (activa(e, a)) (carta(e, a).portador?.claves ?? []).forEach((k) => s.add(k));
   if (carta(e, uid).tipo === "Aliado") {
-    for (const { uid: f, j, k } of continuas(e)) if (k.gana && alcanza(e, k.a, f, j, uid)) s.add(k.gana);
+    for (const { uid: f, j, k } of continuas(e)) if (k.gana && alcanza(e, k.a, f, j, uid) && filtraObjetivo(e, k, uid)) s.add(k.gana);
   }
   for (const f of e.efectos) if (f.tipo === "gana" && (f.uid === uid || (f.aliadosDe !== undefined && controlador(e, uid) === f.aliadosDe))) s.add(f.clave);
   return s;
@@ -149,7 +160,11 @@ export function fuerza(e, uid) {
   const c = carta(e, uid);
   let f = c.fuerza ?? 0;
   for (const a of e.armas[uid] ?? []) if (activa(e, a)) f += carta(e, a).portador?.fuerza ?? 0;
-  for (const { uid: fu, j, k } of continuas(e)) if (k.fuerza && alcanza(e, k.a, fu, j, uid) && (!k.raza || (c.razas ?? []).includes(k.raza))) f += k.fuerza;
+  for (const { uid: fu, j, k, d } of continuas(e)) {
+    if (!alcanza(e, k.a, fu, j, uid) || !filtraObjetivo(e, k, uid)) continue;
+    if (k.fuerza) f += k.fuerza;
+    if (k.fuerzaPor) f += d.fns[k.fuerzaPor](e, { ctrl: j, fuente: fu, def: d.id, objetivo: uid });
+  }
   for (const j of [0, 1]) {
     for (const x of e.jugadores[j].cementerio) {
       const cc = carta(e, x).continuasCementerio;
@@ -275,13 +290,14 @@ function limiteCastillo(e, j, n) {
   return Math.max(0, Math.min(n, 10 - p.salidasCastillo));
 }
 
-export function quitarDelCastillo(e, j, n, zona, fondo = false) {
+export function quitarDelCastillo(e, j, n, zona, fondo = false, porDano = false) {
   const p = e.jugadores[j];
   if (zona === "cementerio" && n === 1 && hay(e, j, (k, propio) => !propio && k.botarUnoEsDos)) n = 2;
   const k = limiteCastillo(e, j, n);
   const cartas = fondo ? p.castillo.splice(Math.max(0, p.castillo.length - k), k) : p.castillo.splice(0, k);
   p[zona].push(...cartas);
   p.salidasCastillo += cartas.length;
+  if (cartas.length) disparar(e, "salenDelCastillo", { j, uids: cartas, zona, porDano });
   return cartas.length;
 }
 

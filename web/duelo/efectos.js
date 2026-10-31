@@ -145,6 +145,11 @@ export function entrarEnJuego(e, uid, j, portador, datos = {}) {
   N.disparar(e, "entra", { uid, j, ...datos });
 }
 
+function noBarajable(e, uid) {
+  if (N.tiene(e, uid, "NoBarajable")) return true;
+  return N.carta(e, uid).tipo === "Aliado" && N.hay(e, N.controlador(e, uid), (k, propio) => propio && k.aliadosNoBarajables);
+}
+
 function sePuedeBarajar(e, uid, ctx) {
   const u = N.ubicar(e, uid);
   if (u?.zona !== "cementerio") return true;
@@ -168,7 +173,7 @@ function moverA(e, uid, a, ctx) {
       if (!(dentro && N.tiene(e, uid, "Indesterrable"))) N.mover(e, uid, "destierro");
       break;
     case "barajar":
-      if (!sePuedeBarajar(e, uid, ctx)) break;
+      if (!sePuedeBarajar(e, uid, ctx) || (dentro && noBarajable(e, uid))) break;
       N.mover(e, uid, "castillo");
       N.barajarCastillo(e, N.dueno(uid));
       break;
@@ -366,6 +371,7 @@ OPS.jugarGratis = (e, p, fr) => {
   const j = fr.ctx.ctrl;
   for (const uid of fr.ctx.vars[p.var] ?? []) {
     const c = N.carta(e, uid);
+    if (c.soloPagando) continue;
     const imp = impuestoSinPagar(e, j);
     if (imp > disponibles(e, j, c.tipo)) continue;
     pagarOros(e, j, imp, c.tipo);
@@ -383,6 +389,7 @@ OPS.jugarGratis = (e, p, fr) => {
 
 OPS.entrar = (e, p, fr) => {
   if ((fr.ctx.vars._anuladas ?? []).includes(p.uid)) return;
+  if (N.carta(e, p.uid).soloPagando && !p.datos?.pagado) return;
   entrarEnJuego(e, p.uid, fr.ctx.ctrl, undefined, p.datos ?? {});
 };
 
