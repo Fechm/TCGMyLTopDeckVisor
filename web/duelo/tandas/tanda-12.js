@@ -46,11 +46,13 @@ const jugadasDe = (e, j) => {
 
 const TIPOS = ["Aliado", "Arma", "Tótem", "Talismán", "Oro"];
 
+const FUERA = ["todos:enJuego", "todos:cementerio", "todos:destierro"];
+
 export const HABILIDADES = {
   "Guerra Celestial": {
     soloRespuesta: true,
     respuesta: {
-      anula: { tipo: "Aliado", costeMax: 3 },
+      anula: { tipo: ["Aliado", "Tótem"], costeMax: 3 },
       pasos: [{ op: "fn", f: "objetivo" }, sel(["rival:reserva"], {}, "o", { hasta: true, quien: "rival" }), { op: "fn", f: "resolver" }],
     },
     fns: {
@@ -93,6 +95,8 @@ export const HABILIDADES = {
     fns: { resto: (e, ctx) => 3 - (ctx.vars.c ?? []).length },
   },
   "Hambre del Vacio": {
+    momentos: ["faseFinal"],
+    claves: ["IndesterrableCementerio"],
     talisman: [robar(1), sel(["rival:oros"], { tipo: "Oro", conHabilidad: true }, "o", { n: 2, quien: "rival" }), { op: "fn", f: "apagar" }],
     fns: {
       apagar: (e, ctx) => {
@@ -101,6 +105,7 @@ export const HABILIDADES = {
     },
   },
   "Heraldos del Titán": {
+    momentos: ["comienzoFase"],
     talisman: [
       sel(["todos:aliados"], {}, "a", { n: 2, hasta: true }),
       efecto("a", { tipo: "debeAtacar" }),
@@ -254,7 +259,7 @@ export const HABILIDADES = {
     ],
   },
   "Identidad Secreta": {
-    respuesta: { anula: { tipo: "Arma", costeMax: 3 }, pasos: [{ op: "fn", f: "aDestierro" }] },
+    respuesta: { anula: { tipo: ["Arma", "Tótem"], costeMax: 3 }, pasos: [{ op: "fn", f: "aDestierro" }] },
     talisman: [
       {
         op: "modo",
@@ -288,10 +293,11 @@ export const HABILIDADES = {
   "Iluminar el Camino": {
     soloRespuesta: true,
     claves: ["NoAnulable"],
-    respuesta: { anula: {}, pasos: [{ op: "fn", f: "seguir" }] },
+    respuesta: { anula: {}, pasos: [{ op: "fn", f: "seguir" }, { op: "efecto", efecto: { tipo: "noJugarMas" }, jugador: "yo" }] },
     fns: { seguir: desanular },
   },
   "Intervencion Divina": {
+    momentos: ["comienzoFase"],
     talisman: [
       {
         op: "modo",
@@ -324,6 +330,7 @@ export const HABILIDADES = {
   },
   "Invasión": {
     claves: ["Exhumar", "NoAnulable"],
+    soloPagando: true,
     talisman: [
       {
         op: "modo",
@@ -347,10 +354,11 @@ export const HABILIDADES = {
     ],
   },
   "Invocar Anfibios": {
-    requiere: { de: ["todos:enJuego"], filtro: {} },
-    talisman: [sel(["todos:enJuego"], {}, "x"), efecto("x", { tipo: "pierdeHabilidad" })],
+    requiere: { de: FUERA, filtro: {} },
+    talisman: [sel(FUERA, {}, "x"), efecto("x", { tipo: "pierdeHabilidad", fuera: true })],
   },
   "Invocar Ángeles": {
+    soloPagando: true,
     talisman: [sel(["yo:cementerio"], { tipo: "Aliado", f: "angel" }, "a", { hasta: true }), { op: "fn", f: "jugar" }],
     fns: {
       angel: (e, ctx, u) => (N.carta(e, u).razas ?? []).includes("Ángel") && pagableReducido(e, ctx, u),
@@ -420,13 +428,14 @@ export const HABILIDADES = {
       oros: 1,
       requiere: "atacoAntes",
       coste: desterrarFuente,
-      hacer: [{ op: "efecto", efecto: { tipo: "inmuneRival" }, jugador: "yo" }],
+      hacer: [{ op: "fn", f: "inmune" }],
     })),
     fns: {
       ganar: (e, ctx) => {
         N.agregarEfecto(e, { tipo: "gana", clave: "Imbloqueable", aliadosDe: ctx.ctrl }, ctx.ctrl);
         N.agregarEfecto(e, { tipo: "gana", clave: "AtaqueNoCancelable", aliadosDe: ctx.ctrl }, ctx.ctrl);
       },
+      inmune: (e, ctx) => N.agregarEfecto(e, { tipo: "proteccion", de: ctx.ctrl, por: "todo" }, ctx.ctrl),
       atacoAntes: (e, ctx) => e.jugadores[ctx.ctrl].atacoTurnoAnterior,
     },
   },

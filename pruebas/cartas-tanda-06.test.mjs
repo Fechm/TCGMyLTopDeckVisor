@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mesa, poner, oros, hacer, elegir, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
+import { mesa, poner, oros, hacer, elegir, accionesLegales, aplicar, sinRespuesta, pasarHasta, zonaDe, id, N } from "./ayuda-duelo.mjs";
 import { costeDe } from "../web/duelo/motor.js";
-import { resolver } from "../web/duelo/efectos.js";
+import { resolver, OPS } from "../web/duelo/efectos.js";
+import { mov } from "../web/duelo/formato.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
@@ -16,6 +17,17 @@ function enCastillo(e, j, nombre, i) {
   c.splice(c.indexOf(u), 1);
   c.splice(i, 0, u);
   return u;
+}
+
+function anularConDorado(e, uid) {
+  e = aplicar(e, jugar(uid));
+  const dorado = e.jugadores[1].mano.find((u) => N.carta(e, u).nombre === "Dragón Dorado");
+  e = aplicar(e, { tipo: "responder", uid: dorado });
+  for (let i = 0; i < 20 && (e.pila.length || e.pendiente); i++) {
+    const l = accionesLegales(e);
+    e = e.pendiente ? aplicar(e, { tipo: "elegir", i: 0 }) : aplicar(e, l.find((a) => ["noResponder", "pasar"].includes(a.tipo)) ?? l[0]);
+  }
+  return e;
 }
 
 function azi(e, j) {
@@ -49,7 +61,19 @@ test("Tanin: al entrar Baraja y/o Destierra tantas cartas de los Cementerios com
   assert.deepEqual(c.map((u) => zonaDe(e, u)), ["castillo", "castillo", "destierro", "cementerio"]);
 });
 
-test("Tanin: reduce su coste por cada carta que Botes al jugarlo", { todo: "coste alternativo: Botar cartas al jugarla para reducir su coste" }, () => {});
+test("Tanin: puede jugarse Botando dos cartas para reducir su coste en dos", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const t = poner(e, 0, "mano", "Tanin");
+  const jugadas = accionesLegales(e).filter((a) => a.tipo === "jugar" && a.uid === t);
+  assert.deepEqual(jugadas, [{ tipo: "jugar", uid: t, alternativo: true }]);
+  e = aplicar(e, jugadas[0]);
+  while (e.pendiente) e = elegir(e, null);
+  assert.equal(zonaDe(e, t), "defensa");
+  assert.equal(e.jugadores[0].castillo.length, 28);
+});
+
+test("Tanin: reduce su coste en uno por cada carta que Botes, hasta un mínimo de 0", { todo: "coste alternativo variable: Botar X cartas para reducir el coste en X, hasta 0" }, () => {});
 
 test("Tormenta Feroz: tiene Furia", () => {
   const e = mesa();
@@ -101,7 +125,15 @@ test("Trentren Vilu: una vez en tu turno paga un Oro y Bota cuatro para jugar gr
   assert.equal(usable(e, tren), false);
 });
 
-test("Trentren Vilu: no puede ser jugado sin pagar su coste", { todo: "restricción: no puede entrar en juego sin pagar su coste" }, () => {});
+test("Trentren Vilu: no puede ser jugado sin pagar su coste", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const tren = poner(e, 0, "defensa", "Trentren Vilu");
+  const otro = poner(e, 0, "mano", "Trentren Vilu");
+  e = aplicar(e, habilidad(tren, "Trentren Vilu"));
+  while (e.pendiente) e = elegir(e, otro);
+  assert.equal(zonaDe(e, otro), "mano");
+});
 
 test("Valac: reduce su coste por cada Oro Azi que controles, hasta un mínimo de 1", () => {
   const e = mesa();
@@ -147,7 +179,7 @@ test("Ventisca: los Aliados que no son Dragón no ganan Fuerza", () => {
   assert.equal(N.tiene(e, g, "Furia"), false);
 });
 
-test("Ventisca: con Aliados de otra raza, tus Dragones igual tienen Furia", { todo: "continua: ganar una clave solo los Aliados de una raza" }, () => {
+test("Ventisca: con Aliados de otra raza, tus Dragones igual tienen Furia", () => {
   const e = mesa();
   poner(e, 0, "defensa", "Ventisca");
   poner(e, 0, "defensa", "Guardia Real");
@@ -212,7 +244,18 @@ test("Zmaj Depredador: al entrar Destruye todas las cartas de coste 2 o menos y 
   assert.equal(N.tiene(e, z, "Furia"), true);
 });
 
-test("Zmaj Depredador: la primera carta que juegue tu oponente cada turno cuesta un Oro adicional", { todo: "continua: la primera carta que juega el oponente cada turno cuesta un Oro adicional" }, () => {});
+test("Zmaj Depredador: la primera carta que juegue tu oponente cada turno cuesta un Oro adicional", () => {
+  const e = mesa();
+  const v = poner(e, 1, "mano", "Valefor");
+  const k = poner(e, 1, "mano", "Abducción del Cabo");
+  const mia = poner(e, 0, "mano", "Valefor");
+  poner(e, 0, "defensa", "Zmaj Depredador");
+  assert.equal(costeDe(e, 1, v).pagar, 2);
+  assert.equal(costeDe(e, 1, k).pagar, 2);
+  assert.equal(costeDe(e, 0, mia).pagar, 1);
+  e.jugadores[1].jugadas.Talismán = 1;
+  assert.equal(costeDe(e, 1, v).pagar, 1);
+});
 
 test("Zmaj Moonshadow: una vez por turno cada jugador Bota tres, puedes poner un Aliado de un Cementerio sin habilidad y Robas dos", () => {
   let e = mesa();
@@ -229,7 +272,18 @@ test("Zmaj Moonshadow: una vez por turno cada jugador Bota tres, puedes poner un
   assert.equal(N.tiene(e, z, "Furia"), true);
 });
 
-test("Zmaj Moonshadow: tus Aliados no pueden ser Barajados por efectos", { todo: "continua: tus Aliados no pueden ser Barajados por efectos" }, () => {});
+test("Zmaj Moonshadow: tus Aliados no pueden ser Barajados por efectos", () => {
+  let e = mesa();
+  oros(e, 0, 3);
+  const z = poner(e, 0, "defensa", "Zmaj Moonshadow");
+  const v = poner(e, 0, "defensa", "Valefor");
+  const g = poner(e, 1, "defensa", "Guardia Real");
+  const tren = poner(e, 0, "mano", "Trentren Vilu");
+  e = hacer(e, jugar(tren), true);
+  assert.equal(zonaDe(e, z), "defensa");
+  assert.equal(zonaDe(e, v), "defensa");
+  assert.equal(zonaDe(e, g), "castillo");
+});
 
 test("Zmeoaica: al entrar puedes mostrar un Aliado de coste 3 de tu mano para Robar dos cartas", () => {
   let e = mesa();
@@ -259,9 +313,29 @@ test("Zmeoaica: no puedes controlar más de una copia", () => {
   assert.equal(puedeJugar(e, z), false);
 });
 
-test("Zmeoaica: tus Aliados de coste 3 o más reducen su coste en un Oro", { todo: "continua: reduce en un Oro el coste de tus Aliados de coste N o más" }, () => {});
+test("Zmeoaica: tus Aliados de coste 3 o más reducen su coste en un Oro", () => {
+  const e = mesa();
+  const p = poner(e, 0, "mano", "Sir Persival");
+  const g = poner(e, 0, "mano", "Guardia Real");
+  const r = poner(e, 1, "mano", "Sir Persival");
+  poner(e, 0, "defensa", "Zmeoaica");
+  assert.equal(costeDe(e, 0, p).pagar, 2);
+  assert.equal(costeDe(e, 0, g).pagar, 2);
+  assert.equal(costeDe(e, 1, r).pagar, 3);
+});
 
-test("Zmeoaica: tus Aliados de coste 3 o más no pueden ser Desterrados", { todo: "continua: ganar una clave solo los Aliados de coste N o más" }, () => {});
+test("Zmeoaica: tus Aliados de coste 3 o más no pueden ser Desterrados", () => {
+  const e = mesa();
+  poner(e, 0, "defensa", "Zmeoaica");
+  const p = poner(e, 0, "defensa", "Sir Persival");
+  const g = poner(e, 0, "defensa", "Guardia Real");
+  const r = poner(e, 1, "defensa", "Sir Persival");
+  e.cola.unshift(N.nuevoFrame([mov("desterrar")], { ctrl: 1, vars: { x: [p, g, r] } }));
+  resolver(e);
+  assert.equal(zonaDe(e, p), "defensa");
+  assert.equal(zonaDe(e, g), "destierro");
+  assert.equal(zonaDe(e, r), "destierro");
+});
 
 test("Zmeu Abismal: al entrar puedes convertir un Oro en un Oro sin habilidad y ganar su control", () => {
   let e = mesa();
@@ -284,7 +358,12 @@ test("Zmeu Abismal: cuando ataca, hasta una carta que no sea Oro pierde su habil
   assert.equal(zonaDe(e, m), "cementerio");
 });
 
-test("Zmeu Abismal: sólo puede ser puesto en juego si se pagó su coste impreso", { todo: "restricción: no puede entrar en juego sin pagar su coste" }, () => {});
+test("Zmeu Abismal: sólo puede ser puesto en juego si se pagó su coste impreso", () => {
+  const e = mesa();
+  const z = poner(e, 0, "cementerio", "Zmeu Abismal");
+  OPS.entrar(e, { uid: z, datos: { pagado: false } }, { ctx: { ctrl: 0, vars: {} } });
+  assert.equal(zonaDe(e, z), "cementerio");
+});
 
 test("A Traves del Espejo: tu Aliado gana la habilidad de un Aliado de coste 2 o menos de tu Cementerio y, con Exhumar o Furia, Furia o Imbloqueable", () => {
   let e = mesa();
@@ -351,7 +430,9 @@ test("Abordaje: convierte una carta de un Cementerio en un Aliado Indestructible
   const g = poner(e, 1, "defensa", "Guardia Real");
   const p = poner(e, 0, "defensa", "Sir Persival");
   const ab = poner(e, 0, "mano", "Abordaje");
-  e = aplicar(e, jugar(ab));
+  e = aplicar(e, { tipo: "batalla" });
+  assert.equal(e.fase, "momento");
+  e = sinRespuesta(aplicar(e, jugar(ab)));
   assert.equal(zonaDe(e, c), "defensa");
   assert.equal(N.ubicar(e, c).j, 1);
   assert.equal(N.carta(e, c).tipo, "Aliado");
@@ -361,7 +442,16 @@ test("Abordaje: convierte una carta de un Cementerio en un Aliado Indestructible
   assert.equal(N.fuerza(e, p), 2);
 });
 
-test("Abordaje: puede jugarse al comienzo de cualquier Fase", { todo: "momento: jugar un Talismán al comienzo de cualquier Fase" }, () => {});
+test("Abordaje: puede jugarse en la Vigilia y también al comienzo de cualquier Fase", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  poner(e, 1, "cementerio", "Valefor");
+  const ab = poner(e, 0, "mano", "Abordaje");
+  assert.equal(puedeJugar(e, ab), true);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  assert.equal(puedeJugar(e, ab), true);
+});
 
 test("Abrazo de Maipú: Baraja cartas de tu Cementerio, Roba tres y se Destierra", () => {
   let e = mesa();
@@ -398,7 +488,21 @@ test("Absorber Kaiju: los Aliados en juego pierden su habilidad y son Barajados"
   assert.deepEqual(a.map((u) => zonaDe(e, u)), ["castillo", "castillo", "castillo"]);
 });
 
-test("Absorber Kaiju: Anularlo cuesta un Oro adicional", { todo: "efecto: Anular este Talismán cuesta Oros adicionales" }, () => {});
+test("Absorber Kaiju: Anularlo cuesta un Oro adicional", () => {
+  let e = mesa();
+  oros(e, 0, 5);
+  poner(e, 1, "mano", "Dragón Dorado");
+  const k = poner(e, 0, "mano", "Absorber Kaiju");
+  e = aplicar(e, jugar(k));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder"), false);
+  let f = mesa();
+  oros(f, 0, 5);
+  oros(f, 1, 1);
+  poner(f, 1, "mano", "Dragón Dorado");
+  const k2 = poner(f, 0, "mano", "Absorber Kaiju");
+  f = aplicar(f, jugar(k2));
+  assert.equal(accionesLegales(f).some((a) => a.tipo === "responder"), true);
+});
 
 test("Acabar la Esperanza: deja sin habilidad una carta de coste 3 o menos y sube hasta dos cartas de ese tipo del Castillo", () => {
   let e = mesa();
@@ -420,7 +524,17 @@ test("Acabar la Esperanza: tiene Exhumar", () => {
   assert.ok(accionesLegales(e).some((x) => x.tipo === "jugar" && x.uid === a && x.desde === "cementerio"));
 });
 
-test("Acabar la Esperanza: si es Anulado genera un Oro y Roba una carta", { todo: "disparada: al ser Anulado" }, () => {});
+test("Acabar la Esperanza: si es Anulado genera un Oro y Roba una carta", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  poner(e, 1, "defensa", "Sir Persival");
+  poner(e, 1, "mano", "Dragón Dorado");
+  const a = poner(e, 0, "mano", "Acabar la Esperanza");
+  e = anularConDorado(e, a);
+  assert.equal(zonaDe(e, a), "cementerio");
+  assert.equal(e.jugadores[0].mano.length, 1);
+  assert.deepEqual(e.jugadores[0].generados, [{ n: 1, tipos: null }]);
+});
 
 test("Activar Tenshi Z: pone el primer Oro del Castillo en tu Oro Pagado y el primer Arma o Tótem en tu mano", () => {
   let e = mesa();
@@ -476,7 +590,29 @@ test("Amanecer Oscuro: elige dos, busca un Aliado en el Castillo oponente para s
   assert.equal(zonaDe(e, a), "destierro");
 });
 
-test("Amanecer Oscuro: prevenir el próximo daño que fueras a recibir", { todo: "efecto: prevenir el próximo daño que recibiría un jugador" }, () => {});
+test("Amanecer Oscuro: prevenir el próximo daño que fueras a recibir", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const g = poner(e, 1, "defensa", "Guardia Real");
+  const a = poner(e, 0, "mano", "Amanecer Oscuro");
+  e = hacer(e, jugar(a), 0, 2);
+  assert.equal(zonaDe(e, g), "castillo");
+  assert.ok(e.efectos.some((f) => f.tipo === "prevenirDano" && f.j === 0 && f.unaVez));
+  e = pasarHasta(aplicar(e, { tipo: "terminar" }), "vigilia");
+  assert.equal(e.activo, 1);
+  const atacante = poner(e, 1, "defensa", "Sir Persival");
+  const castillo = e.jugadores[0].castillo.length;
+  e = aplicar(e, { tipo: "batalla" });
+  e = aplicar(e, { tipo: "atacar", uid: atacante });
+  e = aplicar(e, { tipo: "finAtaque" });
+  const antes = e.registro.length;
+  for (let i = 0; i < 30 && e.registro.length === antes; i++) {
+    const l = accionesLegales(e);
+    e = aplicar(e, l.find((x) => ["finBloqueo", "pasar", "noResponder"].includes(x.tipo)) ?? l[0]);
+  }
+  assert.equal(e.jugadores[0].castillo.length, castillo);
+  assert.equal(e.efectos.some((f) => f.tipo === "prevenirDano"), false);
+});
 
 test("Amarre de Bruja: ganas el control de un Aliado oponente de igual o menos Fuerza mientras tu Aliado esté en juego", () => {
   let e = mesa();
@@ -512,7 +648,15 @@ test("Amor de Dulcinea: previene que una carta salga del juego y Baraja una cart
   assert.equal(zonaDe(e, g), "castillo");
 });
 
-test("Amor de Dulcinea: si es Anulado Roba dos cartas", { todo: "disparada: al ser Anulado" }, () => {});
+test("Amor de Dulcinea: si es Anulado Roba dos cartas", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  poner(e, 1, "mano", "Dragón Dorado");
+  const a = poner(e, 0, "mano", "Amor de Dulcinea");
+  e = anularConDorado(e, a);
+  assert.equal(zonaDe(e, a), "cementerio");
+  assert.equal(e.jugadores[0].mano.length, 2);
+});
 
 test("Amor de Dulcinea: Desterrarla de la mano previene que el oponente gane el control de tu carta", { todo: "respuesta: desde la mano, prevenir que el oponente gane el control de una carta" }, () => {});
 
@@ -564,7 +708,7 @@ test("Aniquilar a la Bestia: desde tu Cementerio los Aliados pierden 1 de Fuerza
 
 test("Aniquilar a la Bestia: para Desterrarla de tu Cementerio el oponente debe Barajar una carta de su mano", { todo: "restricción: el oponente paga un coste para Desterrar esta carta del Cementerio" }, () => {});
 
-test("Aparición del Sanatorio: convierte un Aliado de coste 2 o menos de un Cementerio en un Tótem bajo tu control que silencia la entrada de coste 1 o menos", () => {
+test("Aparición del Sanatorio: convierte un Aliado de coste 2 o menos de un Cementerio en un Tótem bajo tu control", () => {
   let e = mesa();
   oros(e, 0, 2);
   const v = poner(e, 1, "cementerio", "Valefor");
@@ -574,9 +718,21 @@ test("Aparición del Sanatorio: convierte un Aliado de coste 2 o menos de un Cem
   assert.equal(N.ubicar(e, v).j, 0);
   assert.equal(N.carta(e, v).tipo, "Tótem");
   assert.equal(zonaDe(e, a), "cementerio");
-  assert.equal(N.hay(e, 0, (k) => k.silenciaEntradaCosteMax === 1), true);
-  N.mover(e, a, "destierro");
-  assert.equal(N.hay(e, 0, (k) => k.silenciaEntradaCosteMax === 1), false);
 });
 
-test("Aparición del Sanatorio: las cartas de coste 1 o menos no disparan ninguna habilidad", { todo: "continua: las cartas de coste N o menos no disparan sus habilidades (hoy solo la entrada de Aliados)" }, () => {});
+test("Aparición del Sanatorio: mientras el Tótem esté en juego y el Talismán en tu Cementerio, las cartas de coste 1 o menos no disparan sus habilidades", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  const v = poner(e, 1, "cementerio", "Valefor");
+  const a = poner(e, 0, "mano", "Aparición del Sanatorio");
+  e = aplicar(e, jugar(a));
+  const t = poner(e, 0, "cementerio", "Tormenta Feroz");
+  N.disparar(e, "entra", { uid: poner(e, 0, "reserva", "Drácula"), j: 0 });
+  resolver(e);
+  assert.equal(e.pendiente, null);
+  assert.equal(zonaDe(e, t), "cementerio");
+  N.mover(e, v, "cementerio");
+  N.disparar(e, "entra", { uid: poner(e, 0, "reserva", "Drácula"), j: 0 });
+  resolver(e);
+  assert.notEqual(e.pendiente, null);
+});

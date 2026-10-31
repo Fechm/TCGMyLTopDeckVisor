@@ -166,8 +166,8 @@ function avanzarHasta(e, pred) {
   return e;
 }
 
-test("mecánica: ventana al comienzo de la Vigilia oponente para Talismanes con ese momento", () => {
-  let e = con(mesa(), "Llamar a la Manada", { momentos: ["comienzoVigiliaRival"] });
+test("mecánica: ventana al comienzo de la Vigilia oponente para Talismanes con ese momento (soloMomentos)", () => {
+  let e = con(mesa(), "Llamar a la Manada", { momentos: ["comienzoVigiliaRival"], soloMomentos: true });
   oros(e, 0, 2);
   const manada = poner(e, 0, "mano", "Llamar a la Manada");
   assert.equal(jugarDe(e, manada).length, 0);
@@ -218,4 +218,11 @@ test("mecánica: ventana de la Fase Final y comienzoFase en la Guerra de Talisma
   f = aplicar(f, { tipo: "finBloqueo" });
   assert.equal(f.fase, "talismanes");
   assert.deepEqual(jugarDe(f, otra), [{ tipo: "jugar", uid: otra }]);
+});
+
+test("mecánica: momentos agrega momentos sin quitar la Vigilia normal", () => {
+  const e = con(mesa(), "Llamar a la Manada", { momentos: ["faseFinal"] });
+  oros(e, 0, 2);
+  const manada = poner(e, 0, "mano", "Llamar a la Manada");
+  assert.deepEqual(jugarDe(e, manada), [{ tipo: "jugar", uid: manada }]);
 });

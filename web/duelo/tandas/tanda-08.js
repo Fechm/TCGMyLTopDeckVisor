@@ -5,15 +5,14 @@ const sumaCostes = (e, lista) => (lista ?? []).reduce((s, u) => s + coste(e, u),
 
 const aliadosEnJuego = (e) => [...N.aliadosDe(e, 0), ...N.aliadosDe(e, 1)];
 
-const sinDanoA = (e, ctx, aliados, fin) => {
-  for (const a of aliados) N.agregarEfecto(e, { tipo: "sinDano", uid: a, fin }, ctx.ctrl);
-};
+const aliadoAnulado = (e) => e.jugadores.some((p) => (p.jugadas.anuladas?.Aliado ?? 0) > 0);
 
 const tieneRaza = (raza) => (e, ctx) => N.aliadosDe(e, ctx.ctrl).some((a) => (N.carta(e, a).razas ?? []).includes(raza));
 
 function jugarTalismanGratis(e, ctx, api, uid) {
   if (!uid) return;
   const c = N.carta(e, uid);
+  if (c.soloPagando) return;
   const j = ctx.ctrl;
   const imp = api.impuestoSinPagar(e, j);
   if (imp > api.disponibles(e, j, c.tipo)) return;
@@ -27,9 +26,14 @@ function jugarTalismanGratis(e, ctx, api, uid) {
 export const HABILIDADES = {
   "Cadenas de Titán": {
     claves: ["NoAnulable"],
-    talisman: [{ op: "desterrarTope", n: 6, quien: "rival" }, robar(2), { op: "fn", f: "proteger" }],
+    requiere: "aliadoAnulado",
+    talisman: [{ op: "desterrarTope", n: 6, quien: "rival" }, robar(2), { op: "fn", f: "cerrar" }],
     fns: {
-      proteger: (e, ctx) => sinDanoA(e, ctx, N.aliadosDe(e, ctx.ctrl), "turno"),
+      aliadoAnulado,
+      cerrar: (e, ctx) => {
+        N.agregarEfecto(e, { tipo: "noJugarMas", fin: "turno" }, ctx.ctrl);
+        N.agregarEfecto(e, { tipo: "prevenirDano", j: N.rival(ctx.ctrl), fin: "turno" }, ctx.ctrl);
+      },
     },
   },
   "Cae la Casa Usher": {
@@ -52,6 +56,7 @@ export const HABILIDADES = {
   },
   "Cae la Reina": {
     claves: ["Exhumar"],
+    soloPagando: true,
     destierroAlJugar: true,
     talisman: [sel(["todos:cementerio"], {}, "c", { n: 10, hasta: true }), mov("barajar", "c"), robar(3)],
   },
@@ -92,7 +97,7 @@ export const HABILIDADES = {
         const n = (ctx.vars.a ?? []).reduce((s, u) => s + N.fuerza(e, u), 0);
         if (n) N.quitarDelCastillo(e, N.rival(ctx.ctrl), n, "destierro");
       },
-      sinCombate: (e, ctx) => sinDanoA(e, ctx, aliadosEnJuego(e), "dosTurnos"),
+      sinCombate: (e, ctx) => N.agregarEfecto(e, { tipo: "prevenirDano", fin: "dosTurnos" }, ctx.ctrl),
     },
   },
   "Camino del Guerrero": {
@@ -139,7 +144,7 @@ export const HABILIDADES = {
         }
         Object.assign(item, { anulado: false, ctrl: ctx.ctrl, cerrada: true });
       },
-      sinDanoRival: (e, ctx) => sinDanoA(e, ctx, N.aliadosDe(e, N.rival(ctx.ctrl)), "turno"),
+      sinDanoRival: (e, ctx) => N.agregarEfecto(e, { tipo: "prevenirDano", j: ctx.ctrl, fin: "turno" }, ctx.ctrl),
     },
   },
   "Capa de Invisibildiad": {
@@ -216,6 +221,13 @@ export const HABILIDADES = {
         si: "recienResuelto",
         hacer: [{ op: "fn", f: "desmarcar" }, sel(["fuente"], {}, "yo"), mov("barajar", "yo")],
       },
+      {
+        zona: ["cementerio"],
+        cuando: ["salenDelCastillo"],
+        si: "botadaPorDano",
+        opcional: true,
+        hacer: [sel(["fuente"], {}, "yo"), mov("desterrar", "yo"), sel(["todos:cementerio"], {}, "c", { n: 5, hasta: true }), mov("barajar", "c")],
+      },
     ],
     fns: {
       vetar: (e, ctx) => {
@@ -228,6 +240,7 @@ export const HABILIDADES = {
         e.usos[`celebrar|${ctx.fuente}`] = e.turno;
       },
       recienResuelto: (e, ctx) => e.usos[`celebrar|${ctx.fuente}`] === e.turno,
+      botadaPorDano: (e, ctx) => ctx.datos.porDano && ctx.datos.zona === "cementerio" && ctx.datos.uids.includes(ctx.fuente),
       desmarcar: (e, ctx) => {
         delete e.usos[`celebrar|${ctx.fuente}`];
       },
@@ -269,7 +282,7 @@ export const HABILIDADES = {
         n: 3,
         hasta: true,
         opciones: [
-          { texto: "Caballero: generar un Oro para jugar Armas y/o Caballeros", requiere: "caballero", pasos: [{ op: "generar", n: 1, tipos: ["Arma", "Aliado"] }] },
+          { texto: "Caballero: generar un Oro para jugar Armas y/o Caballeros", requiere: "caballero", pasos: [{ op: "generar", n: 1, tipos: ["Arma", "Aliado"], costeMin: 2 }] },
           { texto: "Guerrero: tus Aliados ganan 2 de Fuerza", requiere: "guerrero", pasos: [sel(["yo:aliados"], {}, "a", { n: 99 }), efecto("a", { tipo: "fuerza", n: 2 })] },
           { texto: "Héroe: los Talismanes cuestan un Oro adicional por el turno", requiere: "heroe", pasos: [{ op: "efecto", efecto: { tipo: "impuestoTalisman" }, fin: "turno" }] },
         ],
@@ -310,10 +323,12 @@ export const HABILIDADES = {
     fns: { cabe: (e, ctx, u) => coste(e, u) + sumaCostes(e, ctx.vars.x) <= 4 },
   },
   "Combate de Punta Gruesa": {
+    momentos: ["comienzoFase"],
     talisman: [sel(["rival:mano"], { noTipo: ["Oro"] }), mov("cementerio"), { op: "si", f: "barata", entonces: [robar(1)] }],
     fns: { barata: (e, ctx) => (ctx.vars.x ?? []).some((u) => coste(e, u) <= 2) },
   },
   "Comite de Animales": {
+    noAnulableCosteMax: 1,
     talisman: [{ op: "fn", f: "convertir" }],
     fns: {
       convertir: (e) => {
@@ -329,12 +344,14 @@ export const HABILIDADES = {
   },
   "Conan Doyle": {
     claves: ["NoAnulable"],
+    momentos: ["comienzoVigilia", "talismanes", "faseFinal"],
     talisman: [sel(["yo:mano", "yo:cementerio"], { tipo: "Aliado", costeMax: 2 }, "b", { hasta: true }), { op: "jugarGratis", var: "b" }],
   },
   "Concilio de los Eternos": {
     requiere: "cuatroTipos",
-    talisman: [],
+    talisman: [{ op: "fn", f: "limitarAtaque" }],
     fns: {
+      limitarAtaque: (e, ctx) => N.agregarEfecto(e, { tipo: "maxAtacantes", j: N.rival(ctx.ctrl), n: 2, fin: "turno" }, ctx.ctrl),
       cuatroTipos: (e, ctx) => {
         const cartas = [...N.enJuegoDe(e, ctx.ctrl), ...e.jugadores[ctx.ctrl].mano.filter((u) => u !== ctx.fuente)];
         return new Set(cartas.map((u) => N.carta(e, u).tipo)).size >= 4;

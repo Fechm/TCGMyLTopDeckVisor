@@ -35,10 +35,6 @@ const jugarPagando = (e, ctx, api, uid, n, desde) => {
   return [{ op: "entrar", uid, datos }];
 };
 
-const sinDanoRival = (e, ctx) => {
-  for (const a of N.aliadosDe(e, N.rival(ctx.ctrl))) N.agregarEfecto(e, { tipo: "sinDano", uid: a }, ctx.ctrl);
-};
-
 const aTotems = (quien) => [sel([`${quien}:cementerio`], {}, "c", { n: 2, hasta: true }), { op: "fn", f: "totems" }];
 
 export const HABILIDADES = {
@@ -98,6 +94,24 @@ export const HABILIDADES = {
   "Cortar las Cadenas": {
     claves: ["Exhumar", "NoAnulable"],
     talisman: [{ op: "botar", n: 5, quien: "rival" }],
+    activadas: [
+      {
+        texto: "Desde tu Destierro, pagar un Oro y Barajarlo en tu Castillo: Robar dos cartas o buscar un Tenshi",
+        zona: "destierro",
+        oros: 1,
+        coste: [sel(["fuente"], {}, "yo"), mov("barajar", "yo")],
+        hacer: [
+          {
+            op: "modo",
+            opciones: [
+              { texto: "Robar dos cartas", pasos: [robar(2)] },
+              { texto: "Buscar en tu Castillo un Tenshi", pasos: buscar(["yo:castillo"], { f: "tenshi" }) },
+            ],
+          },
+        ],
+      },
+    ],
+    fns: { tenshi: (e, ctx, u) => /\bTenshi\b/.test(N.carta(e, u).nombre) || (N.carta(e, u).razas ?? []).includes("Tenshi") },
   },
   "Corte Letal": {
     talisman: [sel(["rival:cementerio"]), mov("desterrar"), { op: "fn", f: "copias" }, robar(2)],
@@ -135,10 +149,12 @@ export const HABILIDADES = {
     ],
   },
   "Cruzar la Cordillera": {
+    momentos: ["comienzoVigilia", "comienzoVigiliaRival"],
     destierroAlJugar: true,
     talisman: [robar(1)],
   },
   "Cuarto Sello": {
+    momentos: ["comienzoFase"],
     talisman: [
       ...buscar(["yo:castillo"], { f: "sello" }),
       sel(["todos:enJuego"], { costeMax: 4 }, "d", { hasta: true, para: "destruir" }),
@@ -160,16 +176,14 @@ export const HABILIDADES = {
   "Culto a la Muerte": {
     requiere: { de: ["todos:enJuego"], filtro: { conHabilidad: true } },
     talisman: [sel(["todos:enJuego"], { conHabilidad: true }), { op: "fn", f: "cancelar" }],
-    respuesta: { anula: { costeMax: 2 }, pasos: [{ op: "fn", f: "desterrarAnulada" }] },
+    respuesta: { anula: { tipo: ["Talismán", "Arma", "Tótem"], costeMax: 2 }, pasos: [{ op: "fn", f: "desterrarAnulada" }] },
     fns: {
       cancelar: (e, ctx) => {
         for (const u of ctx.vars.x ?? []) N.agregarEfecto(e, { tipo: "pierdeHabilidad", nombre: N.carta(e, u).nombre }, ctx.ctrl);
       },
       desterrarAnulada: (e, ctx) => {
         const item = e.pila[ctx.objetivoPila];
-        if (!item) return;
-        if (N.carta(e, item.uid).tipo === "Aliado") item.anulado = false;
-        else item.destierro = true;
+        if (item) item.destierro = true;
       },
     },
   },
@@ -347,6 +361,8 @@ export const HABILIDADES = {
           { texto: "Buscar en tu Castillo una carta de coste 3 o más", pasos: buscar(["yo:castillo"], { costeMin: 3 }) },
         ],
       },
+      { op: "efecto", jugador: "yo", efecto: { tipo: "noJugarMas" } },
+      { op: "efecto", jugador: "yo", efecto: { tipo: "maxHabilidades", n: 0 } },
     ],
   },
   "Destruccion Urbana": {
@@ -369,7 +385,7 @@ export const HABILIDADES = {
           {
             op: "modo",
             opciones: [
-              { texto: "No recibir daño este turno", pasos: [{ op: "fn", f: "sinDano" }] },
+              { texto: "No recibir daño este turno", pasos: [{ op: "efecto", jugador: "yo", efecto: { tipo: "prevenirDano" } }] },
               { texto: "Robar dos cartas", pasos: [robar(2)] },
               {
                 texto: "Barajar una carta de coste 2 o menos",
@@ -384,7 +400,6 @@ export const HABILIDADES = {
     fns: {
       totems: (e, ctx) => [{ op: "convertir", var: "c", en: "Tótem", a: "apoyo", como: ctx.def }],
       enJuego: (e, ctx) => N.enJuego(e, ctx.fuente),
-      sinDano: sinDanoRival,
     },
   },
   "Destruir Refugio": {
@@ -429,6 +444,7 @@ export const HABILIDADES = {
     },
   },
   "Duelo Espacial": {
+    claves: ["IndesterrableCementerio"],
     talisman: [
       sel(["todos:castillo", "todos:cementerio"], { noFuente: true }),
       { op: "convertir", var: "x", en: "Oro", a: "pagado" },

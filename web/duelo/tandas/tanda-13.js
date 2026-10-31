@@ -17,15 +17,7 @@ const desdeCementerio = (texto, pasos, extra = {}) => ({
 
 const distintoNombre = (como) => (e, ctx, u) => !(ctx.vars[como] ?? []).some((x) => N.carta(e, x).nombre === N.carta(e, u).nombre);
 
-const marca = (nombre) => (e, ctx) => {
-  e.usos[`${nombre}|${ctx.fuente}`] = e.turno;
-};
-
-const marcada = (nombre) => (e, ctx) => e.usos[`${nombre}|${ctx.fuente}`] === e.turno;
-
-const desmarcar = (e, nombre, uid) => {
-  delete e.usos[`${nombre}|${uid}`];
-};
+const resuelta = (e, ctx) => ctx.datos.desde === null;
 
 const orosLibres = (e, j) => e.jugadores[j].reserva.length + (e.jugadores[j].generados ?? []).reduce((s, g) => s + g.n, 0);
 
@@ -67,10 +59,18 @@ export const HABILIDADES = {
       ...buscar(["yo:castillo"], {}),
       sel(["yo:aliados"], {}, "a", { n: 99 }),
       efecto("a", { tipo: "fuerza", n: 2 }, "juego"),
+      { op: "fn", f: "proteger" },
     ],
+    disparadas: [{ zona: ["cementerio"], cuando: ["anulada"], quien: "propia", hacer: [{ op: "generar", n: 1 }] }],
+    fns: {
+      proteger: (e, ctx) => {
+        N.agregarEfecto(e, { tipo: "proteccion", de: ctx.ctrl, tipoObjetivo: "Aliado", cuesta: 1, fin: "proximoTurno" }, ctx.ctrl);
+      },
+    },
   },
   "Julio Verne": {
     claves: ["NoAnulable"],
+    soloPagando: true,
     talisman: [sel(["yo:aliados"], {}, "x", { n: 99, hasta: true }), mov("mano"), { op: "fn", f: "guardar" }],
     disparadas: [{ zona: ["cementerio"], cuando: ["comienzoTurno"], quien: "yo", si: "pendiente", hacer: [{ op: "fn", f: "devolver" }] }],
     fns: {
@@ -181,24 +181,38 @@ export const HABILIDADES = {
     },
   },
   "La Ira de Dios": {
-    talisman: [sel(["rival:mano"], {}, "x", { quien: "rival" }), mov("desterrar"), { op: "fn", f: "marcar" }],
+    talisman: [sel(["rival:mano"], {}, "x", { quien: "rival" }), mov("desterrar")],
     disparadas: [
       {
         zona: ["cementerio"],
         cuando: ["alCementerio"],
         quien: "propia",
         si: "resuelta",
-        hacer: [{ op: "fn", f: "desmarcar" }, sel(["fuente"], {}, "yo"), mov("barajar", "yo")],
+        hacer: [sel(["fuente"], {}, "yo"), mov("barajar", "yo")],
+      },
+      {
+        zona: ["cementerio"],
+        cuando: ["salenDelCastillo"],
+        quien: "yo",
+        si: "botada",
+        opcional: true,
+        hacer: [sel(["fuente"], {}, "yo"), mov("desterrar", "yo"), sel(["yo:cementerio"], { tipo: "Aliado" }, "a"), mov("mano", "a")],
       },
     ],
     fns: {
-      marcar: marca("ira"),
-      resuelta: marcada("ira"),
-      desmarcar: (e, ctx) => desmarcar(e, "ira", ctx.fuente),
+      resuelta,
+      botada: (e, ctx) => ctx.datos.zona === "cementerio" && !ctx.datos.porDano && ctx.datos.uids.includes(ctx.fuente),
     },
   },
   "La Sentencia de los Dioses": {
-    talisman: [],
+    momentos: ["comienzoVigilia", "comienzoVigiliaRival"],
+    talisman: [{ op: "fn", f: "sentenciar" }],
+    fns: {
+      sentenciar: (e, ctx) => {
+        for (const tipo of ["noReducir", "noSinPagar", "noGenerar"]) N.agregarEfecto(e, { tipo, fin: "proximoTurno" }, ctx.ctrl);
+        N.agregarEfecto(e, { tipo: "impuestoHabilidad", n: 1, fuera: true, fin: "proximoTurno" }, ctx.ctrl);
+      },
+    },
   },
   "Legion Celestial": {
     talisman: [
@@ -232,7 +246,7 @@ export const HABILIDADES = {
         hasta: true,
         opciones: [
           { texto: "Bestia: tus Aliados ganan Furia e Indestructible por el turno", requiere: "bestia", pasos: [{ op: "fn", f: "furiaIndestructible" }] },
-          { texto: "Dragón: generar un Oro para jugar Aliados", requiere: "dragon", pasos: [{ op: "generar", n: 1, tipos: ["Aliado"] }] },
+          { texto: "Dragón: generar un Oro para jugar Aliados de coste 3 o más", requiere: "dragon", pasos: [{ op: "generar", n: 1, tipos: ["Aliado"], costeMin: 3 }] },
           {
             texto: "Sombra: buscar tres cartas de distinto nombre en el Castillo oponente y Desterrarlas",
             requiere: "sombra",
@@ -254,8 +268,33 @@ export const HABILIDADES = {
   },
   "Levantar Zombie": {
     destierroAlJugar: true,
-    talisman: [],
+    talisman: [{ op: "fn", f: "activar" }],
     activadas: [desdeCementerio("Desterrarlo de tu Cementerio: Barajar hasta tres cartas de los Cementerios", barajarCementerios(3))],
+    disparadas: [
+      {
+        zona: ["destierro"],
+        cuando: ["salenDelCastillo"],
+        quien: "yo",
+        si: "danado",
+        hacer: [
+          { op: "botar", nf: "dano", quien: "rival" },
+          sel(["todos:cementerio"], { tipo: "Aliado" }, "z"),
+          efecto("z", { tipo: "pierdeHabilidad", fuera: true }, "juego"),
+          { op: "fn", f: "poner" },
+        ],
+      },
+    ],
+    fns: {
+      activar: (e, ctx) => {
+        N.agregarEfecto(e, { tipo: "levantarZombie", uid: ctx.fuente, fin: "proximoTurno" }, ctx.ctrl);
+      },
+      danado: (e, ctx) => ctx.datos.porDano && e.efectos.some((f) => f.tipo === "levantarZombie" && f.uid === ctx.fuente),
+      dano: (e, ctx) => ctx.datos.uids.length,
+      poner: (e, ctx, api) => {
+        const u = (ctx.vars.z ?? [])[0];
+        if (u) api.entrarEnJuego(e, u, ctx.ctrl, undefined, { pagado: false, desde: "cementerio" });
+      },
+    },
   },
   "Libro de Enoc": {
     talisman: [robar(1)],
@@ -274,7 +313,7 @@ export const HABILIDADES = {
         return [sel(["todos:aliados"], {}, "a", { n: 2, hasta: true }), efecto("a", { tipo: "fuerza", n: 2 }), efecto("a", { tipo: "gana", clave: "Furia" })];
       },
       sinCombate: (e, ctx) => {
-        for (const a of N.aliadosDe(e, N.rival(ctx.ctrl))) N.agregarEfecto(e, { tipo: "sinDano", uid: a, fin: "proximoTurno" }, ctx.ctrl);
+        N.agregarEfecto(e, { tipo: "prevenirDano", j: ctx.ctrl, fin: "proximoTurno" }, ctx.ctrl);
       },
     },
   },
@@ -315,7 +354,7 @@ export const HABILIDADES = {
   },
   "Los Olvidados": {
     requiere: { de: ["rival:enJuego"], filtro: { costeMax: 2 } },
-    talisman: [sel(["rival:enJuego"], { costeMax: 2 }), { op: "fn", f: "convertir" }, { op: "fn", f: "marcar" }],
+    talisman: [sel(["rival:enJuego"], { costeMax: 2 }), { op: "fn", f: "convertir" }],
     disparadas: [
       { cuando: ["comienzoVigilia"], quien: "yo", hacer: [robar(1, "rival")] },
       { zona: ["cementerio"], cuando: ["alCementerio"], quien: "propia", si: "resuelta", hacer: [{ op: "fn", f: "aTotem" }] },
@@ -324,16 +363,15 @@ export const HABILIDADES = {
       convertir: (e, ctx) => {
         for (const u of ctx.vars.x ?? []) convertirEnTotem(e, u, N.controlador(e, u), { como: ctx.def });
       },
-      marcar: marca("olvidados"),
-      resuelta: marcada("olvidados"),
+      resuelta,
       aTotem: (e, ctx) => {
-        desmarcar(e, "olvidados", ctx.fuente);
         convertirEnTotem(e, ctx.fuente, ctx.ctrl, { sinHabilidad: true });
       },
     },
   },
   "Los Pincheira": {
     claves: ["NoAnulable"],
+    momentos: ["comienzoFase"],
     requiere: { de: ["todos:aliados"], filtro: { f: "debil" }, para: "desterrar" },
     talisman: [
       sel(["todos:aliados"], { f: "debil" }, "x", { para: "desterrar" }),
@@ -356,6 +394,7 @@ export const HABILIDADES = {
   "Lucha Celestial": {
     claves: ["Indesterrable"],
     talisman: [sel(["yo:enJuego"], {}, "x", { n: 2, hasta: true }), { op: "fn", f: "convertir" }],
+    continuas: [{ zona: "cementerio", fuerza: -1, a: "aliados", si: "dosTotems" }],
     activadas: [
       {
         texto: "Barajar una carta de tu Cementerio por cada Tótem que controles y tu oponente Bota una carta",
@@ -368,6 +407,7 @@ export const HABILIDADES = {
         for (const u of ctx.vars.x ?? []) convertirEnTotem(e, u, ctx.ctrl, { como: ctx.def });
       },
       totems: (e, ctx) => e.jugadores[ctx.ctrl].apoyo.filter((u) => N.carta(e, u).tipo === "Tótem").length,
+      dosTotems: (e, ctx) => e.jugadores[ctx.ctrl].apoyo.filter((u) => N.carta(e, u).tipo === "Tótem").length >= 2,
     },
   },
   "Lucha de Saurios": {
@@ -383,7 +423,12 @@ export const HABILIDADES = {
     fns: { dinosaurio: (e, ctx, u) => razasDe(e, u).includes("Dinosaurio") },
   },
   Lujuria: {
-    talisman: [sel(["yo:castillo"], { tipo: "Aliado" }, "b", { n: 2 }), mov("mano", "b"), barajar()],
+    talisman: [sel(["yo:castillo"], { tipo: "Aliado" }, "b", { n: 2 }), mov("mano", "b"), barajar(), { op: "fn", f: "sinLimite" }],
+    fns: {
+      sinLimite: (e, ctx) => {
+        N.agregarEfecto(e, { tipo: "sinLimiteMano", j: ctx.ctrl, fin: "proximoTurno" }, ctx.ctrl);
+      },
+    },
     activadas: [desdeCementerio("Desterrarlo de tu Cementerio: Barajar hasta tres cartas de los Cementerios", barajarCementerios(3))],
   },
   "Luz Desafiante": {

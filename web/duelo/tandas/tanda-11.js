@@ -12,6 +12,7 @@ const exorcismoCementerio = [
       { texto: "Desterrar el Cementerio oponente", pasos: desterrarCementerio("rival") },
     ],
   },
+  { op: "fn", f: "destierrosSinHabilidad" },
 ];
 
 const exorcismoCarta = [
@@ -79,6 +80,10 @@ export const HABILIDADES = {
     fns: {
       puedeBotar: (e, ctx) => e.jugadores[ctx.ctrl].castillo.length > 2,
       puedeDescartar: (e, ctx) => e.jugadores[ctx.ctrl].mano.length > 0,
+      destierrosSinHabilidad: (e, ctx) => {
+        N.agregarEfecto(e, { tipo: "zonaSinHabilidad", zona: "destierro", fin: "turno" }, ctx.ctrl);
+        e.efectos.at(-1).fin.finTurno = e.turno + 3;
+      },
     },
   },
   "Expulsar del Eden": {
@@ -192,15 +197,35 @@ export const HABILIDADES = {
     talisman: [sel(["rival:enJuego"], { noTipo: ["Oro"] }), mov("mano")],
   },
   "Fin de Travesia": {
+    noAnulableSi: "atacoAntes",
     talisman: [{ op: "fn", f: "convertidas" }, mov("barajar")],
     fns: {
       convertidas: (e, ctx) => {
         ctx.vars.x = N.todoEnJuego(e).filter((u) => e.conv[u] && N.def(e, e.instancias[u]).tipo !== "Oro");
       },
+      atacoAntes: (e, ctx) => {
+        const p = e.jugadores[ctx.ctrl];
+        return !!(e.activo === ctx.ctrl ? p.atacoTurnoAnterior : p.atacoEsteTurno);
+      },
     },
   },
   "Fision Nuclear": {
     destierroAlJugar: true,
+    talisman: [
+      {
+        op: "diferir",
+        cuando: "faseFinalRival",
+        pasos: [
+          {
+            op: "modo",
+            opciones: [
+              { texto: "Barajar una carta de coste 2 o menos", requiere: { de: ["todos:enJuego"], filtro: { costeMax: 2 } }, pasos: [sel(["todos:enJuego"], { costeMax: 2 }), mov("barajar")] },
+              { texto: "Robar dos cartas", pasos: [robar(2)] },
+            ],
+          },
+        ],
+      },
+    ],
   },
   "Flecha Ácida": {
     requiere: { de: ["rival:aliados"], filtro: { f: "debil" }, para: "destruir" },

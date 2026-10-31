@@ -1,8 +1,12 @@
 import * as N from "../nucleo.js";
 import { sel, mov, barajar, robar, efecto, castilloElegido, coste } from "../formato.js";
 
-const disp = (e, j, tipo) =>
-  e.jugadores[j].reserva.length + (e.jugadores[j].generados ?? []).filter((g) => !g.tipos || g.tipos.includes(tipo)).reduce((s, g) => s + g.n, 0);
+const sirve = (g, c) => (!g.tipos || g.tipos.includes(c.tipo)) && (g.costeMin === undefined || (c.coste ?? 0) >= g.costeMin) && (!g.raza || (c.razas ?? []).includes(g.raza));
+
+const disp = (e, j, u) => {
+  const c = N.carta(e, u);
+  return e.jugadores[j].reserva.length + (e.jugadores[j].generados ?? []).filter((g) => sirve(g, c)).reduce((s, g) => s + g.n, 0);
+};
 
 const contar = (e, j, c) => {
   const p = e.jugadores[j];
@@ -14,10 +18,22 @@ const contar = (e, j, c) => {
 const jugarPagando = (e, ctx, api, uid, n, desde) => {
   const j = ctx.ctrl;
   const c = N.carta(e, uid);
-  api.pagarOros(e, j, n, c.tipo);
+  api.pagarOros(e, j, n, c);
   contar(e, j, c);
   N.disparar(e, "juega", { uid, j, tipo: c.tipo, pagado: true, desde });
   return [{ op: "entrar", uid, datos: { pagado: true, desde } }];
+};
+
+const conGolpe = (e, j) => {
+  const p = e.jugadores[j];
+  return [...p.cementerio, ...p.destierro].some((u) => N.carta(e, u).nombre === "Golpe de Agua");
+};
+
+const jugoAngel = (e, j) => {
+  const p = e.jugadores[j];
+  const nombres = new Set([...Object.keys(p.jugadas?.nombres ?? {}), ...Object.keys(p.jugadasMiTurnoAnterior?.nombres ?? {})]);
+  if (!nombres.size) return false;
+  return Object.values(e.catalogo).some((c) => c.tipo === "Aliado" && nombres.has(c.nombre) && (c.razas ?? []).includes("Ángel"));
 };
 
 const aliadosEnJuego = (e) => [...N.aliadosDe(e, 0), ...N.aliadosDe(e, 1)];
@@ -59,12 +75,12 @@ export const HABILIDADES = {
     },
   },
   "Duelo Personal": {
+    noAnulableSi: "golpe",
     talisman: [{ op: "fn", f: "elegir" }],
     fns: {
+      golpe: (e, ctx) => conGolpe(e, ctx.ctrl),
       elegir: (e, ctx) => {
-        const p = e.jugadores[ctx.ctrl];
-        const golpe = [...p.cementerio, ...p.destierro].some((u) => N.carta(e, u).nombre === "Golpe de Agua");
-        if (golpe) return [...duelistas, ...desafio];
+        if (conGolpe(e, ctx.ctrl)) return [...duelistas, ...desafio];
         return [
           {
             op: "modo",
@@ -121,6 +137,7 @@ export const HABILIDADES = {
     },
   },
   "Duelo de Dragones": {
+    momentos: ["comienzoFase"],
     destierroAlJugar: true,
     talisman: [
       sel(["rival:mano"], { costeMax: 2 }, "m"),
@@ -140,6 +157,7 @@ export const HABILIDADES = {
     },
   },
   "Duelo en Marte": {
+    momentos: ["comienzoFase"],
     talisman: [
       sel(["yo:castillo"], { tipo: ["Arma", "Tótem"] }, "b", { n: 3 }),
       {
@@ -155,6 +173,7 @@ export const HABILIDADES = {
   "Día de los Muertos": {
     claves: ["NoPortaArmas"],
     reduce: "red",
+    continuas: [{ zona: "cementerio", reduceDanoCastillo: 2 }],
     talisman: [{ op: "fn", f: "convertir" }],
     fns: {
       red: (e) => N.todoEnJuego(e).filter((u) => N.carta(e, u).tipo !== "Oro").length,
@@ -195,9 +214,10 @@ export const HABILIDADES = {
     talisman: [sel(["todos:enJuego"], { costeMax: 2 }), mov("barajar"), robar(2)],
   },
   "El Dragón Emerge": {
+    continuas: [{ zona: "cementerio", a: "tusAliados", fuerza: 1, costeMin: 3 }],
     talisman: [sel(["yo:castillo"], { tipo: "Aliado", costeMin: 3, f: "pagable" }, "a"), barajar(), { op: "fn", f: "jugar" }],
     fns: {
-      pagable: (e, ctx, u) => Math.max(0, coste(e, u) - 1) <= disp(e, ctx.ctrl, "Aliado"),
+      pagable: (e, ctx, u) => Math.max(0, coste(e, u) - 1) <= disp(e, ctx.ctrl, u),
       jugar: (e, ctx, api) => {
         const [u] = ctx.vars.a ?? [];
         if (!u) return [];
@@ -206,6 +226,7 @@ export const HABILIDADES = {
     },
   },
   "El Gran Descenso": {
+    soloPagando: true,
     talisman: [
       sel(["rival:mano"], {}, "d", { n: 3, azar: true }),
       mov("cementerio", "d"),
@@ -228,9 +249,9 @@ export const HABILIDADES = {
     claves: ["Exhumar"],
     talisman: [sel(["yo:castillo"], { tipo: "Aliado", f: "pagable" }, "a"), barajar(), { op: "fn", f: "jugar" }],
     fns: {
-      angel: (e, ctx) => N.aliadosDe(e, ctx.ctrl).some((u) => (N.carta(e, u).razas ?? []).includes("Ángel")),
+      angel: (e, ctx) => N.aliadosDe(e, ctx.ctrl).some((u) => (N.carta(e, u).razas ?? []).includes("Ángel")) || jugoAngel(e, ctx.ctrl),
       reducido: (e, ctx, u) => Math.max(0, coste(e, u) - (N.def(e, ctx.def).fns.angel(e, ctx) ? 3 : 2)),
-      pagable: (e, ctx, u) => N.def(e, ctx.def).fns.reducido(e, ctx, u) <= disp(e, ctx.ctrl, "Aliado"),
+      pagable: (e, ctx, u) => N.def(e, ctx.def).fns.reducido(e, ctx, u) <= disp(e, ctx.ctrl, u),
       jugar: (e, ctx, api) => {
         const [u] = ctx.vars.a ?? [];
         if (!u) return [];
@@ -242,6 +263,7 @@ export const HABILIDADES = {
     },
   },
   Elemental: {
+    soloPagando: true,
     destierroAlJugar: true,
     talisman: [
       sel(["rival:mano"], {}, "d", { n: 3, quien: "rival" }),
@@ -255,11 +277,16 @@ export const HABILIDADES = {
   "Energía Suprema": {
     destierroAlJugar: true,
     requiere: { de: ["yo:mano", "yo:cementerio"], filtro: { tipo: ["Arma", "Tótem"] } },
-    talisman: [{ op: "generar", n: 2, tipos: ["Aliado"] }],
+    talisman: [{ op: "generar", n: 2, tipos: ["Aliado"], costeMin: 3 }],
   },
   Ensamble: {
     talisman: [{ op: "fn", f: "ensamble" }],
+    disparadas: [{ zona: ["cementerio"], cuando: ["anulada"], quien: "propia", hacer: [{ op: "fn", f: "agrupar" }, robar(1)] }],
     fns: {
+      agrupar: (e, ctx) => {
+        const [u] = e.jugadores[ctx.ctrl].pagado;
+        if (u) N.mover(e, u, "reserva", { j: ctx.ctrl });
+      },
       ensamble: (e, ctx) => {
         const yo = ctx.ctrl;
         const r = N.rival(yo);
@@ -399,7 +426,7 @@ export const HABILIDADES = {
     requiere: { de: ["yo:cementerio"], filtro: { tipo: "Aliado" } },
     talisman: [sel(["yo:cementerio"], { tipo: "Aliado", f: "pagable" }, "a"), { op: "fn", f: "jugar" }],
     fns: {
-      pagable: (e, ctx, u) => coste(e, u) <= disp(e, ctx.ctrl, "Aliado"),
+      pagable: (e, ctx, u) => coste(e, u) <= disp(e, ctx.ctrl, u),
       fuerte: (e, ctx) => (ctx.vars.a ?? []).some((u) => N.fuerza(e, u) >= 4),
       jugar: (e, ctx, api) => {
         const [u] = ctx.vars.a ?? [];

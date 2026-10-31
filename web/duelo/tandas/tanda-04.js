@@ -9,7 +9,7 @@ const esAzi = (e, ctx, u) => {
 
 const porOros = (minimo) => (e, ctx) => Math.min(N.orosDe(e, ctx.ctrl).length, Math.max(0, coste(e, ctx.fuente) - minimo));
 
-const sinCopia = (e, ctx) => !N.aliadosDe(e, ctx.ctrl).some((a) => N.carta(e, a).id === ctx.def);
+const orosAzi = (e, j) => N.orosDe(e, j).filter((u) => esAzi(e, {}, u)).length;
 
 const costeReducido = (c) => Math.max(Math.min(c, 1), c - 1);
 
@@ -99,6 +99,7 @@ export const HABILIDADES = {
   },
   "Apofis del Caos": {
     claves: ["Furia"],
+    costeAlternativo: { botar: 3, reduce: 2 },
     disparadas: [{ cuando: ["ataca"], hacer: [sel(["todos:enJuego"], {}, "x"), { op: "fn", f: "apagar" }] }],
     fns: {
       apagar: (e, ctx) => {
@@ -135,7 +136,7 @@ export const HABILIDADES = {
         ],
       },
     ],
-    continuas: [{ aliadosNoPierden: true }, { fuerza: 1, a: "tusAliados" }, { orosRivalSinHabilidad: true }],
+    continuas: [{ noPierden: true, a: "tusAliados" }, { fuerza: 1, a: "tusAliados" }, { orosRivalSinHabilidad: true }],
   },
   "Azi Raoioita": {
     claves: ["Furia"],
@@ -183,10 +184,14 @@ export const HABILIDADES = {
         hacer: [sel(["fuente"], {}, "yo"), { op: "fn", f: "convertir" }],
       },
     ],
-    continuas: [{ fuerza: 1, a: "tusAliados", si: "esAliado" }],
+    continuas: [
+      { fuerza: 1, a: "tusDemasAliados", si: "esAliado" },
+      { reduceDanoCastilloPor: "danoAzi" },
+    ],
     fns: {
       puede: (e, ctx) => !e.conv[ctx.fuente] && e.jugadores[ctx.ctrl].mano.length > 0,
       esAliado: (e, ctx) => !e.conv[ctx.fuente],
+      danoAzi: (e, ctx) => (e.conv[ctx.fuente]?.tipo === "Oro" ? orosAzi(e, ctx.ctrl) : 0),
       convertir: (e, ctx) => [{ op: "convertir", var: "yo", en: "Oro", a: "pagado", como: ctx.def, hasta: true, vuelve: "defensa" }],
     },
   },
@@ -221,7 +226,7 @@ export const HABILIDADES = {
     fns: { red: (e, ctx) => N.aliadosDe(e, ctx.ctrl).filter((u) => coste(e, u) >= 3).length },
   },
   "Caicai Vilu": {
-    requiere: "sinCopia",
+    claves: ["Unica"],
     reduce: "red",
     desdeCementerio: { botar: 4 },
     disparadas: [
@@ -229,7 +234,6 @@ export const HABILIDADES = {
       { cuando: ["sale"], hacer: [{ op: "si", f: "destruido", entonces: [sel(["fuente"], {}, "yo"), mov("mano", "yo")] }] },
     ],
     fns: {
-      sinCopia,
       red: (e, ctx) => (N.ubicar(e, ctx.fuente)?.zona === "cementerio" ? coste(e, ctx.fuente) : 0),
       esTalisman: (e, ctx) => ctx.datos.tipo === "Talismán",
       barajarMano: (e, ctx) => {
@@ -375,7 +379,8 @@ export const HABILIDADES = {
   Dagon: {
     claves: ["Furia"],
     disparadas: [{ cuando: ["entra"], hacer: buscar(["yo:castillo"], { f: "esAzi" }) }],
-    fns: { esAzi },
+    continuas: [{ a: "propia", fuerzaPor: "porOrosAzi" }],
+    fns: { esAzi, porOrosAzi: (e, ctx) => 2 * orosAzi(e, ctx.ctrl) },
   },
   "Daikaiju Renacido": {
     claves: ["Furia", "Imbloqueable"],
@@ -417,15 +422,14 @@ export const HABILIDADES = {
         ],
       },
     ],
-    disparadas: [{ cuando: ["entra"], quien: "yo", si: "aliadoCosteDos", hacer: [{ op: "fn", f: "furia" }] }],
+    continuas: [
+      { gana: "Furia", a: "tusAliados", costeMin: 2 },
+      { proteccion: { por: ["Oro", "Tótem"] }, a: "tusAliados", tipoObjetivo: "Aliado", costeMin: 2 },
+    ],
     fns: {
       costeK: (e, ctx) => {
         const [k] = ctx.vars.k ?? [];
         return k ? coste(e, k) : 0;
-      },
-      aliadoCosteDos: (e, ctx) => N.carta(e, ctx.datos.uid).tipo === "Aliado" && coste(e, ctx.datos.uid) >= 2,
-      furia: (e, ctx) => {
-        N.agregarEfecto(e, { tipo: "gana", clave: "Furia", uid: ctx.datos.uid }, ctx.ctrl);
       },
     },
   },

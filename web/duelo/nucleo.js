@@ -98,14 +98,27 @@ function noPuedePerder(e, uid, prof) {
   if (c.claves.includes("NoPierdeHabilidad")) return true;
   const ix = indice(e).noPierden;
   if (!ix.size) return false;
-  if (![0, 1].some((k) => enJuegoDe(e, k).some((x) => ix.has(e.instancias[x])))) return false;
+  const cerca = (k) => [...enJuegoDe(e, k), ...e.jugadores[k].cementerio];
+  if (![0, 1].some((k) => cerca(k).some((x) => ix.has(e.instancias[x])))) return false;
   const j = controlador(e, uid);
-  const candidatas = enJuegoDe(e, j).filter((x) => ix.has(e.instancias[x]));
+  const candidatas = cerca(j).filter((x) => ix.has(e.instancias[x]));
+  const enCem = new Set(e.jugadores[j].cementerio);
   if (!candidatas.length) return false;
   const protege = (x, k) =>
-    (k.aliadosNoPierden && c.tipo === "Aliado" && x !== uid) ||
-    (k.noPierden && tipoObjetivo(k, c, "Aliado") && alcanza(e, k.a ?? "tusAliados", x, j, uid) && filtraObjetivo(e, k, uid));
-  return candidatas.some((x) => carta(e, x).continuas?.some((k) => protege(x, k)) && activa(e, x, prof + 1));
+    enCem.has(x) === (k.zona === "cementerio") &&
+    ((k.aliadosNoPierden && c.tipo === "Aliado" && x !== uid) ||
+      (k.noPierden && tipoObjetivo(k, c, "Aliado") && alcanza(e, k.a ?? "tusAliados", x, j, uid) && filtraObjetivo(e, k, uid)));
+  const viva = (x) => {
+    if (!enCem.has(x)) return activa(e, x, prof + 1);
+    const antes = enCementerio;
+    enCementerio = true;
+    try {
+      return activa(e, x, prof + 1);
+    } finally {
+      enCementerio = antes;
+    }
+  };
+  return candidatas.some((x) => carta(e, x).continuas?.some((k) => protege(x, k)) && viva(x));
 }
 
 function tipoObjetivo(k, c, porDefecto) {
@@ -486,7 +499,7 @@ export function disparar(e, evento, datos = {}) {
   const lista = silenciadores(e);
   for (const j of [e.activo, rival(e.activo)]) {
     for (const uid of enJuegoDe(e, j)) frames.push(...framesDe(e, uid, habilidades(e, uid), evento, datos, j, lista));
-    for (const z of ["mano", "cementerio"]) {
+    for (const z of ["mano", "cementerio", "destierro"]) {
       for (const uid of e.jugadores[j][z]) {
         const d = carta(e, uid);
         if (d.sinHabilidad) continue;

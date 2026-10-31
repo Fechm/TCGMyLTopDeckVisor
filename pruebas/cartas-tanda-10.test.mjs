@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, hacer, elegir, sinRespuesta, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
 import { costeDe } from "../web/duelo/motor.js";
-import { resolver } from "../web/duelo/efectos.js";
+import { resolver, OPS, disponibles } from "../web/duelo/efectos.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
@@ -19,6 +19,30 @@ function alTope(e, j, uid) {
 function cambiarControl(e, uid, j, zona) {
   N.sacar(e, uid);
   e.jugadores[j][zona].push(uid);
+}
+
+function atacarSolo(e, uid) {
+  e = aplicar(e, { tipo: "batalla" });
+  e = aplicar(e, { tipo: "atacar", uid });
+  e = aplicar(e, { tipo: "finAtaque" });
+  const antes = e.registro.length;
+  for (let i = 0; i < 30 && e.registro.length === antes; i++) {
+    const l = accionesLegales(e);
+    e = aplicar(e, l.find((x) => ["finBloqueo", "pasar", "noResponder", "pasarMomento"].includes(x.tipo)) ?? l[0]);
+  }
+  return e;
+}
+
+function golpeDeAgua(e, j, zona) {
+  e.catalogo = { ...e.catalogo, golpe: { id: "golpe", nombre: "Golpe de Agua", tipo: "Talismán", coste: 1, fuerza: 0, razas: [], sinHabilidad: false, texto: "" } };
+  e.instancias[`${j}-golpe`] = "golpe";
+  e.jugadores[j][zona].push(`${j}-golpe`);
+}
+
+function sinPagar(e, uid) {
+  const fr = { ctx: { ctrl: 0, vars: { x: [uid] } }, pasos: [], i: 0 };
+  OPS.jugarGratis(e, { var: "x" }, fr);
+  return fr.pasos;
 }
 
 function disparar(e, evento, datos) {
@@ -102,7 +126,25 @@ test("Duelo Personal: con Golpe de Agua en tu Cementerio se resuelven ambos efec
   assert.equal(e.jugadores[1].mano.length, 0);
 });
 
-test("Duelo Personal: con Golpe de Agua en tu Cementerio o Destierro no puede ser Anulado", { todo: "protección condicional: no puede ser Anulado mientras se cumpla una condición" }, () => {});
+test("Duelo Personal: con Golpe de Agua en tu Cementerio o Destierro no puede ser Anulado", () => {
+  for (const zona of ["cementerio", "destierro"]) {
+    let e = mesa();
+    golpeDeAgua(e, 0, zona);
+    oros(e, 0, 1);
+    oros(e, 1, 2);
+    const d = poner(e, 0, "mano", "Duelo Personal");
+    const env = poner(e, 1, "mano", "Envidia");
+    e = aplicar(e, jugar(d));
+    assert.equal(puedeResponder(e, env), false);
+  }
+  let e = mesa();
+  oros(e, 0, 1);
+  oros(e, 1, 2);
+  const d = poner(e, 0, "mano", "Duelo Personal");
+  const env = poner(e, 1, "mano", "Envidia");
+  e = aplicar(e, jugar(d));
+  assert.equal(puedeResponder(e, env), true);
+});
 
 test("Duelo a Siete Pasos: Destruye una carta tuya y una carta oponente de igual o menor coste pierde su habilidad y es Destruida", () => {
   let e = mesa();
@@ -196,7 +238,15 @@ test("Duelo de Dragones: si Destierra menos de dos cartas no Roba", () => {
   assert.equal(e.jugadores[0].mano.length, 0);
 });
 
-test("Duelo de Dragones: puede jugarse al comienzo de cualquier Fase", { todo: "momento: jugar un Talismán al comienzo de cualquier Fase" }, () => {});
+test("Duelo de Dragones: puede jugarse al comienzo de cualquier Fase", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const d = poner(e, 0, "mano", "Duelo de Dragones");
+  assert.equal(puedeJugar(e, d), true);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  assert.equal(puedeJugar(e, d), true);
+});
 
 test("Duelo en Marte: busca tres Armas y/o Tótem en tu Castillo y los pone en tu mano", () => {
   let e = mesa();
@@ -219,7 +269,15 @@ test("Duelo en Marte: puede ponerlos en tu Cementerio", () => {
   assert.equal(zonaDe(e, a), "cementerio");
 });
 
-test("Duelo en Marte: puede jugarse al comienzo de cualquier Fase", { todo: "momento: jugar un Talismán al comienzo de cualquier Fase" }, () => {});
+test("Duelo en Marte: puede jugarse al comienzo de cualquier Fase", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const d = poner(e, 0, "mano", "Duelo en Marte");
+  assert.equal(puedeJugar(e, d), true);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  assert.equal(puedeJugar(e, d), true);
+});
 
 test("Duelo en Marte: desde tu Cementerio, tus Armas y Tótem en el Cementerio no pueden ser Barajados ni Desterrados por efectos", { todo: "continua desde el Cementerio: cartas de ciertos tipos en tu Cementerio no pueden ser Barajadas ni Desterradas por efectos" }, () => {});
 
@@ -255,7 +313,20 @@ test("Día de los Muertos: convierte los Aliados en Aliados de Fuerza 1 que no p
   assert.equal(zonaDe(e, p), "cementerio");
 });
 
-test("Día de los Muertos: desde tu Cementerio, el daño que recibe tu Castillo se reduce en dos", { todo: "efecto: reducir el daño recibido por tu Castillo" }, () => {});
+test("Día de los Muertos: desde tu Cementerio, el daño de combate que recibe tu Castillo se reduce en dos", () => {
+  let e = mesa();
+  const v = poner(e, 0, "defensa", "Valefor");
+  poner(e, 1, "cementerio", "Día de los Muertos");
+  e = atacarSolo(e, v);
+  assert.equal(e.jugadores[1].castillo.length, 29);
+  let f = mesa();
+  const w = poner(f, 0, "defensa", "Valefor");
+  poner(f, 0, "cementerio", "Día de los Muertos");
+  f = atacarSolo(f, w);
+  assert.equal(f.jugadores[1].castillo.length, 27);
+});
+
+test("Día de los Muertos: desde tu Cementerio, también reduce el daño directo", { todo: "continua: reducir el daño directo (no de combate) que recibe tu Castillo" }, () => {});
 
 test("Ea Poe: paga Oros y Destierra del Castillo oponente esa cantidad más dos, Robando por cada Talismán o Tótem", () => {
   let e = mesa();
@@ -325,7 +396,17 @@ test("El Dragón Emerge: el Aliado jugado no puede ser Anulado ni cancelarse sus
   assert.equal(zonaDe(e, g), "defensa");
 });
 
-test("El Dragón Emerge: desde tu Cementerio, tus Aliados de coste 3 o más ganan 1 de Fuerza", { todo: "continua desde el Cementerio: tus Aliados de coste N o más ganan Fuerza" }, () => {});
+test("El Dragón Emerge: desde tu Cementerio, tus Aliados de coste 3 o más ganan 1 de Fuerza", () => {
+  const e = mesa();
+  const g = poner(e, 0, "defensa", "Sir Galahad");
+  const v = poner(e, 0, "defensa", "Valefor");
+  const r = poner(e, 1, "defensa", "Sir Galahad");
+  const [fg, fv, fr] = [g, v, r].map((u) => N.fuerza(e, u));
+  poner(e, 0, "cementerio", "El Dragón Emerge");
+  assert.equal(N.fuerza(e, g), fg + 1);
+  assert.equal(N.fuerza(e, v), fv);
+  assert.equal(N.fuerza(e, r), fr);
+});
 
 test("El Gran Descenso: el oponente Descarta tres al azar y puede recuperarlas Desterrando cuatro cartas por cada una mientras tú Robas", () => {
   let e = mesa();
@@ -346,7 +427,14 @@ test("El Gran Descenso: el oponente Descarta tres al azar y puede recuperarlas D
   assert.equal(mano.filter((u) => zonaDe(e, u) === "cementerio").length, 2);
 });
 
-test("El Gran Descenso: solo puede jugarse pagando su coste impreso", { todo: "restricción: la carta solo puede jugarse pagando su coste" }, () => {});
+test("El Gran Descenso: solo puede jugarse pagando su coste", () => {
+  const e = mesa();
+  const d = poner(e, 0, "mano", "El Gran Descenso");
+  assert.deepEqual(sinPagar(e, d), []);
+  assert.equal(zonaDe(e, d), "mano");
+});
+
+test("El Gran Descenso: no admite reducciones a su coste impreso", { todo: "restricción: solo pagando el coste impreso (sin reducciones)" }, () => {});
 
 test("El Ángel y Su Juicio: busca un Aliado y lo juega reduciendo su coste en dos Oros", () => {
   let e = mesa();
@@ -383,7 +471,30 @@ test("El Ángel y Su Juicio: Exhumar, se juega desde el Cementerio y queda Deste
   assert.equal(zonaDe(e, a), "destierro");
 });
 
-test("El Ángel y Su Juicio: cuenta también un Aliado Ángel jugado desde tu turno anterior", { todo: "condición: jugaste un Aliado de cierta raza desde tu turno anterior" }, () => {});
+test("El Ángel y Su Juicio: cuenta también un Aliado Ángel jugado desde tu turno anterior", () => {
+  let e = mesa();
+  const vid = id("Valefor");
+  e.catalogo = { ...e.catalogo, [vid]: { ...e.catalogo[vid], razas: ["Ángel"] } };
+  e.jugadores[0].jugadasMiTurnoAnterior = { total: 1, Aliado: 1, nombres: { Valefor: 1 } };
+  oros(e, 0, 2);
+  const a = poner(e, 0, "mano", "El Ángel y Su Juicio");
+  const g = poner(e, 0, "castillo", "Sir Galahad");
+  e = hacer(e, jugar(a), g);
+  assert.equal(zonaDe(e, g), "defensa");
+  assert.equal(e.jugadores[0].reserva.length, 0);
+  assert.equal(e.jugadores[0].mano.length, 1);
+});
+
+test("El Ángel y Su Juicio: un Aliado de otra raza jugado el turno anterior no cuenta", () => {
+  let e = mesa();
+  e.jugadores[0].jugadasMiTurnoAnterior = { total: 1, Aliado: 1, nombres: { Valefor: 1 } };
+  oros(e, 0, 3);
+  const a = poner(e, 0, "mano", "El Ángel y Su Juicio");
+  const g = poner(e, 0, "castillo", "Sir Galahad");
+  e = hacer(e, jugar(a), g);
+  assert.equal(zonaDe(e, g), "defensa");
+  assert.equal(e.jugadores[0].mano.length, 0);
+});
 
 test("Elemental: el oponente Descarta tres cartas y buscas un Sherlock Holmes", () => {
   let e = mesa();
@@ -401,7 +512,12 @@ test("Elemental: el oponente Descarta tres cartas y buscas un Sherlock Holmes", 
   assert.equal(zonaDe(e, el), "destierro");
 });
 
-test("Elemental: solo puede jugarse desde la mano pagando su coste", { todo: "restricción: la carta solo puede jugarse pagando su coste" }, () => {});
+test("Elemental: solo puede jugarse pagando su coste", () => {
+  const e = mesa();
+  const el = poner(e, 0, "mano", "Elemental");
+  assert.deepEqual(sinPagar(e, el), []);
+  assert.equal(zonaDe(e, el), "mano");
+});
 
 test("Energía Suprema: requiere mostrar un Arma o Tótem de tu mano o Cementerio", () => {
   const e = mesa();
@@ -420,12 +536,23 @@ test("Energía Suprema: genera dos Oros para jugar un Aliado y se Destierra", ()
   const g = poner(e, 0, "mano", "Sir Galahad");
   assert.equal(puedeJugar(e, g), false);
   e = sinRespuesta(aplicar(e, jugar(en)));
-  assert.deepEqual(e.jugadores[0].generados, [{ n: 2, tipos: ["Aliado"] }]);
+  assert.deepEqual(e.jugadores[0].generados, [{ n: 2, tipos: ["Aliado"], costeMin: 3 }]);
   assert.equal(zonaDe(e, en), "destierro");
   assert.equal(puedeJugar(e, g), true);
 });
 
-test("Energía Suprema: los Oros generados solo sirven para Aliados de coste 3 o más", { todo: "generar: Oro restringido por raza y coste mínimo" }, () => {});
+test("Energía Suprema: los Oros generados solo sirven para Aliados de coste 3 o más", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const en = poner(e, 0, "mano", "Energía Suprema");
+  poner(e, 0, "mano", "Templo Gótico");
+  const v = poner(e, 0, "mano", "Valefor");
+  const g = poner(e, 0, "mano", "Sir Galahad");
+  e = sinRespuesta(aplicar(e, jugar(en)));
+  assert.equal(disponibles(e, 0, N.carta(e, v)), 0);
+  assert.equal(disponibles(e, 0, N.carta(e, g)), 2);
+  assert.equal(puedeJugar(e, v), false);
+});
 
 test("Energía Suprema: al usar los Oros, Baraja cartas de los Cementerios y Roba según el coste del Aliado", { todo: "disparo: al usar un Oro generado, efecto según el coste de la carta pagada" }, () => {});
 
@@ -458,7 +585,21 @@ test("Ensamble: si Robas tres o más cartas el oponente no Bota", () => {
   assert.equal(e.jugadores[1].castillo.length, 30);
 });
 
-test("Ensamble: si es Anulado, agrupa un Oro y Roba una carta", { todo: "disparo: al ser Anulado" }, () => {});
+test("Ensamble: si es Anulado, agrupa un Oro y Roba una carta", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  oros(e, 1, 4);
+  const en = poner(e, 0, "mano", "Ensamble");
+  const dorado = poner(e, 1, "mano", "Dragón Dorado");
+  e = aplicar(e, jugar(en));
+  assert.equal(e.jugadores[0].pagado.length, 2);
+  e = aplicar(e, { tipo: "responder", uid: dorado });
+  for (let i = 0; i < 10 && (e.pila.length || e.pendiente); i++) e = e.pendiente ? aplicar(e, { tipo: "elegir", i: 0 }) : aplicar(e, accionesLegales(e)[0]);
+  assert.equal(zonaDe(e, en), "cementerio");
+  assert.equal(e.jugadores[0].pagado.length, 1);
+  assert.equal(e.jugadores[0].reserva.length, 1);
+  assert.equal(e.jugadores[0].mano.length, 1);
+});
 
 function envidiaLista(nombre, orosRival = 2) {
   let e = mesa();

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, hacer, elegir, sinRespuesta, accionesLegales, aplicar, jugadorQueDecide, zonaDe, id, N } from "./ayuda-duelo.mjs";
 import { costeDe } from "../web/duelo/motor.js";
+import { OPS } from "../web/duelo/efectos.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
@@ -15,6 +16,34 @@ const conRaza = (e, nombre, razas) => {
 const alTope = (e, j, uids) => {
   const c = e.jugadores[j].castillo.filter((u) => !uids.includes(u));
   e.jugadores[j].castillo = [...uids, ...c];
+};
+const avanzarHasta = (e, pred) => {
+  for (let i = 0; i < 60 && !pred(e); i++) {
+    const l = accionesLegales(e);
+    e = aplicar(e, l.find((x) => ["terminar", "pasarMomento", "noResponder", "pasar"].includes(x.tipo)) ?? l[0]);
+  }
+  return e;
+};
+const resolverTodo = (e) => {
+  for (let i = 0; i < 20 && (e.pendiente || (e.pila.length && !e.pila.at(-1).cerrada)); i++) {
+    e = e.pendiente ? aplicar(e, { tipo: "elegir", i: 0 }) : aplicar(e, { tipo: "noResponder" });
+  }
+  return e;
+};
+const vigiliaRival = (e) => {
+  e = aplicar(e, { tipo: "terminar" });
+  return avanzarHasta(e, (s) => s.fase === "momento" && s.activo === 1 && s.momento.prioridad === 0);
+};
+const atacarSolo = (e, uid) => {
+  e = aplicar(e, { tipo: "batalla" });
+  e = aplicar(e, { tipo: "atacar", uid });
+  e = aplicar(e, { tipo: "finAtaque" });
+  const antes = e.registro.length;
+  for (let i = 0; i < 30 && e.registro.length === antes; i++) {
+    const l = accionesLegales(e);
+    e = aplicar(e, l.find((x) => ["finBloqueo", "pasar", "noResponder", "pasarMomento"].includes(x.tipo)) ?? l[0]);
+  }
+  return e;
 };
 const guerraRival = (e, atacante) => {
   e.activo = 1;
@@ -159,17 +188,25 @@ test("Ardor Celestial: puede elegir dos efectos", () => {
   assert.deepEqual(e.atacantes, []);
 });
 
-test("Aringa Ora: Roba tres, se Destierra y jugar el tipo nombrado cuesta un Oro más hasta el próximo turno oponente", () => {
+test("Aringa Ora: se juega al comienzo de la Vigilia oponente, Roba tres, se Destierra y el tipo nombrado cuesta un Oro más hasta el próximo turno oponente", () => {
   let e = mesa();
   oros(e, 0, 2);
   const ao = poner(e, 0, "mano", "Aringa Ora");
   const mio = poner(e, 0, "mano", "Bola de Fuego");
   const suyo = poner(e, 1, "mano", "Bola de Fuego");
+  assert.equal(jugable(e, ao), true);
+  e = vigiliaRival(e);
+  assert.equal(jugable(e, ao), true);
+  const mano = e.jugadores[0].mano.length;
   e = sinRespuesta(aplicar(e, jugar(ao)));
   e = elegir(e, "Nombrar Talismán");
-  assert.equal(e.jugadores[0].mano.length, 4);
+  assert.equal(e.jugadores[0].mano.length, mano - 1 + 3);
   assert.equal(zonaDe(e, ao), "destierro");
   assert.equal(costeDe(e, 0, mio).pagar, 3);
+  assert.equal(costeDe(e, 1, suyo).pagar, 3);
+  e.activo = 0;
+  e.turno += 1;
+  N.expirar(e, "inicio");
   assert.equal(costeDe(e, 1, suyo).pagar, 3);
   e.activo = 1;
   e.turno += 1;
@@ -177,9 +214,23 @@ test("Aringa Ora: Roba tres, se Destierra y jugar el tipo nombrado cuesta un Oro
   assert.equal(costeDe(e, 1, suyo).pagar, 2);
 });
 
-test("Aringa Ora: jugarlo al comienzo de la Vigilia oponente", { todo: "momento: jugar un Talismán al comienzo de la Vigilia oponente" }, () => {});
+test("Aringa Ora: nombrar Arma o Tótem encarece esas cartas para ambos jugadores", () => {
+  for (const [tipo, nombre] of [["Arma", "Pedrenyal"], ["Tótem", "Isla de Poveglia"]]) {
+    let e = mesa();
+    oros(e, 0, 2);
+    const ao = poner(e, 0, "mano", "Aringa Ora");
+    const mio = poner(e, 0, "mano", nombre);
+    const suyo = poner(e, 1, "mano", nombre);
+    const base = costeDe(e, 0, mio).pagar;
+    e = vigiliaRival(e);
+    e = sinRespuesta(aplicar(e, jugar(ao)));
+    e = elegir(e, "Nombrar " + tipo);
+    assert.equal(costeDe(e, 0, mio).pagar, base + 1);
+    assert.equal(costeDe(e, 1, suyo).pagar, base + 1);
+  }
+});
 
-test("Aringa Ora: nombrar Arma, Tótem u Oro encarece esas cartas", { todo: "efecto: jugar cartas de un tipo nombrado (no Talismán) cuesta un Oro adicional" }, () => {});
+test("Aringa Ora: nombrar Oro encarece jugar Oros", { todo: "impuesto: jugar cartas de tipo Oro cuesta un Oro adicional" }, () => {});
 
 test("Artilleria Pesada: Roba hasta tener ocho cartas en la mano", () => {
   let e = mesa();
@@ -192,9 +243,34 @@ test("Artilleria Pesada: Roba hasta tener ocho cartas en la mano", () => {
   assert.equal(e.jugadores[0].castillo.length, 24);
 });
 
-test("Artilleria Pesada: si Robó más de cuatro no puede jugar más cartas este turno", { todo: "efecto: no puedes jugar ni poner en juego más cartas este turno" }, () => {});
+test("Artilleria Pesada: si Robó más de cuatro no puede jugar más cartas este turno", () => {
+  let e = mesa();
+  oros(e, 0, 3);
+  const ap = poner(e, 0, "mano", "Artilleria Pesada");
+  e = sinRespuesta(aplicar(e, jugar(ap)));
+  assert.equal(e.jugadores[0].mano.length, 8);
+  assert.equal(accionesLegales(e).filter((a) => a.tipo === "jugar" || a.tipo === "oro").length, 0);
+});
 
-test("Artilleria Pesada: en el Cementerio quita el límite de mano y no puede ser Desterrada", { todo: "continua desde el Cementerio: sin límite de cartas en la mano y la carta no puede ser Desterrada" }, () => {});
+test("Artilleria Pesada: si Robó cuatro o menos puede seguir jugando", () => {
+  let e = mesa();
+  oros(e, 0, 3);
+  const ap = poner(e, 0, "mano", "Artilleria Pesada");
+  for (let i = 0; i < 4; i++) poner(e, 0, "mano", "Valefor");
+  e = sinRespuesta(aplicar(e, jugar(ap)));
+  assert.equal(e.jugadores[0].mano.length, 8);
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "jugar"), true);
+});
+
+test("Artilleria Pesada: en el Cementerio quita el límite de mano y no puede ser Desterrada", () => {
+  let e = mesa();
+  const ap = poner(e, 0, "cementerio", "Artilleria Pesada");
+  for (let i = 0; i < 10; i++) poner(e, 0, "mano", "Valefor");
+  OPS.mover(e, { var: "x", a: "desterrar" }, { ctx: { ctrl: 1, vars: { x: [ap] } } });
+  assert.equal(zonaDe(e, ap), "cementerio");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.activo, 1);
+});
 
 test("Asalto Estelar: muestra once cartas de un Castillo, pone tres en el Destierro de su dueño y Roba una", () => {
   let e = mesa();
@@ -233,18 +309,37 @@ test("Asalto Estelar: se Destierra de tu Cementerio para Barajar hasta tres cart
   assert.equal(zonaDe(e, c2), "castillo");
 });
 
-test("Asalto Estelar: si es Anulado se convierte en Oro", { todo: "disparo: al ser Anulado" }, () => {});
+test("Asalto Estelar: si es Anulado se convierte en un Oro sin habilidad en tu Oro Pagado", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  oros(e, 1, 1);
+  const as = poner(e, 0, "mano", "Asalto Estelar");
+  const br = poner(e, 1, "cementerio", "Brujas de Belial");
+  e = aplicar(e, jugar(as));
+  const r = accionesLegales(e).find((a) => a.tipo === "responder" && a.uid === br);
+  assert.ok(r);
+  e = resolverTodo(aplicar(e, r));
+  assert.equal(zonaDe(e, br), "destierro");
+  assert.equal(zonaDe(e, as), "pagado");
+  assert.equal(N.ubicar(e, as).j, 0);
+  assert.equal(N.carta(e, as).tipo, "Oro");
+  assert.equal(N.carta(e, as).sinHabilidad, true);
+  assert.equal(e.jugadores[0].mano.length, 0);
+});
 
 test("Ascenso de Enoc: Baraja una carta sin habilidad que no sea Oro y pone en tu mano el primer Aliado del Castillo", () => {
   let e = mesa();
   oros(e, 0, 1);
   const as = poner(e, 0, "mano", "Ascenso de Enoc");
+  assert.equal(jugable(e, as), true);
   const v = poner(e, 1, "defensa", "Valefor");
   const il = poner(e, 1, "defensa", "Ileana");
   N.agregarEfecto(e, { tipo: "pierdeHabilidad", uid: v, fin: "turno" }, 0);
   const al = poner(e, 0, "castillo", "Guardia Real");
   const [d1, d2] = e.jugadores[0].castillo;
   alTope(e, 0, [d1, d2, al]);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
   e = sinRespuesta(aplicar(e, jugar(as)));
   assert.equal(zonaDe(e, v), "castillo");
   assert.equal(zonaDe(e, il), "defensa");
@@ -252,9 +347,23 @@ test("Ascenso de Enoc: Baraja una carta sin habilidad que no sea Oro y pone en t
   assert.equal(zonaDe(e, d1), "castillo");
 });
 
-test("Ascenso de Enoc: jugarlo al comienzo de cualquier Fase", { todo: "momento: jugar un Talismán al comienzo de cualquier Fase" }, () => {});
+test("Ascenso de Enoc: se juega al comienzo de la Guerra de Talismanes", () => {
+  const e = mesa();
+  oros(e, 0, 1);
+  const as = poner(e, 0, "mano", "Ascenso de Enoc");
+  const v = poner(e, 1, "defensa", "Valefor");
+  guerraRival(e, v);
+  assert.equal(jugable(e, as), true);
+});
 
-test("Ascenso de Enoc: en el Cementerio protege a tus Aliados y a sí mismo", { todo: "continua desde el Cementerio: tus Aliados no pierden la habilidad y la carta no puede ser Desterrada" }, () => {});
+test("Ascenso de Enoc: en el Cementerio no puede ser Desterrado", () => {
+  const e = mesa();
+  const as = poner(e, 0, "cementerio", "Ascenso de Enoc");
+  OPS.mover(e, { var: "x", a: "desterrar" }, { ctx: { ctrl: 1, vars: { x: [as] } } });
+  assert.equal(zonaDe(e, as), "cementerio");
+});
+
+test("Ascenso de Enoc: en el Cementerio tus Aliados no pierden la habilidad", { todo: "continua desde el Cementerio: noPierden (tus Aliados no pueden perder la habilidad)" }, () => {});
 
 test("Asimilar Materia: cuesta un Oro menos por cada Oro que controles, hasta 0", () => {
   const e = mesa();
@@ -282,7 +391,20 @@ test("Asimilar Materia: Roba una, hasta dos Aliados hacen daño al Destierro y n
   assert.equal(jugable(e, otra), false);
 });
 
-test("Asimilar Materia: las cartas en los Cementerios pierden su habilidad", { todo: "efecto: las cartas en los Cementerios pierden su habilidad por el turno" }, () => {});
+test("Asimilar Materia: las cartas en los Cementerios pierden su habilidad por el turno", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  const am = poner(e, 0, "mano", "Asimilar Materia");
+  const mia = poner(e, 0, "cementerio", "Asalto Estelar");
+  const suya = poner(e, 1, "cementerio", "Avaricia");
+  e = sinRespuesta(aplicar(e, jugar(am)));
+  while (e.pendiente) e = elegir(e, null);
+  assert.equal(N.activa(e, mia), false);
+  assert.equal(N.activa(e, suya), false);
+  e.turno += 1;
+  N.expirar(e, "finTurno");
+  assert.equal(N.activa(e, mia), true);
+});
 
 test("Atacar al Vampiro: convierte una carta en otra del mismo tipo sin habilidad y gana el control de una carta de coste 2 o menos", () => {
   let e = mesa();
@@ -394,16 +516,17 @@ test("Ataque Feerico: se Destierra de tu Cementerio para que un Aliado pierda 2 
   assert.equal(N.fuerza(e, v), 1);
 });
 
-test("Aun Tenemos Patria: tu oponente Bota tres y tú Robas dos", () => {
+test("Aun Tenemos Patria: se juega en la Fase Final, tu oponente Bota tres y tú Robas dos", () => {
   let e = mesa();
   oros(e, 0, 1);
   const a = poner(e, 0, "mano", "Aun Tenemos Patria");
+  assert.equal(jugable(e, a), true);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
   e = sinRespuesta(aplicar(e, jugar(a)));
   assert.equal(e.jugadores[1].cementerio.length, 3);
   assert.equal(e.jugadores[0].mano.length, 2);
 });
-
-test("Aun Tenemos Patria: jugarlo en la Fase Final", { todo: "momento: jugar un Talismán en la Fase Final" }, () => {});
 
 test("Aun Tenemos Patria: desde el Cementerio el segundo Aliado del turno no puede ser Anulado", { todo: "efecto: el segundo Aliado que juegues este turno no puede ser Anulado" }, () => {});
 
@@ -471,7 +594,27 @@ test("Aventuras de Sancho: las cartas que no sean Oro pierden su habilidad y son
   assert.equal(N.orosDe(e, 0).length, 2);
 });
 
-test("Aventuras de Sancho: hasta tu próximo turno solo se ponen dos cartas que no sean Oro", { todo: "efecto: máximo de cartas que no sean Oro puestas en juego por turno, para ambos jugadores" }, () => {});
+test("Aventuras de Sancho: hasta tu próximo turno solo se ponen dos cartas que no sean Oro por turno", () => {
+  let e = mesa();
+  oros(e, 0, 6);
+  const s = poner(e, 0, "mano", "Aventuras de Sancho");
+  const v1 = poner(e, 0, "mano", "Valefor");
+  const v2 = poner(e, 0, "mano", "Valefor");
+  e = sinRespuesta(aplicar(e, jugar(s)));
+  e = sinRespuesta(aplicar(e, jugar(v1)));
+  assert.equal(zonaDe(e, v1), "defensa");
+  assert.equal(jugable(e, v2), false);
+  assert.equal(e.efectos.some((f) => f.tipo === "maxNoOro" && f.n === 2 && f.j === undefined), true);
+  e.activo = 1;
+  e.turno += 1;
+  N.expirar(e, "finTurno");
+  N.expirar(e, "inicio");
+  assert.equal(e.efectos.some((f) => f.tipo === "maxNoOro"), true);
+  e.activo = 0;
+  e.turno += 1;
+  N.expirar(e, "inicio");
+  assert.equal(e.efectos.some((f) => f.tipo === "maxNoOro"), false);
+});
 
 test("Avistamientos: mira la mano oponente y Baraja en su Castillo una carta que no sea Oro", () => {
   let e = mesa();
@@ -480,12 +623,45 @@ test("Avistamientos: mira la mano oponente y Baraja en su Castillo una carta que
   const o = poner(e, 1, "mano", "Drácula");
   const v = poner(e, 1, "mano", "Valefor");
   e = sinRespuesta(aplicar(e, jugar(a)));
+  e = elegir(e, "Mirar la mano oponente y Barajar una carta que no sea Oro");
   assert.equal(zonaDe(e, v), "castillo");
   assert.equal(zonaDe(e, o), "mano");
   assert.equal(e.jugadores[1].castillo.length, 31);
+  assert.equal(e.efectos.some((f) => f.tipo === "diferido"), false);
 });
 
-test("Avistamientos: elegir efecto y mover un Oro oponente al Oro Pagado en su próxima Fase Final", { todo: "disparo diferido: en la próxima Fase Final oponente" }, () => {});
+test("Avistamientos: en la próxima Fase Final oponente mueve un Oro oponente a su Oro Pagado", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const a = poner(e, 0, "mano", "Avistamientos");
+  const v = poner(e, 1, "mano", "Valefor");
+  const [oro] = oros(e, 1, 2);
+  e = sinRespuesta(aplicar(e, jugar(a)));
+  e = elegir(e, "En la próxima Fase Final oponente, mover un Oro oponente a su Oro Pagado");
+  assert.equal(zonaDe(e, v), "mano");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.pendiente, null);
+  e = avanzarHasta(e, (s) => s.activo === 1 && s.fase === "vigilia");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(jugadorQueDecide(e), 0);
+  e = elegir(e, oro);
+  assert.equal(zonaDe(e, oro), "pagado");
+  assert.equal(e.efectos.some((f) => f.tipo === "diferido"), false);
+});
+
+test("Avistamientos: si la primera carta de tu Castillo es un Aliado elige ambos efectos", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const a = poner(e, 0, "mano", "Avistamientos");
+  const al = poner(e, 0, "castillo", "Valefor");
+  alTope(e, 0, [al]);
+  const v = poner(e, 1, "mano", "Valefor");
+  e = sinRespuesta(aplicar(e, jugar(a)));
+  assert.equal(e.pendiente, null);
+  assert.equal(zonaDe(e, v), "castillo");
+  assert.equal(zonaDe(e, al), "castillo");
+  assert.equal(e.efectos.some((f) => f.tipo === "diferido" && f.cuando === "faseFinalRival"), true);
+});
 
 test("Bajo el Traiguen: Baraja una carta oponente de coste 2 o menos y luego se Baraja en tu Castillo", () => {
   let e = mesa();
@@ -507,7 +683,32 @@ test("Bajo el Traiguen: sin cartas oponentes de coste 2 o menos no se puede juga
   assert.equal(jugable(e, b), false);
 });
 
-test("Bajo el Traiguen: si es Botado por daño detiene el Bote y se Destierra", { todo: "reacción: al ser Botada por daño detiene el Bote y se Destierra" }, () => {});
+test("Bajo el Traiguen: si es Botado por daño detiene el Bote y se Destierra", () => {
+  let e = mesa();
+  const g = poner(e, 0, "defensa", "Guardia Real");
+  const b = poner(e, 1, "castillo", "Bajo el Traiguen");
+  const [d1, d3] = e.jugadores[1].castillo.filter((u) => u !== b);
+  alTope(e, 1, [d1, b, d3]);
+  assert.equal(N.fuerza(e, g), 3);
+  e = resolverTodo(atacarSolo(e, g));
+  assert.equal(zonaDe(e, d1), "cementerio");
+  assert.equal(zonaDe(e, b), "destierro");
+  assert.equal(zonaDe(e, d3), "castillo");
+  assert.equal(e.jugadores[1].cementerio.length, 1);
+  assert.equal(e.jugadores[1].castillo.length, 29);
+});
+
+test("Bajo el Traiguen: si es Botado por un efecto no detiene el Bote", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const t = poner(e, 0, "mano", "Aun Tenemos Patria");
+  const b = poner(e, 1, "castillo", "Bajo el Traiguen");
+  alTope(e, 1, [b]);
+  e = aplicar(e, { tipo: "terminar" });
+  e = sinRespuesta(aplicar(e, jugar(t)));
+  assert.equal(zonaDe(e, b), "cementerio");
+  assert.equal(e.jugadores[1].cementerio.length, 3);
+});
 
 test("Bajo la Higuera: Robas cuatro si tu oponente no Destierra las cinco primeras de su Castillo", () => {
   let e = mesa();
@@ -634,7 +835,20 @@ test("Batalla de Rancagua: la habilidad otorgada no se usa desde la mano", () =>
   assert.equal(accionesLegales(e).some((a) => a.tipo === "habilidad" && a.uid === r), false);
 });
 
-test("Batalla de Rancagua: si es Anulada genera un Oro para jugar Aliados", { todo: "disparo: al ser Anulado" }, () => {});
+test("Batalla de Rancagua: si es Anulada genera un Oro para jugar Aliados", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  oros(e, 1, 1);
+  const r = poner(e, 0, "mano", "Batalla de Rancagua");
+  const br = poner(e, 1, "cementerio", "Brujas de Belial");
+  e = aplicar(e, jugar(r));
+  const resp = accionesLegales(e).find((a) => a.tipo === "responder" && a.uid === br);
+  assert.ok(resp);
+  e = resolverTodo(aplicar(e, resp));
+  assert.equal(zonaDe(e, r), "destierro");
+  assert.equal(e.jugadores[0].mano.length, 0);
+  assert.deepEqual(e.jugadores[0].generados, [{ n: 1, tipos: ["Aliado"] }]);
+});
 
 test("Batalla de Trafalgar: cuesta un Oro menos por cada Aliado oponente y sube hasta tres Aliados oponentes de coste 1 o menos a la mano", () => {
   let e = mesa();
@@ -689,9 +903,40 @@ test("Bomba Electrica: cada jugador elige un Aliado que controle y Baraja el res
   assert.equal(zonaDe(e, gr), "castillo");
 });
 
-test("Bomba Electrica: hasta tu próximo turno no más de dos cartas de cada tipo por turno", { todo: "efecto: máximo de cartas de cada tipo puestas en juego por turno, para ambos jugadores" }, () => {});
+test("Bomba Electrica: hasta tu próximo turno no más de dos cartas de cada tipo por turno", () => {
+  let e = mesa();
+  oros(e, 0, 4);
+  const b = poner(e, 0, "mano", "Bomba Electrica");
+  const t = poner(e, 0, "mano", "Bola de Fuego");
+  const r = poner(e, 1, "apoyo", "Isla de Poveglia");
+  e = sinRespuesta(aplicar(e, jugar(b)));
+  assert.equal(e.efectos.some((f) => f.tipo === "maxPorTipo" && f.n === 2 && f.j === undefined), true);
+  e = sinRespuesta(aplicar(e, jugar(t)));
+  assert.equal(zonaDe(e, r), "cementerio");
+  const otra = poner(e, 0, "mano", "Bola de Fuego");
+  poner(e, 1, "apoyo", "Isla de Poveglia");
+  oros(e, 0, 2);
+  assert.equal(jugable(e, otra), false);
+  e.activo = 1;
+  e.turno += 1;
+  N.expirar(e, "inicio");
+  assert.equal(e.efectos.some((f) => f.tipo === "maxPorTipo"), true);
+  e.activo = 0;
+  e.turno += 1;
+  N.expirar(e, "inicio");
+  assert.equal(e.efectos.some((f) => f.tipo === "maxPorTipo"), false);
+});
 
-test("Bomba Electrica: si es Botada por daño detiene el Bote y se Destierra", { todo: "reacción: al ser Botada por daño detiene el Bote y se Destierra" }, () => {});
+test("Bomba Electrica: si es Botada por daño detiene el Bote y se Destierra", () => {
+  let e = mesa();
+  const g = poner(e, 0, "defensa", "Sir Galahad");
+  const b = poner(e, 1, "castillo", "Bomba Electrica");
+  alTope(e, 1, [b]);
+  e = resolverTodo(atacarSolo(e, g));
+  assert.equal(zonaDe(e, b), "destierro");
+  assert.equal(e.jugadores[1].cementerio.length, 0);
+  assert.equal(e.jugadores[1].castillo.length, 30);
+});
 
 test("Brujas de Belial: un Aliado de coste 2 o menos gana Indestructible, debe atacar y no cambia de controlador", () => {
   let e = mesa();
@@ -713,9 +958,44 @@ test("Brujas de Belial: un Aliado de coste 2 o menos gana Indestructible, debe a
   assert.equal(N.tiene(e, v, "Indestructible"), false);
 });
 
-test("Brujas de Belial: el Aliado no puede ser convertido", { todo: "efecto: no puede ser convertido" }, () => {});
+test("Brujas de Belial: el Aliado no puede ser convertido hasta tu próximo turno", () => {
+  let e = mesa();
+  const b = poner(e, 0, "mano", "Brujas de Belial");
+  const v = poner(e, 0, "defensa", "Valefor");
+  const ga = poner(e, 0, "defensa", "Sir Galahad");
+  e = sinRespuesta(aplicar(e, jugar(b)));
+  assert.equal(N.tiene(e, v, "NoConvertible"), true);
+  e.activo = 1;
+  e.turno += 1;
+  N.expirar(e, "finTurno");
+  N.expirar(e, "inicio");
+  oros(e, 1, 3);
+  const av = poner(e, 1, "mano", "Atacar al Vampiro");
+  e = sinRespuesta(aplicar(e, jugar(av)));
+  assert.equal(valores(e).includes(v), false);
+  assert.equal(valores(e).includes(ga), true);
+});
 
-test("Brujas de Belial: Desterrarla del Cementerio y pagar un Oro para Anular un Talismán de coste 1", { todo: "respuesta desde el Cementerio: Anular" }, () => {});
+test("Brujas de Belial: se Destierra de tu Cementerio y paga un Oro para Anular un Talismán de coste 1", () => {
+  let e = mesa();
+  oros(e, 0, 3);
+  oros(e, 1, 1);
+  const br = poner(e, 1, "cementerio", "Brujas de Belial");
+  const bf = poner(e, 0, "mano", "Bola de Fuego");
+  const av = poner(e, 0, "mano", "Avistamientos");
+  poner(e, 1, "defensa", "Valefor");
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "habilidad" && a.uid === br), false);
+  e = aplicar(e, jugar(bf));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder" && a.uid === br), false);
+  e = resolverTodo(e);
+  e = aplicar(e, jugar(av));
+  const r = accionesLegales(e).find((a) => a.tipo === "responder" && a.uid === br);
+  assert.ok(r);
+  e = resolverTodo(aplicar(e, r));
+  assert.equal(zonaDe(e, av), "cementerio");
+  assert.equal(zonaDe(e, br), "destierro");
+  assert.equal(e.jugadores[1].pagado.length, 1);
+});
 
 test("Caceria de Brujas: tu oponente Descarta todos los Talismanes de su mano", () => {
   let e = mesa();

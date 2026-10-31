@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, hacer, elegir, sinRespuesta, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
-import { resolver } from "../web/duelo/efectos.js";
+import { resolver, OPS, disponibles } from "../web/duelo/efectos.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
@@ -64,9 +64,35 @@ test("Juicio de Vigilantes: Baraja hasta una carta que no sea Oro, busca una car
   assert.equal(N.fuerza(e, v), 5);
 });
 
-test("Juicio de Vigilantes: si es Anulado genera un Oro por el turno", { todo: "disparo: al ser Anulado" }, () => {});
+test("Juicio de Vigilantes: si es Anulado genera un Oro por el turno", () => {
+  let e = mesa();
+  const juicio = poner(e, 0, "cementerio", "Juicio de Vigilantes");
+  e = disparar(e, "anulada", { uid: juicio, j: 0, tipo: "Talismán" });
+  assert.deepEqual(e.jugadores[0].generados, [{ n: 1, tipos: null }]);
+  assert.equal(disponibles(e, 0, "Aliado"), 1);
+});
 
-test("Juicio de Vigilantes: hasta tu próximo turno al oponente le cuesta un Oro adicional afectar a tus Aliados", { todo: "efecto: afectar a tus Aliados cuesta un Oro adicional al oponente" }, () => {});
+test("Juicio de Vigilantes: hasta tu próximo turno al oponente le cuesta un Oro adicional afectar a tus Aliados", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  const v = poner(e, 0, "defensa", "Valefor");
+  const t = ficticia(e, 0, "apoyo", { tipo: "Tótem", coste: 2 });
+  const fuenteRival = poner(e, 1, "mano", "Mala Flecha");
+  const juicio = poner(e, 0, "mano", "Juicio de Vigilantes");
+  e = hacer(e, jugar(juicio), null, nombreDe(e, "Drácula"));
+  const ctxRival = { ctrl: 1, fuente: fuenteRival };
+  assert.equal(N.proteccionContra(e, v, ctxRival).cuesta, 1);
+  assert.equal(N.proteccionContra(e, t, ctxRival).cuesta, 0);
+  assert.equal(N.proteccionContra(e, v, { ctrl: 0, fuente: juicio }).cuesta, 0);
+  e.turno += 1;
+  e.activo = 1;
+  N.expirar(e, "inicio");
+  assert.equal(N.proteccionContra(e, v, ctxRival).cuesta, 1);
+  e.turno += 1;
+  e.activo = 0;
+  N.expirar(e, "inicio");
+  assert.equal(N.proteccionContra(e, v, ctxRival).cuesta, 0);
+});
 
 test("Julio Verne: no puede ser Anulado", () => {
   const e = mesa();
@@ -95,7 +121,15 @@ test("Julio Verne: sube tus Aliados a la mano y al comienzo de tu próximo turno
   assert.equal(e.efectos.some((f) => f.tipo === "jugarAlComienzo"), false);
 });
 
-test("Julio Verne: solo se juega desde la mano pagando su coste", { todo: "restricción: la carta solo puede jugarse pagando su coste" }, () => {});
+test("Julio Verne: solo se juega pagando su coste", () => {
+  const e = mesa();
+  oros(e, 0, 3);
+  const jv = poner(e, 0, "mano", "Julio Verne");
+  OPS.jugarGratis(e, { var: "x" }, { pasos: [], i: 0, ctx: { ctrl: 0, vars: { x: [jv] } } });
+  assert.equal(zonaDe(e, jv), "mano");
+  assert.equal(e.jugadores[0].reserva.length, 3);
+  assert.equal(puedeJugar(e, jv), true);
+});
 
 test("Jurado Descontento: cada jugador Baraja los Aliados y Tótems ajenos que controla y Destierra dos del tope por cada uno", () => {
   let e = mesa();
@@ -254,7 +288,30 @@ test("La Ira de Dios: si llega al Cementerio por otra vía no se Baraja", () => 
 
 test("La Ira de Dios: redirige un efecto a otro objetivo válido del mismo controlador", { todo: "respuesta: redirigir un efecto a otro objetivo válido" }, () => {});
 
-test("La Ira de Dios: al Botarla puedes Desterrarla para subir un Aliado de tu Cementerio a tu mano", { todo: "disparo: cuando una carta es Botada" }, () => {});
+test("La Ira de Dios: al Botarla puedes Desterrarla para subir un Aliado de tu Cementerio a tu mano", () => {
+  let e = mesa();
+  const v = poner(e, 0, "cementerio", "Valefor");
+  const ira = poner(e, 0, "castillo", "La Ira de Dios");
+  N.sacar(e, ira);
+  e.jugadores[0].castillo.unshift(ira);
+  N.quitarDelCastillo(e, 0, 1, "cementerio");
+  resolver(e);
+  e = elegir(e, true);
+  assert.equal(zonaDe(e, ira), "destierro");
+  assert.equal(zonaDe(e, v), "mano");
+});
+
+test("La Ira de Dios: si sale del Castillo por daño no se dispara", () => {
+  const e = mesa();
+  poner(e, 0, "cementerio", "Valefor");
+  const ira = poner(e, 0, "castillo", "La Ira de Dios");
+  N.sacar(e, ira);
+  e.jugadores[0].castillo.unshift(ira);
+  N.quitarDelCastillo(e, 0, 1, "cementerio", false, true);
+  resolver(e);
+  assert.equal(e.pendiente, null);
+  assert.equal(zonaDe(e, ira), "cementerio");
+});
 
 test("La Sentencia de los Dioses: se resuelve y va al Cementerio", () => {
   let e = mesa();
@@ -265,13 +322,59 @@ test("La Sentencia de los Dioses: se resuelve y va al Cementerio", () => {
   assert.equal(e.pendiente, null);
 });
 
-test("La Sentencia de los Dioses: se puede jugar al comienzo de la Vigilia", { todo: "momento: jugar un Talismán al comienzo de la Vigilia" }, () => {});
+test("La Sentencia de los Dioses: se puede jugar al comienzo de la Vigilia oponente sin perder la Vigilia normal", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  const s = poner(e, 0, "mano", "La Sentencia de los Dioses");
+  assert.equal(puedeJugar(e, s), true);
+  e = aplicar(e, { tipo: "terminar" });
+  for (let i = 0; i < 60 && e.fase !== "momento"; i++) {
+    const l = accionesLegales(e);
+    e = aplicar(e, l.find((x) => ["terminar", "pasarMomento", "noResponder", "pasar"].includes(x.tipo)) ?? l[0]);
+  }
+  assert.equal(e.fase, "momento");
+  assert.equal(e.activo, 1);
+  let ofrecida = false;
+  for (let i = 0; i < 3 && e.fase === "momento" && !ofrecida; i++) {
+    ofrecida = puedeJugar(e, s);
+    if (!ofrecida) e = aplicar(e, { tipo: "pasarMomento" });
+  }
+  assert.equal(ofrecida, true);
+});
 
-test("La Sentencia de los Dioses: hasta tu próximo turno no se juegan cartas reduciendo su coste ni sin pagarlo", { todo: "efecto: no se pueden jugar cartas reduciendo su coste ni sin pagar su coste durante un período" }, () => {});
+function sentenciada() {
+  let e = mesa();
+  oros(e, 0, 1);
+  const s = poner(e, 0, "mano", "La Sentencia de los Dioses");
+  e = sinRespuesta(aplicar(e, jugar(s)));
+  return e;
+}
 
-test("La Sentencia de los Dioses: hasta tu próximo turno no se pueden generar Oros", { todo: "efecto: no se pueden generar Oros durante un período" }, () => {});
+test("La Sentencia de los Dioses: hasta tu próximo turno no se juegan cartas reduciendo su coste ni sin pagarlo", () => {
+  const e = sentenciada();
+  for (const j of [0, 1]) {
+    assert.equal(e.efectos.some((f) => f.tipo === "noReducir" && f.j === undefined && f.fin.inicioDe === 0), true);
+    const v = poner(e, j, "mano", "Valefor");
+    OPS.jugarGratis(e, { var: "x" }, { pasos: [], i: 0, ctx: { ctrl: j, vars: { x: [v] } } });
+    assert.equal(zonaDe(e, v), "mano");
+  }
+});
 
-test("La Sentencia de los Dioses: utilizar habilidades fuera del juego cuesta un Oro adicional", { todo: "efecto: utilizar habilidades de cartas fuera del juego cuesta un Oro adicional durante un período" }, () => {});
+test("La Sentencia de los Dioses: hasta tu próximo turno no se pueden generar Oros", () => {
+  const e = sentenciada();
+  for (const j of [0, 1]) OPS.generar(e, { n: 1 }, { ctx: { ctrl: j, vars: {} } });
+  assert.equal(disponibles(e, 0, "Aliado"), 0);
+  assert.equal(disponibles(e, 1, "Aliado"), 0);
+});
+
+test("La Sentencia de los Dioses: utilizar habilidades fuera del juego cuesta un Oro adicional", () => {
+  const e = sentenciada();
+  const fuera = poner(e, 1, "cementerio", "Lujuria");
+  const dentro = poner(e, 1, "defensa", "Valefor");
+  assert.equal(N.impuestoHabilidad(e, 1, fuera, "activada"), 1);
+  assert.equal(N.impuestoHabilidad(e, 0, fuera, "activada"), 1);
+  assert.equal(N.impuestoHabilidad(e, 1, dentro, "activada"), 0);
+});
 
 test("Legion Celestial: sin las Razas no tiene efecto", () => {
   let e = mesa();
@@ -330,10 +433,19 @@ test("Legion Demoniaca: con un Dragón genera un Oro para jugar Aliados", () => 
   poner(e, 0, "defensa", "Valefor");
   const l = poner(e, 0, "mano", "Legion Demoniaca");
   e = hacer(e, jugar(l), texto("Dragón"));
-  assert.deepEqual(e.jugadores[0].generados, [{ n: 1, tipos: ["Aliado"] }]);
+  assert.deepEqual(e.jugadores[0].generados, [{ n: 1, tipos: ["Aliado"], costeMin: 3 }]);
 });
 
-test("Legion Demoniaca: el Oro generado solo sirve para Aliados de coste 3 o más", { todo: "generar: Oro restringido por raza y coste mínimo" }, () => {});
+test("Legion Demoniaca: el Oro generado solo sirve para Aliados de coste 3 o más", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  poner(e, 0, "defensa", "Valefor");
+  const l = poner(e, 0, "mano", "Legion Demoniaca");
+  e = hacer(e, jugar(l), texto("Dragón"));
+  assert.equal(disponibles(e, 0, { tipo: "Aliado", coste: 2, razas: [] }), 0);
+  assert.equal(disponibles(e, 0, { tipo: "Aliado", coste: 3, razas: [] }), 1);
+  assert.equal(disponibles(e, 0, { tipo: "Tótem", coste: 3, razas: [] }), 0);
+});
 
 test("Legion Demoniaca: con una Sombra busca tres cartas de distinto nombre en el Castillo oponente y las Destierra", () => {
   let e = mesa();
@@ -363,7 +475,34 @@ test("Levantar Zombie: Desterrándolo del Cementerio Baraja hasta tres cartas de
   assert.deepEqual(c.map((u) => zonaDe(e, u)), ["castillo", "castillo", "castillo", "cementerio"]);
 });
 
-test("Levantar Zombie: al recibir daño oponente el oponente Bota esa cantidad y pones en juego un Aliado de un Cementerio sin habilidad", { todo: "disparo: cuando recibes daño oponente" }, () => {});
+test("Levantar Zombie: al recibir daño oponente el oponente Bota esa cantidad y pones en juego un Aliado de un Cementerio sin habilidad", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const z = poner(e, 0, "mano", "Levantar Zombie");
+  e = sinRespuesta(aplicar(e, jugar(z)));
+  assert.equal(zonaDe(e, z), "destierro");
+  const v = poner(e, 1, "cementerio", "Valefor");
+  N.quitarDelCastillo(e, 0, 1, "cementerio");
+  resolver(e);
+  assert.equal(e.pendiente, null);
+  assert.equal(e.jugadores[1].cementerio.length, 1);
+  N.quitarDelCastillo(e, 0, 2, "cementerio", false, true);
+  resolver(e);
+  assert.equal(e.jugadores[1].castillo.length, 28);
+  assert.equal(zonaDe(e, v), "defensa");
+  assert.equal(N.controlador(e, v), 0);
+  assert.equal(N.activa(e, v), false);
+  e.turno += 1;
+  e.activo = 1;
+  N.expirar(e, "inicio");
+  e.turno += 1;
+  e.activo = 0;
+  N.expirar(e, "inicio");
+  const antes = e.jugadores[1].castillo.length;
+  N.quitarDelCastillo(e, 0, 1, "cementerio", false, true);
+  resolver(e);
+  assert.equal(e.jugadores[1].castillo.length, antes);
+});
 
 test("Libro de Enoc: al jugarlo Roba una carta", () => {
   let e = mesa();
@@ -389,15 +528,14 @@ test("Libro de Enoc: en tu Oro Pagado tus Aliados ganan 1 de Fuerza e Indestruct
 
 test("Libro de Enoc: en tu Reserva no se juegan cartas ni habilidades desde Cementerio o Destierro sin Barajar una carta de la mano", { todo: "restricción: jugar cartas o usar habilidades desde el Cementerio o Destierro exige Barajar una carta de la mano" }, () => {});
 
-test("Linaje Maldito: con resultado par el oponente Destierra cuatro del tope y sus Aliados no te hacen daño hasta tu próximo turno", () => {
+test("Linaje Maldito: con resultado par el oponente Destierra cuatro del tope y no puedes recibir daño de combate hasta tu próximo turno", () => {
   let e = mesa();
   oros(e, 0, 1);
-  const rv = poner(e, 1, "defensa", "Valefor");
   const l = poner(e, 0, "mano", "Linaje Maldito");
   e.azar = semillaDado(true);
   e = aplicar(e, jugar(l));
   assert.equal(e.jugadores[1].destierro.length, 4);
-  assert.equal(e.efectos.some((f) => f.tipo === "sinDano" && f.uid === rv && f.fin.inicioDe === 0), true);
+  assert.equal(e.efectos.some((f) => f.tipo === "prevenirDano" && f.j === 0 && !f.unaVez && f.fin.inicioDe === 0), true);
 });
 
 test("Linaje Maldito: con resultado impar hasta dos Aliados ganan 2 de Fuerza y Furia", () => {
@@ -415,7 +553,30 @@ test("Linaje Maldito: con resultado impar hasta dos Aliados ganan 2 de Fuerza y 
   assert.equal(e.jugadores[1].destierro.length, 0);
 });
 
-test("Linaje Maldito: con resultado par no recibes daño de combate de Aliados que entren después", { todo: "efecto: un jugador no recibe daño de combate durante un período" }, () => {});
+test("Linaje Maldito: con resultado par no recibes daño de combate de Aliados que entren después", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const l = poner(e, 0, "mano", "Linaje Maldito");
+  e.azar = semillaDado(true);
+  e = aplicar(e, jugar(l));
+  e = aplicar(e, { tipo: "terminar" });
+  for (let i = 0; i < 60 && !(e.activo === 1 && e.fase === "vigilia"); i++) {
+    const lg = accionesLegales(e);
+    e = aplicar(e, lg.find((x) => ["terminar", "pasarMomento", "noResponder", "pasar"].includes(x.tipo)) ?? lg[0]);
+  }
+  const rv = poner(e, 1, "defensa", "Valefor");
+  const castillo = e.jugadores[0].castillo.length;
+  e = aplicar(e, { tipo: "batalla" });
+  e = aplicar(e, { tipo: "atacar", uid: rv });
+  e = aplicar(e, { tipo: "finAtaque" });
+  const antes = e.registro.length;
+  for (let i = 0; i < 30 && e.registro.length === antes; i++) {
+    const lg = accionesLegales(e);
+    e = aplicar(e, lg.find((x) => ["finBloqueo", "pasar", "noResponder", "pasarMomento"].includes(x.tipo)) ?? lg[0]);
+  }
+  assert.equal(e.registro.length, antes + 1);
+  assert.equal(e.jugadores[0].castillo.length, castillo);
+});
 
 test("Linaje Maldito: con resultado impar no recibes daño directo hasta tu próximo turno", { todo: "efecto: un jugador no recibe daño directo durante un período" }, () => {});
 
@@ -449,7 +610,7 @@ test("Locura de Renfield: si el oponente puso más de un Oro, pagando un Oro y D
   assert.equal(e.jugadores[0].reserva.length, 0);
 });
 
-test("Locura de Renfield: la condición mira el último turno del oponente", { todo: "condición: el oponente puso en juego más de un Oro en su último turno" }, () => {});
+test("Locura de Renfield: la condición mira el último turno del oponente", { todo: "historial: Oros puestos en juego por el oponente en su último turno" }, () => {});
 
 test("Los Descarnados: sube un Aliado oponente de coste 3 o menos a la mano de su dueño", () => {
   let e = mesa();
@@ -528,7 +689,20 @@ test("Los Pincheira: Destierra un Aliado de coste 1 o menos o Fuerza 2 o menos y
   assert.equal(e.jugadores[0].mano.length, 3);
 });
 
-test("Los Pincheira: se puede jugar al comienzo de cualquier Fase", { todo: "momento: jugar un Talismán al comienzo de cualquier Fase" }, () => {});
+test("Los Pincheira: se puede jugar al comienzo de cualquier Fase", () => {
+  let e = mesa();
+  oros(e, 1, 1);
+  const p = poner(e, 1, "mano", "Los Pincheira");
+  poner(e, 0, "defensa", "Valefor");
+  e = aplicar(e, { tipo: "batalla" });
+  assert.equal(e.fase, "momento");
+  let ofrecida = false;
+  for (let i = 0; i < 3 && e.fase === "momento" && !ofrecida; i++) {
+    ofrecida = puedeJugar(e, p);
+    if (!ofrecida) e = aplicar(e, { tipo: "pasarMomento" });
+  }
+  assert.equal(ofrecida, true);
+});
 
 test("Lucerna: si no tienes Oros en la mano busca un Oro y lo pone en tu Reserva", () => {
   let e = mesa();
@@ -582,7 +756,17 @@ test("Lucha Celestial: el Tótem una vez por turno Baraja una carta de tu Cement
   assert.equal(puedeUsar(e, a), false);
 });
 
-test("Lucha Celestial: en tu Cementerio con dos o más Tótem los Aliados pierden 1 de Fuerza", { todo: "continua desde el Cementerio: condicionada a controlar dos o más Tótem" }, () => {});
+test("Lucha Celestial: en tu Cementerio con dos o más Tótem los Aliados pierden 1 de Fuerza", () => {
+  const e = mesa();
+  const v = poner(e, 0, "defensa", "Valefor");
+  const rv = poner(e, 1, "defensa", "Valefor");
+  poner(e, 0, "cementerio", "Lucha Celestial");
+  ficticia(e, 0, "apoyo", { tipo: "Tótem", coste: 2 });
+  assert.equal(N.fuerza(e, v), 3);
+  ficticia(e, 0, "apoyo", { tipo: "Tótem", coste: 2 });
+  assert.equal(N.fuerza(e, v), 2);
+  assert.equal(N.fuerza(e, rv), 2);
+});
 
 test("Lucha de Saurios: tiene Exhumar y se Destierra al jugarla", () => {
   let e = mesa();
@@ -627,7 +811,20 @@ test("Lujuria: Desterrándola del Cementerio Baraja hasta tres cartas de los Cem
   assert.equal(zonaDe(e, c), "castillo");
 });
 
-test("Lujuria: hasta tu próximo turno no tienes límite de mano", { todo: "efecto: sin límite de cartas en la mano durante un período" }, () => {});
+test("Lujuria: hasta tu próximo turno no tienes límite de mano", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  poner(e, 0, "castillo", "Valefor");
+  poner(e, 0, "castillo", "Valefor");
+  const l = poner(e, 0, "mano", "Lujuria");
+  e = hacer(e, jugar(l), nombreDe(e, "Valefor"), nombreDe(e, "Valefor"));
+  assert.equal(e.efectos.some((f) => f.tipo === "sinLimiteMano" && f.j === 0 && f.fin.inicioDe === 0), true);
+  for (let i = 0; i < 8; i++) poner(e, 0, "mano", "Onsen");
+  const mano = e.jugadores[0].mano.length;
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.activo, 1);
+  assert.ok(e.jugadores[0].mano.length >= mano);
+});
 
 test("Lujuria: no puedes ser afectado por efectos oponentes este turno", { todo: "protección: el jugador no puede ser afectado por efectos oponentes" }, () => {});
 

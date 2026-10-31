@@ -2,12 +2,19 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, hacer, elegir, sinRespuesta, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
 import { costeDe } from "../web/duelo/motor.js";
-import { disponibles } from "../web/duelo/efectos.js";
+import { disponibles, cumple } from "../web/duelo/efectos.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
 const puedeUsar = (e, uid) => accionesLegales(e).some((a) => a.tipo === "habilidad" && a.uid === uid);
 const valores = (e) => e.pendiente.opciones.map((o) => o.valor);
+const ctxDe = (e, uid, j) => ({ ctrl: j, fuente: uid, def: e.instancias[uid], costeFuente: N.carta(e, uid).coste ?? 0, vars: {} });
+
+function oroAbismo(e, j) {
+  const u = poner(e, j, "pagado", "Azi del Abismo");
+  e.conv[u] = { tipo: "Oro", sinHabilidad: false, como: id("Azi del Abismo") };
+  return u;
+}
 
 function atacar(e, ...uids) {
   e = aplicar(e, { tipo: "batalla" });
@@ -115,7 +122,17 @@ test("Apofis del Caos: cuando ataca una carta y sus copias pierden su habilidad 
   assert.deepEqual(bloqueos, [otro]);
 });
 
-test("Apofis del Caos: reducir su coste Botando tres cartas", { todo: "costo alternativo opcional: Botar N cartas para reducir el coste en M Oros" }, () => {});
+test("Apofis del Caos: Botando tres cartas reduce su coste en dos Oros", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  const apofis = poner(e, 0, "mano", "Apofis del Caos");
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "jugar" && a.uid === apofis && !a.alternativo), false);
+  e = sinRespuesta(aplicar(e, jugar(apofis, { alternativo: true })));
+  assert.equal(zonaDe(e, apofis), "defensa");
+  assert.equal(e.jugadores[0].castillo.length, 27);
+  assert.equal(e.jugadores[0].cementerio.length, 3);
+  assert.equal(e.jugadores[0].reserva.length, 1);
+});
 
 test("Azi Dahaka: tiene Furia y Exhumar, tus Aliados ganan 1 de Fuerza y no pierden su habilidad, y los Oros oponentes no tienen habilidad", () => {
   const e = mesa();
@@ -234,9 +251,28 @@ test("Azi del Abismo: Descartando una carta se convierte hasta tu próximo turno
   assert.equal(puedeUsar(e, azi), false);
 });
 
-test("Azi del Abismo: solo los demás Aliados ganan Fuerza", { todo: "continua: alcance «tus demás Aliados» (excluir a la fuente)" }, () => {});
+test("Azi del Abismo: solo los demás Aliados ganan Fuerza", () => {
+  const e = mesa();
+  const azi = poner(e, 0, "defensa", "Azi del Abismo");
+  assert.equal(N.fuerza(e, azi), 3);
+});
 
-test("Azi del Abismo: como Oro reduce el daño recibido por tu Castillo por cada Oro Azi", { todo: "efecto: reducir el daño recibido por tu Castillo" }, () => {});
+test("Azi del Abismo: como Oro reduce el daño recibido por tu Castillo en 1 por cada Oro Azi", () => {
+  let e = mesa();
+  const ct = poner(e, 0, "defensa", "Come Tiempo");
+  oroAbismo(e, 1);
+  e = combate(e, ct);
+  assert.equal(e.jugadores[1].castillo.length, 30 - 6);
+});
+
+test("Azi del Abismo: con dos Oros Azi cada uno reduce el daño en 2", () => {
+  let e = mesa();
+  const ct = poner(e, 0, "defensa", "Come Tiempo");
+  oroAbismo(e, 1);
+  oroAbismo(e, 1);
+  e = combate(e, ct);
+  assert.equal(e.jugadores[1].castillo.length, 30 - 3);
+});
 
 test("Basilisco Chilote: desde tu mano, pagando un Oro y poniendo un Aliado de coste 3 o más en el tope de tu Castillo, se convierte en un Oro", () => {
   let e = mesa();
@@ -521,7 +557,16 @@ test("Dagon: tiene Furia y al entrar busca una carta Azi en tu Castillo", () => 
   assert.equal(zonaDe(e, azi), "mano");
 });
 
-test("Dagon: gana 2 de Fuerza por cada Oro Azi que controles", { todo: "continua: Fuerza variable según la cantidad de cartas de un tipo que controlas" }, () => {});
+test("Dagon: gana 2 de Fuerza por cada Oro Azi que controles", () => {
+  const e = mesa();
+  const dagon = poner(e, 0, "defensa", "Dagon");
+  oros(e, 0, 2);
+  assert.equal(N.fuerza(e, dagon), 2);
+  oroAbismo(e, 0);
+  oroAbismo(e, 0);
+  oroAbismo(e, 1);
+  assert.equal(N.fuerza(e, dagon), 6);
+});
 
 test("Dagon: se considera Azi en todas las Zonas para las demás cartas", { todo: "clave: se considera de un subtipo (Azi) en todas las Zonas, visible para todas las cartas" }, () => {});
 
@@ -594,7 +639,20 @@ test("Demonio Tenebris: tus Aliados de coste 2 o más que entran ganan Furia y l
   assert.equal(atacables.includes(abismo), false);
 });
 
-test("Demonio Tenebris: tus Aliados no son afectados por Oros ni Tótems oponentes", { todo: "efecto: no ser afectado por cartas oponentes de ciertos tipos (Oros y Tótems)" }, () => {});
+test("Demonio Tenebris: tus Aliados de coste 2 o más no son afectados por Oros ni Tótems oponentes", () => {
+  const e = mesa();
+  poner(e, 0, "defensa", "Demonio Tenebris");
+  const bok = poner(e, 0, "defensa", "Bokrug");
+  const abismo = poner(e, 0, "defensa", "Azi del Abismo");
+  const totem = poner(e, 1, "apoyo", "Carcosa");
+  const oro = poner(e, 1, "reserva", "Cráneo de Cristal");
+  const tal = poner(e, 1, "mano", "Dragón Dorado");
+  assert.equal(cumple(e, ctxDe(e, totem, 1), bok, {}, "destruir"), false);
+  assert.equal(cumple(e, ctxDe(e, oro, 1), bok, {}, "destruir"), false);
+  assert.equal(cumple(e, ctxDe(e, tal, 1), bok, {}, "destruir"), true);
+  assert.equal(cumple(e, ctxDe(e, totem, 1), abismo, {}, "destruir"), true);
+  assert.equal(cumple(e, ctxDe(e, oro, 1), abismo, {}, "destruir"), true);
+});
 
 test("Dracu: tiene Furia, hace daño al Destierro y al entrar busca un Oro o Aliado que no sea Dracu en tu Castillo o Cementerio", () => {
   let e = mesa();

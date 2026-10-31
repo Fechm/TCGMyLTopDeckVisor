@@ -48,6 +48,25 @@ const costeAplastar = (e, u) => {
 
 const RAZAS_APLASTAR = ["Caballero", "Eterno", "Guerrero", "Héroe"];
 
+const AVISTAR = [sel(["rival:mano"], { noTipo: ["Oro"] }), mov("barajar")];
+
+const MOVER_ORO = [{ op: "diferir", cuando: "faseFinalRival", pasos: [sel(["rival:reserva"], { tipo: "Oro" }, "o", { hasta: true }), mov("pagado", "o")] }];
+
+const detenerBote = {
+  disparadas: [{ zona: ["cementerio"], cuando: ["salenDelCastillo"], quien: "yo", si: "botadaPorDano", hacer: [{ op: "fn", f: "detenerBote" }] }],
+  fns: {
+    botadaPorDano: (e, ctx) => ctx.datos.porDano && ctx.datos.zona === "cementerio" && ctx.datos.uids.includes(ctx.fuente),
+    detenerBote: (e, ctx) => {
+      const p = e.jugadores[ctx.ctrl];
+      const { uids } = ctx.datos;
+      const resto = uids.slice(uids.indexOf(ctx.fuente) + 1).filter((u) => p.cementerio.includes(u));
+      for (const u of resto.reverse()) N.mover(e, u, "castillo");
+      p.salidasCastillo = Math.max(0, (p.salidasCastillo ?? 0) - resto.length);
+      N.mover(e, ctx.fuente, "destierro");
+    },
+  },
+};
+
 export const HABILIDADES = {
   Aplastar: {
     talisman: [
@@ -73,14 +92,14 @@ export const HABILIDADES = {
   "Aqui Están Todos Locos": {
     destierroAlJugar: true,
     requiere: "puede",
-    talisman: [sel(["yo:aliados"], { costeMax: 2, f: "conGemelo" }, "a"), sel(["yo:aliados"], { f: "gemelo" }, "b"), { op: "fn", f: "copiar" }],
+    talisman: [sel(["yo:aliados"], { costeMax: 2, f: "conGemelo" }, "a", { para: "convertir" }), sel(["yo:aliados"], { f: "gemelo" }, "b"), { op: "fn", f: "copiar" }],
     fns: {
       conGemelo: (e, ctx, u) => N.aliadosDe(e, ctx.ctrl).some((o) => o !== u && coste(e, o) === coste(e, u)),
       gemelo: (e, ctx, u) => {
         const [a] = ctx.vars.a ?? [];
         return !!a && u !== a && coste(e, u) === coste(e, a);
       },
-      puede: (e, ctx) => N.aliadosDe(e, ctx.ctrl).some((u) => coste(e, u) <= 2 && N.aliadosDe(e, ctx.ctrl).some((o) => o !== u && coste(e, o) === coste(e, u))),
+      puede: (e, ctx) => N.aliadosDe(e, ctx.ctrl).some((u) => coste(e, u) <= 2 && !N.tiene(e, u, "NoConvertible") && N.aliadosDe(e, ctx.ctrl).some((o) => o !== u && coste(e, o) === coste(e, u))),
       copiar: (e, ctx) => {
         const [a] = ctx.vars.a ?? [];
         const [b] = ctx.vars.b ?? [];
@@ -115,6 +134,7 @@ export const HABILIDADES = {
   },
   "Aringa Ora": {
     destierroAlJugar: true,
+    momentos: ["comienzoVigiliaRival"],
     talisman: [
       robar(3),
       {
@@ -124,16 +144,19 @@ export const HABILIDADES = {
     ],
     fns: {
       nombrar: (e, ctx, api, p) => {
-        const ef = p.tipo === "Talismán" ? { tipo: "impuestoTalisman" } : { tipo: "impuestoTipo", tipoCarta: p.tipo };
-        N.agregarEfecto(e, { ...ef, fin: "proximoTurno" }, N.rival(ctx.ctrl));
+        N.agregarEfecto(e, { tipo: "impuesto", tipoCarta: p.tipo, n: 1, fin: "proximoTurno" }, N.rival(ctx.ctrl));
       },
     },
   },
   "Artilleria Pesada": {
+    claves: ["IndesterrableCementerio"],
+    continuas: [{ zona: "cementerio", sinLimiteMano: true }],
     talisman: [{ op: "fn", f: "rellenar" }],
     fns: {
       rellenar: (e, ctx) => {
-        N.robar(e, ctx.ctrl, Math.max(0, 8 - e.jugadores[ctx.ctrl].mano.length));
+        const n = Math.max(0, 8 - e.jugadores[ctx.ctrl].mano.length);
+        N.robar(e, ctx.ctrl, n, true);
+        if (n > 4) N.agregarEfecto(e, { tipo: "noJugarMas", j: ctx.ctrl, fin: "turno" }, ctx.ctrl);
       },
     },
   },
@@ -146,6 +169,7 @@ export const HABILIDADES = {
       ]),
       robar(1),
     ],
+    disparadas: [{ zona: ["cementerio"], cuando: ["anulada"], quien: "propia", hacer: [sel(["fuente"], {}, "yo"), { op: "convertir", var: "yo", en: "Oro", a: "pagado" }] }],
     activadas: [
       {
         texto: "Desterrarlo de tu Cementerio: Barajar hasta tres cartas de los Cementerios",
@@ -156,19 +180,26 @@ export const HABILIDADES = {
     ],
   },
   "Ascenso de Enoc": {
+    momentos: ["comienzoFase"],
+    claves: ["IndesterrableCementerio"],
     talisman: [sel(["todos:enJuego"], { noTipo: ["Oro"], f: "sinHab" }), mov("barajar"), { op: "mostrarHasta", tipos: ["Aliado"], como: "m" }, mov("mano", "m")],
     fns: { sinHab: (e, ctx, u) => !N.activa(e, u) },
   },
   "Asimilar Materia": {
     unoPorTurno: true,
     orosMenos: "porOro",
-    talisman: [robar(1), sel(["todos:aliados"], {}, "a", { n: 2, hasta: true }), efecto("a", { tipo: "gana", clave: "DanoAlDestierro" }, "turno")],
+    talisman: [
+      robar(1),
+      { op: "efecto", efecto: { tipo: "zonaSinHabilidad", zona: "cementerio" }, fin: "turno" },
+      sel(["todos:aliados"], {}, "a", { n: 2, hasta: true }),
+      efecto("a", { tipo: "gana", clave: "DanoAlDestierro" }, "turno"),
+    ],
     fns: { porOro: (e, ctx) => N.orosDe(e, ctx.ctrl).length },
   },
   "Atacar al Vampiro": {
     claves: ["Exhumar"],
     talisman: [
-      sel(["todos:enJuego"], {}, "c"),
+      sel(["todos:enJuego"], {}, "c", { para: "convertir" }),
       { op: "fn", f: "convertir" },
       sel(["rival:enJuego"], { costeMax: 2, noTipo: ["Arma"] }, "t", { para: "tomar" }),
       { op: "fn", f: "tomar" },
@@ -252,6 +283,7 @@ export const HABILIDADES = {
     },
   },
   "Aun Tenemos Patria": {
+    momentos: ["faseFinal"],
     talisman: [{ op: "botar", n: 3, quien: "rival" }, robar(2)],
   },
   Avaricia: {
@@ -269,32 +301,31 @@ export const HABILIDADES = {
   },
   "Aventuras de Sancho": {
     reduce: "red",
-    talisman: [sel(["todos:enJuego"], { noTipo: ["Oro"] }, "x", { n: 999 }), efecto("x", { tipo: "pierdeHabilidad" }, "mientras"), mov("barajar")],
+    talisman: [
+      sel(["todos:enJuego"], { noTipo: ["Oro"] }, "x", { n: 999 }),
+      efecto("x", { tipo: "pierdeHabilidad" }, "mientras"),
+      mov("barajar"),
+      { op: "efecto", efecto: { tipo: "maxNoOro", n: 2 }, fin: "proximoTurno" },
+    ],
     fns: { red: (e, ctx) => N.enJuegoDe(e, ctx.ctrl).filter((u) => coste(e, u) >= 1).length },
   },
   Avistamientos: {
-    talisman: [sel(["rival:mano"], { noTipo: ["Oro"] }), mov("barajar")],
+    talisman: [
+      { op: "tope", quien: "yo", n: 1, como: "m" },
+      { op: "si", f: "aliadoAlTope", entonces: [...AVISTAR, ...MOVER_ORO], sino: [{ op: "modo", opciones: [{ texto: "Mirar la mano oponente y Barajar una carta que no sea Oro", pasos: AVISTAR }, { texto: "En la próxima Fase Final oponente, mover un Oro oponente a su Oro Pagado", pasos: MOVER_ORO }] }] },
+    ],
+    fns: { aliadoAlTope: (e, ctx) => (ctx.vars.m ?? []).some((u) => N.carta(e, u).tipo === "Aliado") },
   },
   "Bajo el Traiguen": {
     requiere: { de: ["rival:enJuego"], filtro: { costeMax: 2 } },
-    talisman: [sel(["rival:enJuego"], { costeMax: 2 }), mov("barajar"), { op: "fn", f: "marcar" }],
+    talisman: [sel(["rival:enJuego"], { costeMax: 2 }), mov("barajar")],
     disparadas: [
-      {
-        zona: ["cementerio"],
-        cuando: ["alCementerio"],
-        quien: "propia",
-        si: "recien",
-        hacer: [{ op: "fn", f: "olvidar" }, sel(["fuente"], {}, "yo"), mov("barajar", "yo")],
-      },
+      { zona: ["cementerio"], cuando: ["alCementerio"], quien: "propia", si: "resuelto", hacer: [sel(["fuente"], {}, "yo"), mov("barajar", "yo")] },
+      ...detenerBote.disparadas,
     ],
     fns: {
-      marcar: (e, ctx) => {
-        e.usos[`traiguen|${ctx.fuente}`] = e.turno;
-      },
-      recien: (e, ctx) => e.usos[`traiguen|${ctx.fuente}`] === e.turno,
-      olvidar: (e, ctx) => {
-        delete e.usos[`traiguen|${ctx.fuente}`];
-      },
+      resuelto: (e, ctx) => ctx.datos.desde === null,
+      ...detenerBote.fns,
     },
   },
   "Bajo la Higuera": {
@@ -351,6 +382,7 @@ export const HABILIDADES = {
       sel(["yo:enJuego"], {}, "r"),
       { op: "fn", f: "otorgar" },
     ],
+    disparadas: [{ zona: ["cementerio", "destierro"], cuando: ["anulada"], quien: "propia", hacer: [{ op: "generar", n: 1, tipos: ["Aliado"] }] }],
     activadas: [
       {
         texto: "Una vez en tu turno: Barajar y/o Desterrar hasta tres cartas de los Cementerios",
@@ -380,8 +412,16 @@ export const HABILIDADES = {
     talisman: [sel(["todos:enJuego"], { noTipo: ["Oro"] }, "x", { para: "destruir" }), mov("destruir")],
   },
   "Bomba Electrica": {
-    talisman: [sel(["yo:aliados"], {}, "k"), sel(["rival:aliados"], {}, "k2", { quien: "rival" }), { op: "fn", f: "resto" }, mov("barajar", "r")],
+    talisman: [
+      sel(["yo:aliados"], {}, "k"),
+      sel(["rival:aliados"], {}, "k2", { quien: "rival" }),
+      { op: "fn", f: "resto" },
+      mov("barajar", "r"),
+      { op: "efecto", efecto: { tipo: "maxPorTipo", n: 2 }, fin: "proximoTurno" },
+    ],
+    disparadas: detenerBote.disparadas,
     fns: {
+      ...detenerBote.fns,
       resto: (e, ctx) => {
         const quedan = [...(ctx.vars.k ?? []), ...(ctx.vars.k2 ?? [])];
         ctx.vars.r = [...N.aliadosDe(e, ctx.ctrl), ...N.aliadosDe(e, N.rival(ctx.ctrl))].filter((u) => !quedan.includes(u));
@@ -395,6 +435,17 @@ export const HABILIDADES = {
       efecto("x", { tipo: "gana", clave: "Indestructible" }, "proximoTurno"),
       efecto("x", { tipo: "debeAtacar" }, "turno"),
       efecto("x", { tipo: "noCambia" }, "proximoTurno"),
+      efecto("x", { tipo: "gana", clave: "NoConvertible" }, "proximoTurno"),
+    ],
+    activadas: [
+      {
+        texto: "Desterrarlo de tu Cementerio y pagar un Oro: Anular un Talismán de coste 1",
+        zona: "cementerio",
+        oros: 1,
+        respuesta: { anula: { tipo: "Talismán", costeMax: 1 } },
+        coste: [sel(["fuente"], {}, "yo"), mov("desterrar", "yo")],
+        hacer: [],
+      },
     ],
   },
   "Caceria de Brujas": {

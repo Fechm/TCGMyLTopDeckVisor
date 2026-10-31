@@ -302,3 +302,27 @@ test("mecánica: noAgrupa y sinLimiteMano", () => {
   f = aplicar(f, { tipo: "terminar" });
   assert.equal(f.activo, 1);
 });
+
+test("mecánica: maxVeces, grupo compartido y respuestas fuera de las habilidades normales", () => {
+  let e = con(mesa(), "Sir Galahad", {
+    activadas: [
+      { texto: "Robar", momento: "vigilia", maxVeces: 2, grupo: "a", hacer: [{ op: "robar", n: 1, quien: "yo" }] },
+      { texto: "Robar otra", momento: "vigilia", maxVeces: 2, grupo: "a", hacer: [{ op: "robar", n: 1, quien: "yo" }] },
+      { texto: "Anular", respuesta: { anula: {} }, momento: "cualquiera" },
+    ],
+  });
+  const g = poner(e, 0, "defensa", "Sir Galahad");
+  const usar = (s) => accionesLegales(s).filter((a) => a.tipo === "habilidad" && a.uid === g);
+  assert.deepEqual(usar(e).map((a) => a.h), [0, 1]);
+  e = resolverTodo(aplicar(e, usar(e)[0]));
+  e = resolverTodo(aplicar(e, usar(e)[1]));
+  assert.equal(usar(e).length, 0);
+});
+
+test("mecánica: noPierden desde el Cementerio protege sin recursión", () => {
+  const e = con(mesa(), "Sir Galahad", { continuas: [{ zona: "cementerio", noPierden: true, a: "tusAliados" }] });
+  poner(e, 0, "cementerio", "Sir Galahad");
+  const balaur = poner(e, 0, "defensa", "Balaur");
+  N.agregarEfecto(e, { tipo: "pierdeHabilidad", uid: balaur, fin: "turno" }, 1);
+  assert.equal(N.activa(e, balaur), true);
+});

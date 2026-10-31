@@ -3,11 +3,6 @@ import { sel, mov, barajar, robar, efecto, buscar, castilloElegido, coste } from
 
 const botar = (n, quien = "rival") => ({ op: "botar", n, quien });
 
-const sinCopia = (e, ctx) => {
-  const nombre = N.carta(e, ctx.fuente).nombre;
-  return !N.enJuegoDe(e, ctx.ctrl).some((u) => u !== ctx.fuente && N.carta(e, u).nombre === nombre);
-};
-
 const esAzi = (e, u) => N.carta(e, u).tipo === "Oro" && (e.conv[u]?.como === "azi" || /Azi/.test(N.carta(e, u).nombre));
 
 const orosEnJuego = (e) => N.orosDe(e, 0).length + N.orosDe(e, 1).length;
@@ -21,8 +16,8 @@ const alResolverOro = (e, ctx) => {
 
 export const HABILIDADES = {
   Tanin: {
-    claves: ["Exhumar"],
-    requiere: "sinCopia",
+    claves: ["Exhumar", "Unica"],
+    costeAlternativo: { botar: 2, reduce: 2 },
     disparadas: [
       {
         cuando: ["entra"],
@@ -35,7 +30,6 @@ export const HABILIDADES = {
       },
     ],
     fns: {
-      sinCopia,
       diferencia: (e, ctx) => Math.max(0, N.orosDe(e, ctx.ctrl).length - N.orosDe(e, N.rival(ctx.ctrl)).length),
       resto: (e, ctx) => Math.max(0, N.orosDe(e, ctx.ctrl).length - N.orosDe(e, N.rival(ctx.ctrl)).length) - (ctx.vars.c ?? []).length,
     },
@@ -59,6 +53,7 @@ export const HABILIDADES = {
     fns: { entraOro: (e, ctx) => N.carta(e, ctx.datos.uid).tipo === "Oro" },
   },
   "Trentren Vilu": {
+    soloPagando: true,
     disparadas: [{ cuando: ["entra"], opcional: true, hacer: [sel(["todos:enJuego"], { noTipo: ["Oro"], noFuente: true }, "x", { n: 99 }), mov("barajar")] }],
     activadas: [
       {
@@ -92,18 +87,15 @@ export const HABILIDADES = {
     },
   },
   Ventisca: {
-    continuas: [{ fuerza: 1, a: "tusAliados", raza: "Dragón" }, { gana: "Furia", a: "tusAliados", si: "soloDragones" }],
-    fns: { soloDragones: (e, ctx) => N.aliadosDe(e, ctx.ctrl).every((a) => (N.carta(e, a).razas ?? []).includes("Dragón")) },
+    continuas: [{ fuerza: 1, a: "tusAliados", raza: "Dragón" }, { gana: "Furia", a: "tusAliados", raza: "Dragón" }],
   },
   "Wyrm de la Plaga": {
-    claves: ["Furia"],
-    requiere: "sinCopia",
+    claves: ["Unica", "Furia"],
     disparadas: [
       { cuando: ["entra"], si: "siete", hacer: [{ op: "botar", nf: "orosEnJuego", quien: "rival" }] },
       { cuando: ["entra"], quien: "yo", si: "entraOro", hacer: [botar(2)] },
     ],
     fns: {
-      sinCopia,
       siete: (e, ctx) => N.orosDe(e, ctx.ctrl).length >= 7,
       orosEnJuego,
       entraOro: (e, ctx) => N.carta(e, ctx.datos.uid).tipo === "Oro",
@@ -112,9 +104,17 @@ export const HABILIDADES = {
   "Zmaj Depredador": {
     claves: ["Furia"],
     disparadas: [{ cuando: ["entra"], hacer: [sel(["todos:enJuego"], noOroCoste(2), "x", { n: 99, para: "destruir" }), mov("destruir"), robar(1)] }],
+    continuas: [{ impuestoRival: { n: 1 }, si: "rivalSinJugar" }],
+    fns: {
+      rivalSinJugar: (e, ctx) =>
+        Object.entries(e.jugadores[N.rival(ctx.ctrl)].jugadas ?? {})
+          .filter(([t]) => !["total", "nombres", "anuladas"].includes(t))
+          .every(([, n]) => !n),
+    },
   },
   "Zmaj Moonshadow": {
     claves: ["Furia"],
+    continuas: [{ aliadosNoBarajables: true }],
     activadas: [
       {
         texto: "Cada jugador Bota tres cartas; puedes poner un Aliado de un Cementerio como Aliado sin habilidad y robas dos",
@@ -130,7 +130,11 @@ export const HABILIDADES = {
     ],
   },
   Zmeoaica: {
-    requiere: "sinCopia",
+    claves: ["Unica"],
+    continuas: [
+      { reduceCoste: { n: 1, tipoCarta: "Aliado", costeMin: 3 } },
+      { gana: "Indesterrable", a: "tusAliados", costeMin: 3 },
+    ],
     disparadas: [
       {
         cuando: ["entra"],
@@ -144,10 +148,10 @@ export const HABILIDADES = {
         ],
       },
     ],
-    fns: { sinCopia },
   },
   "Zmeu Abismal": {
     claves: ["Furia"],
+    soloPagando: true,
     disparadas: [
       {
         cuando: ["entra"],
@@ -224,6 +228,7 @@ export const HABILIDADES = {
   },
   Abordaje: {
     claves: ["Indestructible"],
+    momentos: ["comienzoFase"],
     continuas: [{ fuerza: -2, a: "tusAliados" }],
     requiere: { de: ["todos:cementerio"], filtro: {} },
     talisman: [sel(["todos:cementerio"], {}, "c"), { op: "fn", f: "abordar" }],
@@ -243,12 +248,14 @@ export const HABILIDADES = {
     talisman: [sel(["yo:cementerio"], {}, "c", { n: 99, hasta: true }), mov("barajar", "c"), robar(3)],
   },
   "Absorber Kaiju": {
+    anularCuestaMas: 1,
     reduce: "red",
     talisman: [sel(["todos:aliados"], {}, "x", { n: 99 }), efecto("x", { tipo: "pierdeHabilidad" }), mov("barajar")],
     fns: { red: (e) => N.aliadosDe(e, 0).length + N.aliadosDe(e, 1).length },
   },
   "Acabar la Esperanza": {
     claves: ["Exhumar"],
+    disparadas: [{ zona: ["cementerio"], cuando: ["anulada"], quien: "propia", hacer: [{ op: "generar", n: 1 }, robar(1)] }],
     requiere: { de: ["todos:enJuego"], filtro: { f: "objetivo" } },
     talisman: [sel(["todos:enJuego"], { f: "objetivo" }), { op: "fn", f: "vaciar" }],
     fns: {
@@ -286,16 +293,15 @@ export const HABILIDADES = {
   "Al Abordaje Muchachos": {
     claves: ["Furia"],
     talisman: [sel(["yo:cementerio"], {}, "c", { nf: "orosEnJuego", hasta: true }), { op: "fn", f: "convertir" }],
-    disparadas: [{ cuando: ["faseFinal"], quien: "cualquiera", si: "convertida", hacer: [sel(["fuente"], {}, "yo"), mov("barajar", "yo"), { op: "fn", f: "robarUnaVez" }] }],
     fns: {
       orosEnJuego,
-      convertir: (e, ctx) => [{ op: "convertir", var: "c", en: "Aliado", fuerza: 3, a: "defensa", como: ctx.def }],
-      convertida: (e, ctx) => e.conv[ctx.fuente]?.como === ctx.def,
-      robarUnaVez: (e, ctx) => {
-        const clave = `muchachos|${ctx.ctrl}|${e.turno}`;
-        if (e.usos[clave]) return;
-        e.usos[clave] = true;
-        N.robar(e, ctx.ctrl, 3);
+      convertir: (e, ctx) => [
+        { op: "convertir", var: "c", en: "Aliado", fuerza: 3, a: "defensa", como: ctx.def },
+        { op: "diferir", cuando: "faseFinal", pasos: [{ op: "fn", f: "devolver", uids: [...(ctx.vars.c ?? [])] }, robar(3)] },
+      ],
+      devolver: (e, ctx, api, p) => {
+        ctx.vars.v = (p.uids ?? []).filter((u) => N.enJuego(e, u) && e.conv[u]?.como === ctx.def);
+        return [mov("barajar", "v")];
       },
     },
   },
@@ -306,7 +312,7 @@ export const HABILIDADES = {
         op: "modo",
         n: 2,
         opciones: [
-          { texto: "Prevenir el próximo daño que fueras a recibir", pasos: [{ op: "efecto", efecto: { tipo: "prevenirDano" }, jugador: "yo", fin: "proximoTurno" }] },
+          { texto: "Prevenir el próximo daño que fueras a recibir", pasos: [{ op: "efecto", efecto: { tipo: "prevenirDano", unaVez: true }, jugador: "yo", fin: "juego" }] },
           {
             texto: "Buscar un Aliado o Tótem en un Castillo y ponerlo en la mano o Destierro de su dueño",
             pasos: [
@@ -359,6 +365,7 @@ export const HABILIDADES = {
     },
   },
   "Amor de Dulcinea": {
+    disparadas: [{ zona: ["cementerio"], cuando: ["anulada"], quien: "propia", hacer: [robar(2)] }],
     talisman: [
       {
         op: "modo",
@@ -406,7 +413,7 @@ export const HABILIDADES = {
   },
   "Aniquilar a la Bestia": {
     talisman: [sel(["todos:enJuego"], noOroCoste(4), "a", { hasta: true }), { op: "fn", f: "segunda" }],
-    continuasCementerio: [{ fuerza: -1, costeMax: 99 }],
+    continuas: [{ fuerza: -1, a: "aliados", zona: "cementerio" }],
     fns: {
       segunda: (e, ctx) => {
         const [a] = ctx.vars.a ?? [];
@@ -428,16 +435,10 @@ export const HABILIDADES = {
   "Aparición del Sanatorio": {
     requiere: { de: ["todos:cementerio"], filtro: { tipo: "Aliado", costeMax: 2 }, para: "tomar" },
     talisman: [sel(["todos:cementerio"], { tipo: "Aliado", costeMax: 2 }, "x", { para: "tomar" }), { op: "fn", f: "convertir" }],
-    continuas: [{ silenciaEntradaCosteMax: 1, si: "conTalisman" }],
+    continuas: [{ silenciaDisparos: { costeMax: 1 }, zona: "cementerio", si: "conTotem" }],
     fns: {
-      convertir: (e, ctx) => {
-        for (const u of ctx.vars.x ?? []) e.usos[`sanatorio|${u}`] = ctx.fuente;
-        return [{ op: "convertir", var: "x", en: "Tótem", a: "apoyo", como: ctx.def }];
-      },
-      conTalisman: (e, ctx) => {
-        const t = e.usos[`sanatorio|${ctx.fuente}`];
-        return !!t && N.dueno(t) === ctx.ctrl && e.jugadores[ctx.ctrl].cementerio.includes(t);
-      },
+      convertir: (e, ctx) => [{ op: "convertir", var: "x", en: "Tótem", a: "apoyo", como: ctx.def }],
+      conTotem: (e, ctx) => N.enJuegoDe(e, ctx.ctrl).some((u) => N.carta(e, u).tipo === "Tótem" && e.conv[u]?.como === ctx.def),
     },
   },
 };

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, hacer, elegir, sinRespuesta, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
 import { costeDe } from "../web/duelo/motor.js";
-import { resolver } from "../web/duelo/efectos.js";
+import { resolver, OPS } from "../web/duelo/efectos.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
@@ -14,6 +14,14 @@ const generados = (e, j) => (e.jugadores[j].generados ?? []).reduce((s, g) => s 
 function disparar(e, evento, datos) {
   N.disparar(e, evento, datos);
   resolver(e);
+  return e;
+}
+
+function avanzarHasta(e, pred) {
+  for (let i = 0; i < 60 && !pred(e); i++) {
+    const l = accionesLegales(e);
+    e = aplicar(e, l.find((x) => ["terminar", "pasarMomento", "noResponder", "pasar"].includes(x.tipo)) ?? l[0]);
+  }
   return e;
 }
 
@@ -130,7 +138,34 @@ test("Cortar las Cadenas: Exhumar, se juega desde el Cementerio y queda Desterra
   assert.equal(e.jugadores[1].cementerio.length, 5);
 });
 
-test("Cortar las Cadenas: desde el Destierro, pagar un Oro para Barajarlo y Robar dos o buscar un Tenshi", { todo: "activada desde el Destierro" }, () => {});
+test("Cortar las Cadenas: desde el Destierro, pagar un Oro para Barajarlo en tu Castillo y Robar dos cartas", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const c = poner(e, 0, "destierro", "Cortar las Cadenas");
+  assert.equal(puedeUsar(e, c), true);
+  e = hacer(e, habilidad(c, "Cortar las Cadenas"), "Robar dos cartas");
+  assert.notEqual(zonaDe(e, c), "destierro");
+  assert.equal(e.jugadores[0].castillo.length + e.jugadores[0].mano.length, 31);
+  assert.equal(e.jugadores[0].mano.length, 2);
+  assert.equal(e.jugadores[0].pagado.length, 1);
+});
+
+test("Cortar las Cadenas: desde el Destierro, o buscar en tu Castillo un Tenshi", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const t = poner(e, 0, "castillo", "Tenshi Prime Z");
+  const c = poner(e, 0, "destierro", "Cortar las Cadenas");
+  e = hacer(e, habilidad(c, "Cortar las Cadenas"), "Buscar en tu Castillo un Tenshi", t);
+  assert.equal(zonaDe(e, t), "mano");
+  assert.equal(zonaDe(e, c), "castillo");
+});
+
+test("Cortar las Cadenas: sin estar en el Destierro no se puede usar la habilidad", () => {
+  const e = mesa();
+  oros(e, 0, 1);
+  const c = poner(e, 0, "cementerio", "Cortar las Cadenas");
+  assert.equal(puedeUsar(e, c), false);
+});
 
 test("Corte Letal: Destierra una carta del Cementerio oponente y todas sus copias del Castillo, Cementerio y mano, y Robas dos", () => {
   let e = mesa();
@@ -185,7 +220,19 @@ test("Cruzar la Cordillera: Robas una carta y queda Desterrado", () => {
   assert.equal(zonaDe(e, c), "destierro");
 });
 
-test("Cruzar la Cordillera: jugarlo al comienzo de la Vigilia", { todo: "momento: jugar un Talismán al comienzo de la Vigilia" }, () => {});
+test("Cruzar la Cordillera: jugarlo al comienzo de la Vigilia oponente", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const c = poner(e, 0, "mano", "Cruzar la Cordillera");
+  assert.equal(puedeJugar(e, c), true);
+  e = aplicar(e, { tipo: "terminar" });
+  e = avanzarHasta(e, (s) => s.fase === "momento");
+  assert.equal(e.activo, 1);
+  e = aplicar(e, { tipo: "pasarMomento" });
+  assert.equal(puedeJugar(e, c), true);
+  e = sinRespuesta(aplicar(e, jugar(c)));
+  assert.equal(zonaDe(e, c), "destierro");
+});
 
 test("Cruzar la Cordillera: jugar una carta de un tipo ya jugado en el turno exige Desterrar una carta de la mano", { todo: "efecto: jugar una carta de un tipo ya jugado este turno exige Desterrar una carta de la mano" }, () => {});
 
@@ -213,7 +260,14 @@ test("Cuarto Sello: pagar un Oro y Descartarlo hace que un Aliado pierda su habi
   assert.equal(e.jugadores[0].pagado.length, 1);
 });
 
-test("Cuarto Sello: jugarlo al comienzo de cualquier Fase", { todo: "momento: jugar un Talismán al comienzo de cualquier Fase" }, () => {});
+test("Cuarto Sello: jugarlo al comienzo de cualquier Fase", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const c = poner(e, 0, "mano", "Cuarto Sello");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  assert.equal(puedeJugar(e, c), true);
+});
 
 test("Culto a la Muerte: cancela la habilidad de una carta y de las de su nombre por el turno", () => {
   let e = mesa();
@@ -237,6 +291,16 @@ test("Culto a la Muerte: como respuesta Anula una carta de coste 2 o menos que n
   e = sinRespuesta(aplicar(e, { tipo: "responder", uid: c }));
   assert.equal(zonaDe(e, t), "destierro");
   assert.equal(e.jugadores[0].mano.length, 0);
+});
+
+test("Culto a la Muerte: no puede Anular un Aliado", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  oros(e, 1, 1);
+  const v = poner(e, 0, "mano", "Valefor");
+  const c = poner(e, 1, "mano", "Culto a la Muerte");
+  e = aplicar(e, jugar(v));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder" && a.uid === c), false);
 });
 
 test("Culto a la Muerte: el oponente no puede utilizar más habilidades de esas cartas, sin afectar las propias", { todo: "efecto: el oponente no puede utilizar habilidades de cartas con un nombre este turno" }, () => {});
@@ -464,7 +528,25 @@ test("Despertar de Behemot: busca en tu Castillo una carta de coste 3 o más, co
   assert.equal(zonaDe(e, c), "destierro");
 });
 
-test("Despertar de Behemot: no puedes jugar cartas ni utilizar habilidades por el resto del turno", { todo: "efecto: no puedes jugar cartas ni utilizar habilidades por el resto del turno" }, () => {});
+test("Despertar de Behemot: no puedes jugar cartas ni utilizar habilidades por el resto del turno", () => {
+  let e = mesa();
+  oros(e, 0, 3);
+  const p = poner(e, 1, "defensa", "Sir Persival");
+  const v = poner(e, 0, "mano", "Valefor");
+  const o = poner(e, 0, "mano", "Drácula");
+  const d = poner(e, 0, "cementerio", "Danza del Cuchillo");
+  const c = poner(e, 0, "mano", "Despertar de Behemot");
+  assert.equal(puedeJugar(e, v), true);
+  assert.equal(puedeUsar(e, d), true);
+  e = hacer(e, jugar(c), "Barajar una carta oponente de coste 3 o más");
+  assert.equal(zonaDe(e, p), "castillo");
+  assert.equal(puedeJugar(e, v), false);
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "oro" && a.uid === o), false);
+  assert.equal(puedeUsar(e, d), false);
+  e = aplicar(e, { tipo: "terminar" });
+  e.activo = 0;
+  assert.equal(e.efectos.some((f) => f.tipo === "noJugarMas" || f.tipo === "maxHabilidades"), false);
+});
 
 test("Destruccion Urbana: convierte hasta dos cartas de un Cementerio en Tótems en tu Línea de Apoyo", () => {
   let e = mesa();
@@ -498,7 +580,8 @@ test("Destruccion Urbana: el Tótem puede Destruirse para no recibir daño este 
   const c = poner(e, 0, "mano", "Destruccion Urbana");
   e = hacer(e, jugar(c), "Tu Cementerio", a);
   e = hacer(e, habilidad(a, "Destruccion Urbana"), "No recibir daño este turno");
-  assert.equal(e.efectos.some((f) => f.tipo === "sinDano" && f.uid === r), true);
+  assert.equal(e.efectos.some((f) => f.tipo === "prevenirDano" && f.j === 0 && f.n === undefined), true);
+  assert.equal(e.efectos.some((f) => f.tipo === "sinDano" && f.uid === r), false);
 });
 
 test("Destruccion Urbana: Exhumar", () => {
@@ -591,4 +674,12 @@ test("Duelo Espacial: en tu Cementerio, en tu Vigilia Robas una carta una vez po
   assert.equal(puedeUsar(e, c), false);
 });
 
-test("Duelo Espacial: en tu Cementerio no puede ser Desterrado", { todo: "continua desde el Cementerio: la carta no puede ser Desterrada" }, () => {});
+test("Duelo Espacial: en tu Cementerio no puede ser Desterrado", () => {
+  const e = mesa();
+  const c = poner(e, 0, "cementerio", "Duelo Espacial");
+  OPS.mover(e, { var: "x", a: "desterrar" }, { ctx: { ctrl: 1, vars: { x: [c] } } });
+  assert.equal(zonaDe(e, c), "cementerio");
+  const m = poner(e, 0, "mano", "Duelo Espacial");
+  OPS.mover(e, { var: "x", a: "desterrar" }, { ctx: { ctrl: 1, vars: { x: [m] } } });
+  assert.equal(zonaDe(e, m), "destierro");
+});

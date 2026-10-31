@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, hacer, elegir, sinRespuesta, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
 import { costeDe } from "../web/duelo/motor.js";
+import { OPS, cumple } from "../web/duelo/efectos.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
@@ -66,14 +67,18 @@ test("Guerra Celestial: no se puede jugar en respuesta a un Aliado de coste 4 ni
   assert.equal(puedeJugar(g, gc2, undefined), false);
 });
 
-test("Guerra Celestial: también responde a Tótem de coste 3 o menos", { todo: "respuesta: filtro de la carta respondida por varios tipos (Aliado o Tótem)" }, () => {
+test("Guerra Celestial: también responde a Tótem de coste 3 o menos", () => {
   let e = mesa();
-  oros(e, 0, 1);
+  oros(e, 0, 2);
   const t = poner(e, 0, "mano", "Isla de Poveglia");
   const gc = poner(e, 1, "mano", "Guerra Celestial");
   oros(e, 1, 1);
   e = aplicar(e, jugar(t));
   assert.equal(responde(e, gc), true);
+  e = sinRespuesta(aplicar(e, { tipo: "responder", uid: gc }));
+  e = elegir(e, null);
+  assert.equal(zonaDe(e, t), "apoyo");
+  assert.equal(N.activa(e, t), false);
 });
 
 test("Gula: roba siete cartas", () => {
@@ -173,11 +178,24 @@ test("Hambre del Vacio: robas una y el oponente elige dos Oros con habilidad que
   assert.equal(e.jugadores[0].mano.length, 1);
 });
 
-test("Hambre del Vacio: puede jugarse en la Fase Final", { todo: "momento: jugar un Talismán en la Fase Final" }, () => {
-  assert.fail();
+test("Hambre del Vacio: puede jugarse en la Fase Final y también en la Vigilia", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const hv = poner(e, 0, "mano", "Hambre del Vacio");
+  assert.equal(puedeJugar(e, hv, undefined), true);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  assert.equal(puedeJugar(e, hv, undefined), true);
 });
 
-test("Hambre del Vacio: en tu Cementerio no puede ser Desterrado y las cartas en juego no pueden perder la habilidad", { todo: "continua desde el Cementerio: las cartas en juego no pueden perder la habilidad y la carta no puede ser Desterrada" }, () => {
+test("Hambre del Vacio: en tu Cementerio no puede ser Desterrado", () => {
+  const e = mesa();
+  const hv = poner(e, 0, "cementerio", "Hambre del Vacio");
+  OPS.mover(e, { var: "x", a: "desterrar" }, { ctx: { ctrl: 1, vars: { x: [hv] } } });
+  assert.equal(zonaDe(e, hv), "cementerio");
+});
+
+test("Hambre del Vacio: desde tu Cementerio las cartas en juego no pueden perder la habilidad", { todo: "continua noPierden con zona cementerio: activa → noPuedePerder → hay → continuas entra en recursión infinita; además solo mira las fuentes del controlador de la carta" }, () => {
   assert.fail();
 });
 
@@ -207,8 +225,15 @@ test("Heraldos del Titán: fuera de tu turno tus Aliados ganan 1 de Fuerza, Inde
   assert.equal((e.jugadores[1].generados ?? []).length, 0);
 });
 
-test("Heraldos del Titán: puede jugarse al comienzo de cualquier Fase", { todo: "momento: jugar un Talismán al comienzo de cualquier Fase" }, () => {
-  assert.fail();
+test("Heraldos del Titán: puede jugarse al comienzo de cualquier Fase", () => {
+  let e = mesa();
+  oros(e, 1, 1);
+  const h = poner(e, 1, "mano", "Heraldos del Titán");
+  poner(e, 0, "defensa", "Valefor");
+  e = aplicar(e, { tipo: "batalla" });
+  assert.equal(e.fase, "momento");
+  e = aplicar(e, { tipo: "pasarMomento" });
+  assert.equal(puedeJugar(e, h, undefined), true);
 });
 
 test("Herido Peleo Mejor: cada jugador conserva un Aliado y Baraja los demás; con tres o más genera un Oro para Aliados", () => {
@@ -401,8 +426,20 @@ test("Huida de Marte: se Destierra y robas dos cartas", () => {
   assert.equal(e.jugadores[0].mano.length, 2);
 });
 
-test("Huida de Marte: hasta tu próximo turno solo se puede atacar con hasta dos Aliados por turno", { todo: "efecto: máximo de Aliados atacantes por turno, para ambos jugadores" }, () => {
-  assert.fail();
+test("Huida de Marte: hasta tu próximo turno solo se puede atacar con hasta dos Aliados por turno", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const h = poner(e, 0, "mano", "Huida de Marte");
+  const [a1, a2, a3] = [1, 2, 3].map(() => poner(e, 0, "defensa", "Valefor"));
+  e = sinRespuesta(aplicar(e, jugar(h)));
+  const f = e.efectos.find((x) => x.tipo === "maxAtacantes");
+  assert.equal(f.n, 2);
+  assert.equal(f.j, undefined);
+  assert.equal(f.fin.inicioDe, 0);
+  e = aplicar(e, { tipo: "batalla" });
+  e = aplicar(e, { tipo: "atacar", uid: a1 });
+  e = aplicar(e, { tipo: "atacar", uid: a2 });
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "atacar" && a.uid === a3), false);
 });
 
 test("Hundir Barcos: Baraja una carta de coste 2 o menos y roba una", () => {
@@ -464,7 +501,7 @@ test("Identidad Secreta: Anula un Arma de coste 3 o menos y la Destierra", () =>
   assert.equal(e.armas[v], undefined);
 });
 
-test("Identidad Secreta: también Anula un Tótem de coste 3 o menos", { todo: "respuesta: filtro de la carta respondida por varios tipos (Arma o Tótem)" }, () => {
+test("Identidad Secreta: también Anula un Tótem de coste 3 o menos", () => {
   let e = mesa();
   oros(e, 0, 1);
   const t = poner(e, 0, "mano", "Isla de Poveglia");
@@ -472,6 +509,8 @@ test("Identidad Secreta: también Anula un Tótem de coste 3 o menos", { todo: "
   oros(e, 1, 1);
   e = aplicar(e, jugar(t));
   assert.equal(responde(e, is), true);
+  e = sinRespuesta(aplicar(e, { tipo: "responder", uid: is }));
+  assert.equal(zonaDe(e, t), "destierro");
 });
 
 test("Identidad Secreta: Destierra las Armas en juego", () => {
@@ -542,7 +581,21 @@ test("Iluminar el Camino: solo en respuesta a la segunda carta del turno oponent
   assert.fail();
 });
 
-test("Iluminar el Camino: el oponente solo juega una carta más de ese tipo y tú no juegas más cartas este turno", { todo: "efecto: límite de cartas jugadas de un tipo por turno para el oponente y no jugar más cartas para ti" }, () => {
+test("Iluminar el Camino: tú no puedes jugar más cartas este turno", () => {
+  let e = mesa();
+  oros(e, 0, 3);
+  const v = poner(e, 0, "mano", "Valefor");
+  const v2 = poner(e, 0, "mano", "Valefor");
+  const ic = poner(e, 1, "mano", "Iluminar el Camino");
+  const gc = poner(e, 1, "mano", "Guerra Celestial");
+  oros(e, 1, 2);
+  e = sinRespuesta(aplicar(aplicar(e, jugar(v)), { tipo: "responder", uid: ic }));
+  assert.equal(e.efectos.some((f) => f.tipo === "noJugarMas" && f.j === 1), true);
+  e = aplicar(e, jugar(v2));
+  assert.equal(responde(e, gc), false);
+});
+
+test("Iluminar el Camino: el oponente solo puede jugar una carta más de ese mismo tipo este turno", { todo: "efecto: límite de cartas jugadas de un tipo concreto por turno (maxPorTipo limita todos los tipos)" }, () => {
   assert.fail();
 });
 
@@ -578,8 +631,14 @@ test("Intervencion Divina: mueve un Aliado a la Línea de Ataque", () => {
   assert.equal(zonaDe(e, v), "ataque");
 });
 
-test("Intervencion Divina: puede jugarse al comienzo de cualquier Fase", { todo: "momento: jugar un Talismán al comienzo de cualquier Fase" }, () => {
-  assert.fail();
+test("Intervencion Divina: puede jugarse al comienzo de cualquier Fase", () => {
+  let e = mesa();
+  const id1 = poner(e, 1, "mano", "Intervencion Divina");
+  poner(e, 0, "defensa", "Valefor");
+  e = aplicar(e, { tipo: "batalla" });
+  assert.equal(e.fase, "momento");
+  e = aplicar(e, { tipo: "pasarMomento" });
+  assert.equal(puedeJugar(e, id1, undefined), true);
 });
 
 test("Invasión: un Oro oponente pierde su habilidad, es Desterrado y robas dos", () => {
@@ -617,8 +676,15 @@ test("Invasión: tiene Exhumar y no puede ser Anulado", () => {
   assert.equal(puedeJugar(e, inv, "cementerio"), true);
 });
 
-test("Invasión: solo puede ser jugada pagando su coste", { todo: "restricción: la carta solo puede jugarse pagando su coste" }, () => {
-  assert.fail();
+test("Invasión: solo puede ser jugada pagando su coste", () => {
+  const e = mesa();
+  oros(e, 0, 3);
+  const inv = poner(e, 0, "mano", "Invasión");
+  const fr = { ctx: { ctrl: 0, vars: { x: [inv] } }, pasos: [], i: 0 };
+  OPS.jugarGratis(e, { var: "x" }, fr);
+  assert.equal(fr.pasos.length, 0);
+  assert.equal(zonaDe(e, inv), "mano");
+  assert.equal(e.jugadores[0].reserva.length, 3);
 });
 
 test("Invocar Anfibios: cancela la habilidad de una carta en juego", () => {
@@ -631,7 +697,17 @@ test("Invocar Anfibios: cancela la habilidad de una carta en juego", () => {
   assert.equal(N.activa(e, p), false);
 });
 
-test("Invocar Anfibios: cancela la habilidad de una carta fuera del juego y se juega mostrando la mano", { todo: "efecto: cancelar la habilidad de una carta fuera del juego; coste: mostrar la mano" }, () => {
+test("Invocar Anfibios: cancela la habilidad de una carta fuera del juego", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const ia = poner(e, 0, "mano", "Invocar Anfibios");
+  const g = poner(e, 1, "cementerio", "Gula");
+  e = sinRespuesta(aplicar(e, jugar(ia)));
+  e = elegir(e, g);
+  assert.equal(N.activa(e, g), false);
+});
+
+test("Invocar Anfibios: para jugarla muestras tu mano", { todo: "coste: mostrar la mano a los oponentes" }, () => {
   assert.fail();
 });
 
@@ -650,7 +726,17 @@ test("Invocar Ángeles: juega un Aliado Ángel de tu Cementerio reduciendo su co
   assert.equal(e.jugadores[0].reserva.length, 0);
 });
 
-test("Invocar Ángeles: solo desde tu mano pagando su coste, y el oponente juega mostrando su mano", { todo: "restricción: la carta solo puede jugarse pagando su coste; efecto: el oponente juega con la mano revelada" }, () => {
+test("Invocar Ángeles: solo puede jugarse pagando su coste", () => {
+  const e = mesa();
+  oros(e, 0, 3);
+  const ia = poner(e, 0, "mano", "Invocar Ángeles");
+  const fr = { ctx: { ctrl: 0, vars: { x: [ia] } }, pasos: [], i: 0 };
+  OPS.jugarGratis(e, { var: "x" }, fr);
+  assert.equal(fr.pasos.length, 0);
+  assert.equal(zonaDe(e, ia), "mano");
+});
+
+test("Invocar Ángeles: el oponente juega mostrando su mano por el resto del juego", { todo: "efecto: el oponente juega con la mano revelada" }, () => {
   assert.fail();
 });
 
@@ -739,10 +825,14 @@ test("Jugando con el Demonio: si atacaste en tu turno anterior, pagas un Oro y l
   e = aplicar(e, { tipo: "habilidad", uid: jd, def: id("Jugando con el Demonio"), h: 0 });
   assert.equal(zonaDe(e, jd), "destierro");
   assert.equal(e.jugadores[0].reserva.length, 0);
-  assert.equal(e.efectos.some((f) => f.tipo === "inmuneRival" && f.j === 0), true);
+  assert.equal(e.efectos.some((f) => f.tipo === "proteccion" && f.de === 0 && f.por === "todo"), true);
+  const v = poner(e, 0, "defensa", "Valefor");
+  const danza = poner(e, 1, "mano", "Danza del Cuchillo");
+  const ctx = { ctrl: 1, fuente: danza, def: e.instancias[danza], vars: {} };
+  assert.equal(cumple(e, ctx, v, {}, "destruir"), false);
 });
 
-test("Jugando con el Demonio: no eres afectado por efectos oponentes este turno, requiere haber atacado con dos o más Aliados", { todo: "efecto: el jugador no es afectado por efectos oponentes; condición: cantidad de Aliados atacantes en el turno anterior" }, () => {
+test("Jugando con el Demonio: el jugador mismo no es afectado y requiere haber atacado con dos o más Aliados", { todo: "efecto: inmunidad del jugador (no solo de sus cartas) a efectos oponentes; condición: cantidad de Aliados atacantes en el turno anterior" }, () => {
   assert.fail();
 });
 

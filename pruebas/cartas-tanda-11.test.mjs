@@ -62,7 +62,24 @@ test("Exorcismo de Carmen Marín: Descartando una carta elige ambos efectos", ()
   assert.equal(N.activa(e, v), false);
 });
 
-test("Exorcismo de Carmen Marín: las cartas en los Destierros pierden su habilidad por cuatro turnos", { todo: "efecto: las cartas en los Destierros pierden su habilidad durante N turnos" }, () => {});
+test("Exorcismo de Carmen Marín: las cartas en los Destierros pierden su habilidad durante este y los siguientes tres turnos", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  const ex = poner(e, 0, "mano", "Exorcismo de Carmen Marín");
+  const c1 = poner(e, 1, "cementerio", "Valefor");
+  const propia = poner(e, 0, "destierro", "Expulsion");
+  const t = e.turno;
+  assert.equal(N.activa(e, propia), true);
+  e = hacer(e, jugar(ex), "Desterrar un Cementerio", "Desterrar el Cementerio oponente");
+  assert.equal(N.activa(e, c1), false);
+  assert.equal(N.activa(e, propia), false);
+  e.turno = t + 2;
+  N.expirar(e, "finTurno");
+  e.turno = t + 3;
+  assert.equal(N.activa(e, propia), false);
+  N.expirar(e, "finTurno");
+  assert.equal(N.activa(e, propia), true);
+});
 
 test("Expulsar del Eden: Baraja una carta oponente de coste 2 o menos", () => {
   let e = mesa();
@@ -279,7 +296,28 @@ test("Fin de Travesia: Baraja las cartas convertidas que no sean Oros en el Cast
   assert.equal(zonaDe(e, libre), "defensa");
 });
 
-test("Fin de Travesia: si atacaste en tu turno anterior no puede ser Anulado ni prevenido", { todo: "clave condicional: no puede ser Anulado si atacaste en tu turno anterior" }, () => {});
+test("Fin de Travesia: si atacaste en tu turno anterior no puede ser Anulado", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  oros(e, 1, 3);
+  const f = poner(e, 0, "mano", "Fin de Travesia");
+  const g = poner(e, 1, "mano", "Gran Diluvio");
+  e.jugadores[0].atacoTurnoAnterior = true;
+  e = aplicar(e, jugar(f));
+  assert.equal(puedeResponder(e, g), false);
+});
+
+test("Fin de Travesia: si no atacaste en tu turno anterior puede ser Anulado", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  oros(e, 1, 3);
+  const f = poner(e, 0, "mano", "Fin de Travesia");
+  const g = poner(e, 1, "mano", "Gran Diluvio");
+  e = aplicar(e, jugar(f));
+  assert.equal(puedeResponder(e, g), true);
+});
+
+test("Fin de Travesia: no puede ser prevenido", { todo: "clave condicional: el Talismán no puede ser prevenido" }, () => {});
 
 test("Fision Nuclear: al jugarla se Destierra", () => {
   let e = mesa();
@@ -289,9 +327,37 @@ test("Fision Nuclear: al jugarla se Destierra", () => {
   assert.equal(zonaDe(e, f), "destierro");
 });
 
-test("Fision Nuclear: hasta tu próximo turno no puedes ser afectado por efectos oponentes", { todo: "protección: el jugador y sus cartas no pueden ser afectados por efectos oponentes salvo pagando un coste" }, () => {});
+test("Fision Nuclear: hasta tu próximo turno no puedes ser afectado por efectos oponentes", { todo: "protección: el jugador es inmune a efectos oponentes y afectar sus cartas cuesta Desterrar una carta de la mano (no Oros)" }, () => {});
 
-test("Fision Nuclear: en la próxima Fase Final oponente Baraja una carta de coste 2 o menos o Roba dos", { todo: "disparo diferido: en la próxima Fase Final oponente" }, () => {});
+test("Fision Nuclear: en la próxima Fase Final oponente Baraja una carta de coste 2 o menos", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const f = poner(e, 0, "mano", "Fision Nuclear");
+  const v = poner(e, 1, "defensa", "Valefor");
+  e = hacer(e, jugar(f));
+  assert.equal(e.efectos.some((x) => x.tipo === "diferido" && x.cuando === "faseFinalRival"), true);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.activo, 1);
+  assert.equal(zonaDe(e, v), "defensa");
+  for (let i = 0; i < 10 && !e.pendiente; i++) e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.pendiente.jugador, 0);
+  e = elegir(e, "Barajar una carta de coste 2 o menos");
+  e = elegir(e, v);
+  assert.equal(zonaDe(e, v), "castillo");
+  assert.equal(e.efectos.some((x) => x.tipo === "diferido"), false);
+});
+
+test("Fision Nuclear: en la próxima Fase Final oponente puede Robar dos cartas", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const f = poner(e, 0, "mano", "Fision Nuclear");
+  e = hacer(e, jugar(f));
+  e = aplicar(e, { tipo: "terminar" });
+  const mano = e.jugadores[0].mano.length;
+  for (let i = 0; i < 10 && !e.pendiente; i++) e = aplicar(e, { tipo: "terminar" });
+  e = elegir(e, "Robar dos cartas");
+  assert.equal(e.jugadores[0].mano.length, mano + 2);
+});
 
 test("Flecha Ácida: Destruye un Aliado oponente de Fuerza 2 o menos y Roba una carta", () => {
   let e = mesa();

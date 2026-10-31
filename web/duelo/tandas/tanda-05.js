@@ -116,7 +116,8 @@ export const HABILIDADES = {
         hacer: [sel(["yo:mano", "yo:cementerio"], { tipo: "Oro" }, "o"), { op: "ponerOro", var: "o", a: "pagado" }],
       },
     ],
-    fns: { segundo: segundoSumando("barajar") },
+    continuas: [{ a: "propia", fuerzaPor: "orosPagados" }],
+    fns: { segundo: segundoSumando("barajar"), orosPagados: (e, ctx) => e.jugadores[ctx.ctrl].pagado.length },
   },
   "Gusano Blanco": {
     claves: ["Exhumar"],
@@ -179,8 +180,16 @@ export const HABILIDADES = {
         coste: [sel(["fuente"], {}, "yo"), mov("desterrar", "yo")],
         hacer: [sel(["todos:enJuego"], { costeMax: 1 }, "x", { para: "destruir" }), mov("destruir")],
       },
+      {
+        texto: "Desterrarlo: Anular una carta de coste 1 o menos",
+        respuesta: { anula: { costeMax: 1 } },
+        requiere: "soloRespuesta",
+        coste: [sel(["fuente"], {}, "yo"), mov("desterrar", "yo")],
+        hacer: [],
+      },
     ],
     fns: {
+      soloRespuesta: () => false,
       dragon: (e, ctx, u) => (N.carta(e, u).razas ?? []).includes("Dragón") && asequible(0)(e, ctx, u),
       jugar: jugarReducido(0),
     },
@@ -222,10 +231,22 @@ export const HABILIDADES = {
         veces: "turno",
         oros: 1,
         requiere: "hayAliado",
-        hacer: [sel(["yo:cementerio"], { tipo: "Aliado", noFuente: true, f: "asequible" }, "x"), { op: "fn", f: "jugar" }],
+        hacer: [{ op: "fn", f: "gastar" }, sel(["yo:cementerio"], { tipo: "Aliado", noFuente: true, f: "asequible" }, "x"), { op: "fn", f: "jugar" }],
+      },
+      {
+        texto: "Pagar un Oro: Anular una carta",
+        respuesta: { anula: {} },
+        veces: "turno",
+        oros: 1,
+        requiere: "soloRespuesta",
+        hacer: [{ op: "fn", f: "gastar" }],
       },
     ],
     fns: {
+      soloRespuesta: () => false,
+      gastar: (e, ctx) => {
+        for (const h of [0, 1]) e.usos[`${ctx.fuente}|${ctx.def}|${h}`] = e.turno;
+      },
       noDeMano: (e, ctx) => ctx.datos.desde !== "mano",
       asequible: asequible(1),
       hayAliado: (e, ctx) => {
@@ -236,10 +257,10 @@ export const HABILIDADES = {
     },
   },
   Leviathan: {
+    claves: ["NoBarajable"],
     disparadas: [
       { cuando: ["entra"], hacer: [sel(["todos:enJuego"], { noTipo: ["Oro"] }, "x", { n: 2, hasta: true, para: "desterrar" }), mov("desterrar"), robar(2)] },
       { cuando: ["ataca"], quien: "rival", hacer: [{ op: "fn", f: "sinDano" }] },
-      { cuando: ["faseFinal"], si: "hayTomados", hacer: [{ op: "fn", f: "barajarTomados" }] },
     ],
     activadas: [
       {
@@ -256,26 +277,23 @@ export const HABILIDADES = {
       },
       puedeTomar: (e, ctx) => N.orosDe(e, ctx.ctrl).length > 0 && N.orosDe(e, N.rival(ctx.ctrl)).some((u) => N.puedeTomar(e, u, ctx.ctrl)),
       tomar: (e, ctx) => {
-        const clave = `leviathan|${ctx.fuente}`;
+        const pasos = [];
         for (const u of ctx.vars.o ?? []) {
           if (!N.puedeTomar(e, u, ctx.ctrl)) continue;
           N.mover(e, u, N.ubicar(e, u).zona, { j: ctx.ctrl });
-          e.usos[clave] = [...(e.usos[clave] ?? []), u];
+          pasos.push({ op: "fn", f: "barajarTomado", uid: u });
         }
+        return pasos.length ? [{ op: "diferir", cuando: "faseFinalPropia", pasos }] : [];
       },
-      hayTomados: (e, ctx) => (e.usos[`leviathan|${ctx.fuente}`] ?? []).length > 0,
-      barajarTomados: (e, ctx) => {
-        const clave = `leviathan|${ctx.fuente}`;
-        for (const u of e.usos[clave] ?? []) {
-          if (!N.enJuego(e, u) || N.controlador(e, u) !== ctx.ctrl) continue;
-          N.mover(e, u, "castillo");
-          N.barajarCastillo(e, N.dueno(u));
-        }
-        delete e.usos[clave];
+      barajarTomado: (e, ctx, api, p) => {
+        if (!N.enJuego(e, p.uid) || N.controlador(e, p.uid) !== ctx.ctrl) return;
+        N.mover(e, p.uid, "castillo");
+        N.barajarCastillo(e, N.dueno(p.uid));
       },
     },
   },
   Lluhay: {
+    continuas: [{ proteccion: { por: ["Aliado"] }, a: "propia" }],
     disparadas: [{ cuando: ["entra"], quien: "yo", veces: 2, si: "dragon", hacer: [{ op: "botar", nf: "fuerzaEntrante", quien: "rival" }] }],
     fns: {
       dragon: (e, ctx) => {
@@ -352,7 +370,7 @@ export const HABILIDADES = {
   Nefandos: {
     claves: ["Furia", "Exhumar"],
     disparadas: [{ cuando: ["entra"], opcional: true, hacer: [sel(["yo:mano", "yo:cementerio"], { tipo: "Aliado", costeMax: 2 }, "x"), { op: "jugarGratis", var: "x" }] }],
-    continuas: [{ gana: "Indesterrable", a: "tusAliados" }, { gana: "DanoAlDestierro", a: "tusAliados" }],
+    continuas: [{ gana: "Indesterrable", a: "tusDemasAliados" }, { gana: "DanoAlDestierro", a: "tusDemasAliados" }],
   },
   Nguruvilu: {
     claves: ["Furia", "Imbloqueable", "NoAnulable"],
@@ -395,13 +413,18 @@ export const HABILIDADES = {
         texto: "Pagar un Oro y ponerlo al fondo de tu Castillo: reducir a cero el próximo daño a tu Castillo",
         zona: "mano",
         oros: 1,
-        hacer: [sel(["fuente"], {}, "yo"), mov("fondo", "yo")],
+        hacer: [sel(["fuente"], {}, "yo"), mov("fondo", "yo"), { op: "fn", f: "prevenir" }],
       },
     ],
-    fns: { red: orosControlados },
+    fns: {
+      red: orosControlados,
+      prevenir: (e, ctx) => {
+        N.agregarEfecto(e, { tipo: "prevenirDano", j: ctx.ctrl, unaVez: true, fin: "juego" }, ctx.ctrl);
+      },
+    },
   },
   "Quetzalcóatl, el Sol Tenebris": {
-    claves: ["Furia", "Exhumar", "NoAnulable"],
+    claves: ["Furia", "Exhumar", "NoAnulable", "NoPierdeHabilidad"],
     disparadas: [{ cuando: ["entra"], opcional: true, hacer: [sel(["yo:cementerio"], {}, "c", { n: 2, hasta: true }), mov("mano", "c")] }],
     activadas: [
       {
@@ -413,6 +436,7 @@ export const HABILIDADES = {
   },
   "Ryujin el Atormentador": {
     claves: ["Exhumar", "Furia"],
+    costeAlternativo: { botar: 4, reduce: 1 },
     disparadas: [{ cuando: ["ataca"], hacer: sumandoTres("desterrar") }],
     activadas: [
       {
@@ -426,9 +450,9 @@ export const HABILIDADES = {
   "Serpiente Verde": {
     activadas: [
       {
-        texto: "Destruirlo: generar un Oro para jugar Aliados",
+        texto: "Destruirlo: generar un Oro para jugar Aliados de coste 3 o más",
         coste: [sel(["fuente"], {}, "yo"), mov("destruir", "yo")],
-        hacer: [{ op: "generar", n: 1, tipos: ["Aliado"] }],
+        hacer: [{ op: "generar", n: 1, tipos: ["Aliado"], costeMin: 3 }],
       },
     ],
     disparadas: [

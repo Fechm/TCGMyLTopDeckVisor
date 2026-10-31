@@ -140,8 +140,8 @@ const VENTANAS = {
 function coincideMomento(e, c, j, momento) {
   if (momento === "momento") return !!c.momentos?.some((m) => VENTANAS[e.momento.nombre](j, e.activo).includes(m));
   if (!c.momentos) return true;
-  if (momento === "talismanes") return c.momentos.includes("comienzoFase") || c.momentos.includes("talismanes");
-  return c.tipo !== "Talismán";
+  if (momento === "talismanes") return c.momentos.includes("comienzoFase") || c.momentos.includes("talismanes") || (c.tipo === "Talismán" && !c.soloMomentos);
+  return !c.soloMomentos;
 }
 
 function momentoJugar(e, j) {
@@ -217,7 +217,21 @@ function momentoHabilidad(e, j, m) {
 }
 
 function claveUso(e, j, uid, d, h, a) {
-  return a.veces === "turnoNombre" ? `${j}|${d.nombre}|${h}` : `${uid}|${d.id}|${h}`;
+  const id = a.grupo ? `g:${a.grupo}` : h;
+  return a.veces === "turnoNombre" ? `${j}|${d.nombre}|${id}` : `${uid}|${d.id}|${id}`;
+}
+
+function agotada(e, clave, a) {
+  const u = e.usos[clave];
+  if (a.maxVeces) return u?.turno === e.turno && u.n >= a.maxVeces;
+  return !!a.veces && u === e.turno;
+}
+
+function marcarUso(e, clave, a) {
+  if (a.maxVeces) {
+    const u = e.usos[clave];
+    e.usos[clave] = { turno: e.turno, n: u?.turno === e.turno ? u.n + 1 : 1 };
+  } else e.usos[clave] = e.turno;
 }
 
 function costePagable(e, uid, a) {
@@ -241,15 +255,16 @@ function habilidadesUsables(e, j) {
   for (const z of ["mano", "cementerio", "destierro"]) {
     for (const uid of p[z]) {
       const d = N.carta(e, uid);
-      if (!d.sinHabilidad) fuentes.push([uid, d, z]);
+      if (!d.sinHabilidad && N.activa(e, uid)) fuentes.push([uid, d, z]);
     }
   }
   const acciones = [];
   for (const [uid, d, zona] of fuentes) {
     d.activadas.forEach((a, h) => {
       if ((a.zona ?? "juego") !== zona) return;
+      if (a.respuesta && !a.tambienNormal) return;
       if (!momentoHabilidad(e, j, a.momento ?? "cualquiera")) return;
-      if (a.veces && e.usos[claveUso(e, j, uid, d, h, a)] === e.turno) return;
+      if (agotada(e, claveUso(e, j, uid, d, h, a), a)) return;
       const oros = (a.oros ?? 0) + N.impuestoHabilidad(e, j, uid, "activada");
       if (oros > disponibles(e, j)) return;
       const ctx = { ctrl: j, fuente: uid, def: d.id, costeFuente: d.coste ?? 0, vars: {} };
@@ -313,7 +328,7 @@ function respuestas(e, j, item) {
       d.activadas.forEach((h, i) => {
         if ((h.zona ?? "juego") !== zona) return;
         if (!h.respuesta || !sirve(h.respuesta.anula ?? {})) return;
-        if (h.veces && e.usos[claveUso(e, j, uid, d, i, h)] === e.turno) return;
+        if (agotada(e, claveUso(e, j, uid, d, i, h), h)) return;
         if ((h.oros ?? 0) + extra + N.impuestoHabilidad(e, j, uid, "activada") > disponibles(e, j)) return;
         if (!costePagable(e, uid, h)) return;
         a.push({ tipo: "responder", uid, def: d.id, h: i });
@@ -541,7 +556,11 @@ function sinLimiteMano(e, j) {
 
 function prevenirDano(e, j, d) {
   if (d <= 0) return d;
-  for (const { j: jj, k } of N.continuas(e)) if (jj === j && k.reduceDanoCastillo) d = Math.max(0, d - k.reduceDanoCastillo);
+  for (const { j: jj, k, d: def, uid } of N.continuas(e)) {
+    if (jj !== j) continue;
+    if (k.reduceDanoCastillo) d = Math.max(0, d - k.reduceDanoCastillo);
+    if (k.reduceDanoCastilloPor) d = Math.max(0, d - def.fns[k.reduceDanoCastilloPor](e, { ctrl: jj, fuente: uid, def: def.id }));
+  }
   for (const f of [...e.efectos]) {
     if (d <= 0) break;
     if (f.tipo !== "prevenirDano" || (f.j !== undefined && f.j !== j)) continue;
@@ -630,7 +649,7 @@ function responder(e, j, uid, accion = {}) {
     const h = d.activadas[accion.h];
     const anulado = N.carta(e, e.pila[objetivo].uid);
     const extra = anulado.sinHabilidad ? 0 : anulado.anularCuestaMas ?? 0;
-    e.usos[claveUso(e, j, uid, d, accion.h, h)] = e.turno;
+    marcarUso(e, claveUso(e, j, uid, d, accion.h, h), h);
     pagarOros(e, j, (h.oros ?? 0) + extra + N.impuestoHabilidad(e, j, uid, "activada"));
     const ctx = { ctrl: j, fuente: uid, def: d.id, costeFuente: d.coste ?? 0, objetivoPila: objetivo };
     e.cola.unshift(N.nuevoFrame([...(h.coste ?? []), { op: "anular" }, ...(h.hacer ?? [])], ctx));
@@ -689,7 +708,7 @@ function usarHabilidad(e, j, accion) {
   const d = N.def(e, accion.def);
   const a = d.activadas[accion.h];
   e.jugadores[j].habilidadesUsadas = (e.jugadores[j].habilidadesUsadas ?? 0) + 1;
-  e.usos[claveUso(e, j, accion.uid, d, accion.h, a)] = e.turno;
+  marcarUso(e, claveUso(e, j, accion.uid, d, accion.h, a), a);
   pagarOros(e, j, (a.oros ?? 0) + N.impuestoHabilidad(e, j, accion.uid, "activada"));
   if (e.fase === "talismanes") {
     e.pases = 0;

@@ -202,11 +202,13 @@ test("Gran Dragón: una vez por turno pone un Oro de tu mano o Cementerio en tu 
   assert.equal(puedeUsar(e, g), false);
 });
 
-test("Gran Dragón: gana Fuerza igual a los Oros en tu Oro Pagado", { todo: "continua: Fuerza propia igual a una cantidad variable (Oros en tu Oro Pagado)" }, () => {
+test("Gran Dragón: gana Fuerza igual a los Oros en tu Oro Pagado", () => {
   const e = mesa();
   const g = poner(e, 0, "defensa", "Gran Dragón");
+  assert.equal(N.fuerza(e, g), 3);
   poner(e, 0, "pagado", "Drácula");
   poner(e, 0, "pagado", "Drácula");
+  poner(e, 1, "pagado", "Drácula");
   assert.equal(N.fuerza(e, g), 5);
 });
 
@@ -285,14 +287,29 @@ test("Jaculus: Desterrándolo Destruye una carta de coste 1 o menos", () => {
   assert.equal(zonaDe(e, v), "cementerio");
 });
 
-test("Jaculus: Desterrándolo puede Anular una carta de coste 1 o menos", { todo: "respuesta: Anular con una habilidad activada de una carta en juego" }, () => {
+test("Jaculus: Desterrándolo puede Anular una carta de coste 1 o menos", () => {
   let e = mesa();
-  poner(e, 0, "defensa", "Jaculus");
+  const jac = poner(e, 0, "defensa", "Jaculus");
   e.activo = 1;
   oros(e, 1, 1);
   const v = poner(e, 1, "mano", "Valefor");
   e = aplicar(e, jugar(v));
-  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder"), true);
+  const r = accionesLegales(e).find((a) => a.tipo === "responder" && a.uid === jac);
+  assert.ok(r);
+  e = sinRespuesta(aplicar(e, r));
+  assert.equal(zonaDe(e, jac), "destierro");
+  assert.equal(zonaDe(e, v), "cementerio");
+});
+
+test("Jaculus: no puede Anular cartas de coste 2 o más ni usar el Anular fuera de respuesta", () => {
+  let e = mesa();
+  const jac = poner(e, 0, "defensa", "Jaculus");
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "habilidad" && a.uid === jac && a.h === 1), false);
+  e.activo = 1;
+  oros(e, 1, 2);
+  const d = poner(e, 1, "mano", "Gran Dragón");
+  e = aplicar(e, jugar(d));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder" && a.uid === jac), false);
 });
 
 test("Jormundgander: tiene Furia y al entrar Roba una carta", () => {
@@ -374,15 +391,36 @@ test("La Última Bestia: el coste reducido tiene un mínimo de 1", () => {
   assert.equal(e.jugadores[0].pagado.length, 2);
 });
 
-test("La Última Bestia: pagando un Oro puede Anular una carta", { todo: "respuesta: Anular con una habilidad activada de una carta en juego" }, () => {
+test("La Última Bestia: pagando un Oro puede Anular una carta, y eso gasta su uso del turno", () => {
   let e = mesa();
-  oros(e, 0, 1);
-  poner(e, 0, "defensa", "La Última Bestia");
+  oros(e, 0, 3);
+  const b = poner(e, 0, "defensa", "La Última Bestia");
+  poner(e, 0, "cementerio", "Draco Conjurador");
   e.activo = 1;
   oros(e, 1, 1);
   const v = poner(e, 1, "mano", "Valefor");
   e = aplicar(e, jugar(v));
-  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder"), true);
+  const r = accionesLegales(e).find((a) => a.tipo === "responder" && a.uid === b);
+  assert.ok(r);
+  e = sinRespuesta(aplicar(e, r));
+  assert.equal(zonaDe(e, v), "cementerio");
+  assert.equal(e.jugadores[0].pagado.length, 1);
+  e.activo = 0;
+  e.fase = "vigilia";
+  assert.equal(puedeUsar(e, b), false);
+});
+
+test("La Última Bestia: tras jugar un Aliado de tu Cementerio ya no puede Anular ese turno", () => {
+  let e = mesa();
+  oros(e, 0, 5);
+  const b = poner(e, 0, "defensa", "La Última Bestia");
+  poner(e, 0, "cementerio", "Valefor");
+  e = aplicar(e, habilidad(b, "La Última Bestia"));
+  e.activo = 1;
+  oros(e, 1, 1);
+  const v = poner(e, 1, "mano", "Valefor");
+  e = aplicar(e, jugar(v));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder" && a.uid === b), false);
 });
 
 test("Leviathan: al entrar Destierra hasta dos cartas que no sean Oro y Roba dos", () => {
@@ -426,16 +464,18 @@ test("Leviathan: no recibes daño de combate", () => {
   assert.equal(f.jugadores[0].castillo.length, 28);
 });
 
-test("Leviathan: no puede ser Barajado", { todo: "clave: no puede ser Barajado" }, () => {
+test("Leviathan: no puede ser Barajado", () => {
   let e = mesa();
   oros(e, 0, 2);
   const l = poner(e, 1, "defensa", "Leviathan");
   const g = poner(e, 0, "mano", "Gran Dragón");
-  e = aplicar(e, jugar(g));
+  e = sinRespuesta(aplicar(e, jugar(g)));
   assert.equal(e.pendiente?.opciones.some((o) => o.valor === l) ?? false, false);
+  if (e.pendiente) e = elegir(e, null);
   const mortaja = poner(e, 0, "mano", "Mortaja");
   oros(e, 0, 3);
   e = sinRespuesta(aplicar(e, jugar(mortaja)));
+  assert.equal(zonaDe(e, g), "castillo");
   assert.equal(zonaDe(e, l), "defensa");
 });
 
@@ -464,13 +504,15 @@ test("Lluhay: no se dispara con Aliados que no son Dragón", () => {
   assert.equal(e.jugadores[1].castillo.length, 30);
 });
 
-test("Lluhay: no puede ser afectado por Aliados", { todo: "protección: no puede ser afectado por Aliados" }, () => {
+test("Lluhay: no puede ser afectado por Aliados", () => {
   let e = mesa();
   oros(e, 0, 3);
   const l = poner(e, 1, "defensa", "Lluhay");
+  const p = poner(e, 1, "defensa", "Sir Persival");
   const g = poner(e, 0, "mano", "Gente Reptil");
-  e = aplicar(e, jugar(g));
+  e = sinRespuesta(aplicar(e, jugar(g)));
   assert.equal(e.pendiente.opciones.some((o) => o.valor === l), false);
+  assert.equal(e.pendiente.opciones.some((o) => o.valor === p), true);
 });
 
 test("Lord Ruthven: tiene Exhumar y al entrar puedes poner un Oro de tu mano en tu Oro Pagado", () => {
@@ -548,12 +590,14 @@ test("Nefandos: al entrar juega gratis un Aliado de coste 2 o menos de tu mano o
 
 test("Nefandos: tus demás Aliados no pueden ser Desterrados y hacen daño de combate al Destierro", () => {
   const e = mesa();
-  poner(e, 0, "defensa", "Nefandos");
+  const n = poner(e, 0, "defensa", "Nefandos");
   const v = poner(e, 0, "defensa", "Valefor");
   const r = poner(e, 1, "defensa", "Valefor");
   assert.equal(N.tiene(e, v, "Indesterrable"), true);
   assert.equal(N.tiene(e, v, "DanoAlDestierro"), true);
   assert.equal(N.tiene(e, r, "Indesterrable"), false);
+  assert.equal(N.tiene(e, n, "Indesterrable"), false);
+  assert.equal(N.tiene(e, n, "DanoAlDestierro"), false);
 });
 
 test("Nguruvilu: reduce su coste por cada Oro que controles y Aliado en tu Cementerio, hasta un mínimo de 3", () => {
@@ -652,7 +696,7 @@ test("Piruquina: desde tu mano, pagando un Oro, se pone al fondo de tu Castillo"
   assert.equal(e.jugadores[0].pagado.length, 1);
 });
 
-test("Piruquina: reduce a cero el próximo daño a tu Castillo", { todo: "efecto: prevenir el próximo daño a tu Castillo" }, () => {
+test("Piruquina: reduce a cero el próximo daño a tu Castillo", () => {
   let e = mesa();
   oros(e, 0, 1);
   const p = poner(e, 0, "mano", "Piruquina");
@@ -660,6 +704,7 @@ test("Piruquina: reduce a cero el próximo daño a tu Castillo", { todo: "efecto
   const s = poner(e, 1, "defensa", "Sir Persival");
   e = rivalAtaca(e, s);
   assert.equal(e.jugadores[0].castillo.length, 31);
+  assert.equal(e.efectos.some((f) => f.tipo === "prevenirDano"), false);
 });
 
 test("Quetzalcóatl: tiene Furia, Exhumar y no puede ser Anulado; al entrar sube hasta dos cartas de tu Cementerio a tu mano", () => {
@@ -672,6 +717,8 @@ test("Quetzalcóatl: tiene Furia, Exhumar y no puede ser Anulado; al entrar sube
   assert.equal(zonaDe(e, a), "mano");
   assert.equal(zonaDe(e, b), "mano");
   for (const k of ["Furia", "Exhumar", "NoAnulable"]) assert.equal(N.tiene(e, q, k), true);
+  N.agregarEfecto(e, { tipo: "pierdeHabilidad", uid: q }, 1);
+  assert.equal(N.activa(e, q), true);
 });
 
 test("Quetzalcóatl: una vez por turno Baraja hasta seis cartas de los Cementerios y Roba dos", () => {
@@ -711,11 +758,16 @@ test("Ryujin: una vez por turno Baraja hasta tres cartas de tu Cementerio y Roba
   assert.equal(puedeUsar(e, r), false);
 });
 
-test("Ryujin: al jugarlo puedes Botar cuatro cartas para que cueste un Oro menos", { todo: "coste alternativo opcional al jugar: Botar cartas para reducir el coste" }, () => {
-  const e = mesa();
+test("Ryujin: al jugarlo puedes Botar cuatro cartas para que cueste un Oro menos", () => {
+  let e = mesa();
   const r = poner(e, 0, "mano", "Ryujin el Atormentador");
   oros(e, 0, 2);
-  assert.equal(accionesLegales(e).some((a) => a.tipo === "jugar" && a.uid === r), true);
+  assert.deepEqual(accionesLegales(e).filter((a) => a.tipo === "jugar" && a.uid === r), [{ tipo: "jugar", uid: r, alternativo: true }]);
+  e = sinRespuesta(aplicar(e, jugar(r, { alternativo: true })));
+  assert.equal(zonaDe(e, r), "defensa");
+  assert.equal(e.jugadores[0].castillo.length, 26);
+  assert.equal(e.jugadores[0].cementerio.length, 4);
+  assert.equal(e.jugadores[0].reserva.length, 0);
 });
 
 test("Serpiente Verde: Destruyéndola genera un Oro para jugar Aliados y, sin Aliados de coste 1 o menos, Baraja hasta cuatro cartas de los Cementerios", () => {
@@ -729,7 +781,8 @@ test("Serpiente Verde: Destruyéndola genera un Oro para jugar Aliados y, sin Al
   e = elegir(e, null);
   assert.equal(zonaDe(e, s), "cementerio");
   assert.deepEqual(c.map((u) => zonaDe(e, u)), ["castillo", "castillo"]);
-  assert.deepEqual(e.jugadores[0].generados, [{ n: 1, tipos: ["Aliado"] }]);
+  assert.equal(disponibles(e, 0, { tipo: "Aliado", coste: 2 }), 0);
+  assert.equal(disponibles(e, 0, { tipo: "Aliado", coste: 3 }), 1);
 });
 
 test("Serpiente Verde: si controlas un Aliado de coste 1 o menos no Baraja", () => {

@@ -15,14 +15,31 @@ function disparar(e, evento, datos) {
   return e;
 }
 
+function atacarSolo(e, uid) {
+  e = aplicar(e, { tipo: "batalla" });
+  e = aplicar(e, { tipo: "atacar", uid });
+  e = aplicar(e, { tipo: "finAtaque" });
+  const antes = e.registro.length;
+  for (let i = 0; i < 30 && e.registro.length === antes; i++) {
+    const l = accionesLegales(e);
+    e = aplicar(e, l.find((x) => ["finBloqueo", "pasar", "noResponder"].includes(x.tipo)) ?? l[0]);
+  }
+  return e;
+}
+
+const anularAliado = (e) => {
+  (e.jugadores[1].jugadas.anuladas ??= {}).Aliado = 1;
+  return e;
+};
+
 test("Cadenas de Titán: no puede ser Anulado", () => {
   const e = mesa();
   const c = poner(e, 0, "mano", "Cadenas de Titán");
   assert.equal(N.carta(e, c).claves.includes("NoAnulable"), true);
 });
 
-test("Cadenas de Titán: el oponente Destierra seis cartas de su Castillo, robas dos y tus Aliados no le hacen daño", () => {
-  let e = mesa();
+test("Cadenas de Titán: el oponente Destierra seis cartas de su Castillo, robas dos y el oponente no recibe daño este turno", () => {
+  let e = anularAliado(mesa());
   oros(e, 0, 1);
   const v = poner(e, 0, "defensa", "Valefor");
   const c = poner(e, 0, "mano", "Cadenas de Titán");
@@ -30,12 +47,29 @@ test("Cadenas de Titán: el oponente Destierra seis cartas de su Castillo, robas
   assert.equal(e.jugadores[1].destierro.length, 6);
   assert.equal(e.jugadores[1].castillo.length, 24);
   assert.equal(e.jugadores[0].mano.length, 2);
-  assert.equal(e.efectos.some((f) => f.tipo === "sinDano" && f.uid === v), true);
+  e = atacarSolo(e, v);
+  assert.equal(e.jugadores[1].castillo.length, 24);
 });
 
-test("Cadenas de Titán: solo se juega si un Aliado fue Anulado este turno", { todo: "condición: un Aliado fue Anulado este turno" }, () => {});
+test("Cadenas de Titán: solo se juega si un Aliado fue Anulado este turno", () => {
+  const e = mesa();
+  oros(e, 0, 1);
+  const c = poner(e, 0, "mano", "Cadenas de Titán");
+  assert.equal(puedeJugar(e, c), false);
+  anularAliado(e);
+  assert.equal(puedeJugar(e, c), true);
+});
 
-test("Cadenas de Titán: no se pueden jugar más cartas este turno", { todo: "efecto: no se pueden jugar más cartas este turno" }, () => {});
+test("Cadenas de Titán: no se pueden jugar más cartas este turno", () => {
+  let e = anularAliado(mesa());
+  oros(e, 0, 4);
+  const c = poner(e, 0, "mano", "Cadenas de Titán");
+  const v = poner(e, 0, "mano", "Valefor");
+  poner(e, 0, "mano", "Drácula");
+  assert.equal(puedeJugar(e, v), true);
+  e = sinRespuesta(aplicar(e, jugar(c)));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "jugar" || a.tipo === "oro"), false);
+});
 
 test("Cae la Casa Usher: baraja hasta tres cartas de tu Cementerio y roba dos", () => {
   let e = mesa();
@@ -89,7 +123,20 @@ test("Cae la Reina: Exhumar, se juega desde el Cementerio", () => {
   assert.equal(accionesLegales(e).some((a) => a.tipo === "jugar" && a.uid === r && a.desde === "cementerio"), true);
 });
 
-test("Cae la Reina: solo puede jugarse pagando su coste", { todo: "restricción: la carta solo puede jugarse pagando su coste" }, () => {});
+test("Cae la Reina: solo puede jugarse pagando su coste", () => {
+  let e = mesa();
+  oros(e, 0, 3);
+  const c = poner(e, 0, "mano", "Conocimiento Prohibido");
+  const reina = poner(e, 0, "castillo", "Cae la Reina");
+  const suyo = poner(e, 1, "castillo", "Guillatún");
+  e = sinRespuesta(aplicar(e, jugar(c)));
+  e = elegir(e, reina);
+  e = elegir(e, suyo);
+  e = elegir(e, "Jugar el tuyo y Desterrar el del oponente");
+  assert.equal(zonaDe(e, reina), "castillo");
+  assert.equal(zonaDe(e, suyo), "destierro");
+  assert.equal(e.jugadores[0].mano.length, 0);
+});
 
 test("Caida del Alba: si el oponente Destierra una carta de su mano con el nombre nombrado, no buscas", () => {
   let e = mesa();
@@ -139,10 +186,26 @@ test("Cambiar de Tamaño: el oponente Destierra tantas cartas como Fuerza de los
   e = hacer(e, jugar(t), v, d);
   assert.equal(e.jugadores[1].destierro.length, 3);
   assert.equal(zonaDe(e, d), "castillo");
-  for (const a of [v, otro]) assert.equal(e.efectos.some((f) => f.tipo === "sinDano" && f.uid === a && f.fin.finTurno === e.turno + 1), true);
+  assert.equal(e.efectos.some((f) => f.tipo === "prevenirDano" && f.j === undefined && f.fin.finTurno === e.turno + 1), true);
+  assert.equal(zonaDe(e, otro), "defensa");
 });
 
-test("Cambiar de Tamaño: los jugadores no reciben daño de combate (incluye Aliados que entren después)", { todo: "efecto: los jugadores no reciben daño de combate durante un período" }, () => {});
+test("Cambiar de Tamaño: los jugadores no reciben daño de combate durante este y el siguiente turno", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const t = poner(e, 0, "mano", "Cambiar de Tamaño");
+  e = sinRespuesta(aplicar(e, jugar(t)));
+  const mio = poner(e, 0, "defensa", "Sir Persival");
+  const suyo = poner(e, 1, "defensa", "Sir Persival");
+  e = atacarSolo(e, mio);
+  assert.equal(e.jugadores[1].castillo.length, 30);
+  assert.equal(e.activo, 1);
+  const antes = e.jugadores[0].castillo.length;
+  e = atacarSolo(e, suyo);
+  assert.equal(e.jugadores[0].castillo.length, antes);
+  assert.equal(e.registro.at(-1).dano, 0);
+  assert.equal(e.efectos.some((f) => f.tipo === "prevenirDano"), false);
+});
 
 test("Camino del Guerrero: requiere controlar y/o mostrar cuatro Aliados", () => {
   const e = mesa();
@@ -211,13 +274,14 @@ test("Canto de los Serafin: puede Desterrar una carta oponente que no sea Oro", 
   assert.equal(zonaDe(e, j), "destierro");
 });
 
-test("Canto de los Serafin: no recibir daño hace que los Aliados oponentes no hagan daño este turno", () => {
+test("Canto de los Serafin: no recibir daño este turno previene el daño de combate a su Castillo", () => {
   let { e, canto } = cantoListo();
-  const j = poner(e, 0, "defensa", "Jabberwocky");
+  const j = poner(e, 0, "defensa", "Sir Persival");
   e = sinRespuesta(aplicar(e, { tipo: "responder", uid: canto }));
   e = elegir(e, false);
   e = elegir(e, "No recibir daño este turno");
-  assert.equal(e.efectos.some((f) => f.tipo === "sinDano" && f.uid === j), true);
+  e = atacarSolo(e, j);
+  assert.equal(e.jugadores[1].castillo.length, 30);
 });
 
 test("Capa de Invisibildiad: baraja una carta de coste 2 o menos y queda Desterrada", () => {
@@ -389,7 +453,30 @@ test("Celebrar la Muerte: si llega al Cementerio por otra vía no se baraja", ()
   assert.equal(zonaDe(e, c), "cementerio");
 });
 
-test("Celebrar la Muerte: al Botarla por daño oponente puedes Desterrarla para barajar cinco cartas de los Cementerios", { todo: "disparo: cuando una carta es Botada por daño oponente" }, () => {});
+test("Celebrar la Muerte: al Botarla por daño oponente puedes Desterrarla para barajar hasta cinco cartas de los Cementerios", () => {
+  let e = mesa();
+  const v = poner(e, 0, "defensa", "Sir Persival");
+  const c = poner(e, 1, "castillo", "Celebrar la Muerte");
+  e.jugadores[1].castillo = [c, ...e.jugadores[1].castillo.filter((u) => u !== c)];
+  const m = poner(e, 0, "cementerio", "Sir Galahad");
+  e = atacarSolo(e, v);
+  assert.equal(e.pendiente.jugador, 1);
+  e = elegir(e, true);
+  e = elegir(e, m);
+  e = elegir(e, null);
+  assert.equal(zonaDe(e, c), "destierro");
+  assert.equal(zonaDe(e, m), "castillo");
+});
+
+test("Celebrar la Muerte: si se Bota por otra vía no se ofrece Desterrarla", () => {
+  const e = mesa();
+  const c = poner(e, 1, "castillo", "Celebrar la Muerte");
+  e.jugadores[1].castillo = [c, ...e.jugadores[1].castillo.filter((u) => u !== c)];
+  N.quitarDelCastillo(e, 1, 1, "cementerio");
+  resolver(e);
+  assert.equal(e.pendiente ?? null, null);
+  assert.equal(zonaDe(e, c), "cementerio");
+});
 
 test("Chivateo del Mandinga: Destruye los Aliados de Fuerza 3 o más y su controlador Roba una por cada uno", () => {
   let e = mesa();
@@ -456,7 +543,7 @@ test("Clamor de los Justos: Caballero genera un Oro para Armas y Aliados", () =>
   const c = poner(e, 0, "mano", "Clamor de los Justos");
   poner(e, 0, "defensa", "Sir Galahad");
   e = hacer(e, jugar(c), (v, o) => o.texto.startsWith("Caballero"));
-  assert.deepEqual(e.jugadores[0].generados, [{ n: 1, tipos: ["Arma", "Aliado"] }]);
+  assert.deepEqual(e.jugadores[0].generados, [{ n: 1, tipos: ["Arma", "Aliado"], costeMin: 2 }]);
 });
 
 test("Clamor de los Justos: Guerrero da 2 de Fuerza a tus Aliados y Héroe encarece los Talismanes", () => {
@@ -474,7 +561,7 @@ test("Clamor de los Justos: Guerrero da 2 de Fuerza a tus Aliados y Héroe encar
   assert.equal(costeDe(e, 0, otro).pagar, 2);
 });
 
-test("Clamor de los Justos: el Oro generado solo sirve para Caballeros de coste 2 o más", { todo: "generar: Oro restringido por raza y coste mínimo" }, () => {});
+test("Clamor de los Justos: el Oro generado solo sirve para Caballeros de coste 2 o más", { todo: "generar: Oro restringido a un tipo de carta o a una Raza (Armas y/o Caballeros)" }, () => {});
 
 test("Colaborador Titán: Destierra del Castillo oponente tantas cartas como coste de tus Aliados Titán o Ignis y Roba dos", () => {
   let e = mesa();
@@ -538,6 +625,8 @@ test("Combate de Punta Gruesa: Descarta una carta que no sea Oro de la mano opon
   const c = poner(e, 0, "mano", "Combate de Punta Gruesa");
   const v = poner(e, 1, "mano", "Valefor");
   const o = poner(e, 1, "mano", "Drácula");
+  poner(e, 0, "defensa", "Sir Persival");
+  e = aplicar(e, { tipo: "batalla" });
   e = sinRespuesta(aplicar(e, jugar(c)));
   assert.equal(zonaDe(e, v), "cementerio");
   assert.equal(zonaDe(e, o), "mano");
@@ -549,12 +638,28 @@ test("Combate de Punta Gruesa: si la carta Descartada es de coste 3 o más no Ro
   oros(e, 0, 1);
   const c = poner(e, 0, "mano", "Combate de Punta Gruesa");
   const m = poner(e, 1, "mano", "Mecha-Daikaiju");
+  poner(e, 0, "defensa", "Sir Persival");
+  e = aplicar(e, { tipo: "batalla" });
   e = sinRespuesta(aplicar(e, jugar(c)));
   assert.equal(zonaDe(e, m), "cementerio");
   assert.equal(e.jugadores[0].mano.length, 0);
 });
 
-test("Combate de Punta Gruesa: se puede jugar al comienzo de cualquier Fase", { todo: "momento: jugar un Talismán al comienzo de cualquier Fase" }, () => {});
+test("Combate de Punta Gruesa: se puede jugar al comienzo de cualquier Fase, también en el turno oponente", () => {
+  let e = mesa();
+  oros(e, 1, 1);
+  const c = poner(e, 1, "mano", "Combate de Punta Gruesa");
+  poner(e, 0, "mano", "Valefor");
+  poner(e, 0, "defensa", "Sir Persival");
+  e = aplicar(e, { tipo: "batalla" });
+  assert.equal(e.fase, "momento");
+  assert.equal(puedeJugar(e, c), false);
+  e = aplicar(e, { tipo: "pasarMomento" });
+  assert.equal(puedeJugar(e, c), true);
+  e = sinRespuesta(aplicar(e, jugar(c)));
+  assert.equal(zonaDe(e, c), "cementerio");
+  assert.equal(e.jugadores[0].mano.length, 0);
+});
 
 test("Comite de Animales: por cada Aliado de coste 1 o más en juego convierte la primera carta de tu Castillo en un Aliado de Fuerza 2 con Furia", () => {
   let e = mesa();
@@ -574,7 +679,18 @@ test("Comite de Animales: por cada Aliado de coste 1 o más en juego convierte l
   assert.equal(zonaDe(e, t3), "castillo");
 });
 
-test("Comite de Animales: no puede ser Anulado ni prevenido por cartas de coste 1 o menos", { todo: "protección: no puede ser Anulado por cartas de coste 1 o menos" }, () => {});
+test("Comite de Animales: no puede ser Anulado por cartas de coste 1 o menos", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  oros(e, 1, 2);
+  const c = poner(e, 0, "mano", "Comite de Animales");
+  const cp = poner(e, 1, "mano", "Cienpies-SP");
+  const canto = poner(e, 1, "mano", "Canto de los Serafin");
+  e = aplicar(e, jugar(c));
+  const respuestas = accionesLegales(e).filter((a) => a.tipo === "responder").map((a) => a.uid);
+  assert.equal(respuestas.includes(cp), false);
+  assert.equal(respuestas.includes(canto), true);
+});
 
 test("Comite de Animales: la Raza del Aliado convertido es a tu elección", { todo: "convertir: elegir la Raza de la carta convertida" }, () => {});
 
@@ -590,6 +706,7 @@ test("Conan Doyle: juega un Aliado de coste 2 o menos desde tu mano o Cementerio
   const c = poner(e, 0, "mano", "Conan Doyle");
   const j = poner(e, 0, "cementerio", "Jabberwocky");
   const m = poner(e, 0, "mano", "Mecha-Daikaiju");
+  e = aplicar(e, { tipo: "terminar" });
   e = sinRespuesta(aplicar(e, jugar(c)));
   assert.equal(e.pendiente.opciones.some((o) => o.valor === m), false);
   e = elegir(e, j);
@@ -597,7 +714,16 @@ test("Conan Doyle: juega un Aliado de coste 2 o menos desde tu mano o Cementerio
   assert.equal(zonaDe(e, j), "defensa");
 });
 
-test("Conan Doyle: se juega en la Fase Final y se abarata si un Aliado salió del juego por efecto oponente", { todo: "momento: jugar en la Fase Final; condición: un Aliado salió del juego por un efecto oponente este turno" }, () => {});
+test("Conan Doyle: se puede jugar en la Fase Final", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  const c = poner(e, 0, "mano", "Conan Doyle");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  assert.equal(puedeJugar(e, c), true);
+});
+
+test("Conan Doyle: reduce su coste si un Aliado salió del juego por un efecto oponente este turno", { todo: "condición: un Aliado salió del juego por un efecto oponente este turno" }, () => {});
 
 test("Concilio de los Eternos: requiere controlar y/o mostrar cuatro tipos de carta distintos", () => {
   const e = mesa();
@@ -610,7 +736,23 @@ test("Concilio de los Eternos: requiere controlar y/o mostrar cuatro tipos de ca
   assert.equal(puedeJugar(e, c), true);
 });
 
-test("Concilio de los Eternos: previene un efecto y el oponente solo ataca con hasta dos Aliados", { todo: "efecto: prevenir un efecto; efecto: el oponente solo puede atacar con hasta N Aliados este turno" }, () => {});
+test("Concilio de los Eternos: el oponente solo puede atacar con hasta dos Aliados este turno", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const c = poner(e, 0, "mano", "Concilio de los Eternos");
+  poner(e, 0, "defensa", "Valefor");
+  poner(e, 0, "mano", "Llamar a la Manada");
+  poner(e, 0, "mano", "Fortaleza Hoshi");
+  const as = [0, 1, 2].map(() => poner(e, 1, "defensa", "Valefor"));
+  e = sinRespuesta(aplicar(e, jugar(c)));
+  e.activo = 1;
+  e = aplicar(e, { tipo: "batalla" });
+  e = aplicar(e, { tipo: "atacar", uid: as[0] });
+  e = aplicar(e, { tipo: "atacar", uid: as[1] });
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "atacar" && a.uid === as[2]), false);
+});
+
+test("Concilio de los Eternos: previene un efecto", { todo: "efecto: prevenir un efecto" }, () => {});
 
 test("Conocimiento Prohibido: juegas tu Talismán buscado sin pagar y Destierras el del oponente", () => {
   let e = mesa();
