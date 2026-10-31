@@ -103,14 +103,26 @@ function desdeCementerio(e, j, uid) {
   return null;
 }
 
+const VENTANAS = {
+  vigilia: (j, activo) => (j === activo ? ["comienzoVigilia", "comienzoFase"] : ["comienzoVigiliaRival", "comienzoFase"]),
+  final: () => ["faseFinal", "comienzoFase"],
+};
+
+function coincideMomento(e, c, j, momento) {
+  if (momento === "momento") return c.tipo === "Talismán" && !!c.momentos?.some((m) => VENTANAS[e.momento.nombre](j, e.activo).includes(m));
+  if (!c.momentos) return true;
+  return momento === "talismanes" && c.momentos.includes("comienzoFase");
+}
+
 function momentoJugar(e, j) {
+  if (e.fase === "momento" && e.momento.prioridad === j) return "momento";
   if (e.fase === "vigilia" && e.activo === j) return "vigilia";
   if (e.fase === "talismanes" && e.prioridad === j) return "talismanes";
   return null;
 }
 
-function jugadas(e, j) {
-  const momento = momentoJugar(e, j);
+function jugadas(e, j, forzado) {
+  const momento = forzado ?? momentoJugar(e, j);
   if (!momento) return [];
   const p = e.jugadores[j];
   const armasEnGuerra = N.hay(e, j, (k, propio) => propio && k.armasEnGuerra);
@@ -121,6 +133,7 @@ function jugadas(e, j) {
     const c = N.carta(e, uid);
     if (c.tipo === "Oro" || c.soloRespuesta) continue;
     if (momento === "talismanes" && !(c.tipo === "Talismán" || (c.tipo === "Arma" && armasEnGuerra))) continue;
+    if (!coincideMomento(e, c, j, momento)) continue;
     const alt = desde === "cementerio" ? desdeCementerio(e, j, uid) : {};
     if (!alt) continue;
     const clave = `${c.id}|${desde}`;
@@ -272,6 +285,7 @@ export function jugadorQueDecide(e) {
   if (e.fase === "mulligan") return e.turnoMulligan;
   if (e.fase === "bloqueo") return N.rival(e.activo);
   if (e.fase === "talismanes") return e.prioridad;
+  if (e.fase === "momento") return e.momento.prioridad;
   return e.activo;
 }
 
@@ -317,6 +331,8 @@ export function accionesLegales(e) {
     }
     case "talismanes":
       return [...jugadas(e, j), ...habilidadesUsables(e, j), { tipo: "pasar" }];
+    case "momento":
+      return [...jugadas(e, j), { tipo: "pasarMomento" }];
     case "final":
       return p.mano.map((uid) => ({ tipo: "descartar", uid }));
     default:
@@ -330,8 +346,28 @@ function igual(a, b) {
 }
 
 function flujo(e, ...pasos) {
-  e.cola.push(N.nuevoFrame(pasos.map((paso) => ({ op: "flujo", paso })), { ctrl: e.activo }));
+  e.cola.push(N.nuevoFrame(pasos.map((paso) => (paso.startsWith("momento:") ? { op: "momento", nombre: paso.slice(8) } : { op: "flujo", paso })), { ctrl: e.activo }));
 }
+
+OPS.momento = (e, p, fr) => {
+  if (e.momento?.terminado) {
+    e.momento = null;
+    return;
+  }
+  if (!e.momento) {
+    e.momento = { nombre: p.nombre, prioridad: e.activo, pases: 0, faseAntes: e.fase };
+    const fase = e.fase;
+    e.fase = "momento";
+    const alguno = [e.activo, N.rival(e.activo)].some((j) => jugadas(e, j, "momento").length);
+    if (!alguno) {
+      e.fase = fase;
+      e.momento = null;
+      return;
+    }
+  }
+  fr.i -= 1;
+  e.espera = true;
+};
 
 const FLUJO = {
   agrupacion(e) {
@@ -410,7 +446,7 @@ const FLUJO = {
     e.activo = N.rival(e.activo);
     e.turno += 1;
     e.fase = "agrupando";
-    flujo(e, "agrupacion", "inicioVigilia", "vigilia");
+    flujo(e, "agrupacion", "inicioVigilia", "momento:vigilia", "vigilia");
   },
 };
 
@@ -439,7 +475,7 @@ function fuerzaCombate(e, uid) {
 }
 
 function irAFinal(e) {
-  flujo(e, "final", "cierre");
+  flujo(e, "final", "momento:final", "cierre");
 }
 
 function siguienteMulligan(e) {
@@ -487,6 +523,10 @@ function jugar(e, j, accion) {
   if (e.fase === "talismanes") {
     e.pases = 0;
     e.prioridad = N.rival(e.prioridad);
+  }
+  if (e.fase === "momento") {
+    e.momento.pases = 0;
+    e.momento.prioridad = N.rival(j);
   }
   contarJugada(e, j, c);
   const destierro = !!(c.destierroAlJugar || (alt.exhumado && c.tipo === "Talismán"));
@@ -536,6 +576,7 @@ function resolverPila(e) {
 
 function avanzar(e) {
   for (let guarda = 0; guarda < 10000; guarda++) {
+    e.espera = false;
     resolver(e);
     if (e.pendiente || e.ganador !== null) return;
     const top = e.pila.at(-1);
@@ -628,7 +669,15 @@ export function aplicar(estado, accion) {
       e.prioridad = N.rival(e.prioridad);
       if (e.pases >= 2) {
         e.fase = "danando";
-        flujo(e, "dano", "finCombate", "final", "cierre");
+        flujo(e, "dano", "finCombate", "final", "momento:final", "cierre");
+      }
+      break;
+    case "pasarMomento":
+      e.momento.pases += 1;
+      e.momento.prioridad = N.rival(e.momento.prioridad);
+      if (e.momento.pases >= 2) {
+        e.fase = e.momento.faseAntes;
+        e.momento.terminado = true;
       }
       break;
     case "descartar":

@@ -353,6 +353,8 @@ export function elegirAccion(e) {
       return decidirBloqueo(e, j, legales);
     case "talismanes":
       return decidirTalismanes(e, j, legales);
+    case "momento":
+      return mejorJugada(e, j, legales.filter((a) => a.tipo === "jugar")) ?? { tipo: "pasarMomento" };
     case "final":
       return decidirDescarte(e, j, legales);
     default:

@@ -157,3 +157,57 @@ test("mecánica: salenDelCastillo informa si fue por daño", () => {
   e = atacarSolo(e, balaur);
   assert.equal(e.usos.marcaDano, 1);
 });
+
+function avanzarHasta(e, pred) {
+  for (let i = 0; i < 60 && !pred(e); i++) {
+    const l = accionesLegales(e);
+    e = aplicar(e, l.find((x) => ["terminar", "pasarMomento", "noResponder", "pasar"].includes(x.tipo)) ?? l[0]);
+  }
+  return e;
+}
+
+test("mecánica: ventana al comienzo de la Vigilia oponente para Talismanes con ese momento", () => {
+  let e = con(mesa(), "Llamar a la Manada", { momentos: ["comienzoVigiliaRival"] });
+  oros(e, 0, 2);
+  const manada = poner(e, 0, "mano", "Llamar a la Manada");
+  assert.equal(jugarDe(e, manada).length, 0);
+  e = aplicar(e, { tipo: "terminar" });
+  e = avanzarHasta(e, (s) => s.fase === "momento");
+  assert.equal(e.activo, 1);
+  assert.deepEqual(accionesLegales(e), [{ tipo: "pasarMomento" }]);
+  e = aplicar(e, { tipo: "pasarMomento" });
+  assert.deepEqual(jugarDe(e, manada), [{ tipo: "jugar", uid: manada }]);
+  const mano = e.jugadores[0].mano.length;
+  e = sinRespuesta(aplicar(e, { tipo: "jugar", uid: manada }));
+  assert.equal(e.jugadores[0].mano.length, mano - 1 + 3);
+  e = aplicar(e, { tipo: "pasarMomento" });
+  e = aplicar(e, { tipo: "pasarMomento" });
+  assert.equal(e.fase, "vigilia");
+  assert.equal(e.activo, 1);
+});
+
+test("mecánica: sin Talismanes de momento no se abre ninguna ventana", () => {
+  let e = mesa();
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "vigilia");
+  assert.equal(e.activo, 1);
+});
+
+test("mecánica: ventana de la Fase Final y comienzoFase en la Guerra de Talismanes", () => {
+  let e = con(mesa(), "Llamar a la Manada", { momentos: ["faseFinal"] });
+  oros(e, 0, 2);
+  const manada = poner(e, 0, "mano", "Llamar a la Manada");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  assert.deepEqual(jugarDe(e, manada), [{ tipo: "jugar", uid: manada }]);
+  let f = con(mesa(), "Llamar a la Manada", { momentos: ["comienzoFase"] });
+  oros(f, 1, 2);
+  const otra = poner(f, 1, "mano", "Llamar a la Manada");
+  const balaur = poner(f, 0, "defensa", "Balaur");
+  f = aplicar(f, { tipo: "batalla" });
+  f = aplicar(f, { tipo: "atacar", uid: balaur });
+  f = aplicar(f, { tipo: "finAtaque" });
+  f = aplicar(f, { tipo: "finBloqueo" });
+  assert.equal(f.fase, "talismanes");
+  assert.deepEqual(jugarDe(f, otra), [{ tipo: "jugar", uid: otra }]);
+});

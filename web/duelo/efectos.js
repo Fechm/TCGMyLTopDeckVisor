@@ -429,7 +429,7 @@ export function ejecutar(e, paso, fr) {
 }
 
 export function resolver(e) {
-  while (!e.pendiente && e.ganador === null && e.cola.length) {
+  while (!e.pendiente && !e.espera && e.ganador === null && e.cola.length) {
     const fr = e.cola[0];
     if (fr.i >= fr.pasos.length) {
       e.cola.shift();
