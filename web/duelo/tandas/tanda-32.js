@@ -14,7 +14,10 @@ const barajarCementerios = (n) => [sel(["todos:cementerio"], {}, "c", { n, hasta
 const descarteRival = (como = "d") => [sel(["rival:mano"], {}, como, { quien: "rival" }), mov("cementerio", como)];
 const esArma = (e, ctx) => ctx.datos.tipo === "Arma";
 const esAliado = (e, ctx) => !ctx.datos.tipo || ctx.datos.tipo === "Aliado";
-const armasRecientes = (e, j) => N.armasDe(e, j).length > 0 || (e.jugadores[j].jugadas.Arma ?? 0) > 0;
+const jugoAntes = (e, j, tipo) => (e.jugadores[j].jugadasMiTurnoAnterior?.[tipo] ?? 0) > 0;
+const armasRecientes = (e, j, esteTurno = false) =>
+  N.armasDe(e, j).length > 0 || jugoAntes(e, j, "Arma") || (esteTurno && (e.jugadores[j].jugadas.Arma ?? 0) > 0);
+const armasEsteTurno = (e, j) => N.armasDe(e, j).length > 0 || (e.jugadores[j].jugadas.Arma ?? 0) > 0;
 const atacoSolo = (e, j, uid) => {
   const d = e.jugadores[j].declarados;
   return e.activo === j && d.length === 1 && d[0] === uid;
@@ -48,8 +51,16 @@ export const HABILIDADES = {
   },
   Nanna: {
     claves: ["UnaCopia"],
+    activadas: [
+      {
+        texto: "Desterrarla para Anular un Talismán oponente",
+        respuesta: { anula: { tipo: "Talismán" } },
+        coste: [sel(["fuente"], {}, "yo"), mov("desterrar", "yo")],
+      },
+    ],
   },
   Origenes: {
+    momentos: ["comienzoBloqueo", "faseFinal"],
     disparadas: [
       { cuando: ["entra"], hacer: [...barajarCementerios(6), robar(2)] },
       {
@@ -123,9 +134,23 @@ export const HABILIDADES = {
       otroNombre: (e, ctx, u) => !(ctx.vars.d1 ?? []).some((x) => N.carta(e, x).nombre === N.carta(e, u).nombre),
     },
   },
-  Serafin: {},
+  Serafin: {
+    disparadas: [
+      {
+        cuando: ["entra"],
+        hacer: [sel(["rival:mano", "rival:castillo", "rival:cementerio", "todos:enJuego"], {}, "n"), { op: "fn", f: "encarecer" }],
+      },
+    ],
+    fns: {
+      encarecer: (e, ctx) => {
+        const [u] = ctx.vars.n ?? [];
+        if (u) N.agregarEfecto(e, { tipo: "impuestoHabilidad", nombre: N.carta(e, u).nombre, n: 1, fin: "proximoTurno" }, ctx.ctrl);
+      },
+    },
+  },
   Shade: {
     orosMenos: "gratis",
+    noAnulableSi: "sinPagar",
     disparadas: [
       {
         cuando: ["entra"],
@@ -143,6 +168,7 @@ export const HABILIDADES = {
     ],
     fns: {
       gratis: (e, ctx) => (e.jugadores[ctx.ctrl].atacoTurnoAnterior ? 99 : 0),
+      sinPagar: (e, ctx) => e.jugadores[ctx.ctrl].atacoTurnoAnterior,
       resto3: resto(3),
       ataqueFirme: (e, ctx) => {
         N.agregarEfecto(e, { tipo: "gana", clave: "AtaqueNoCancelable", aliadosDe: ctx.ctrl }, ctx.ctrl);
@@ -151,8 +177,12 @@ export const HABILIDADES = {
   },
   "Ángel Miguel, el Protector": {
     claves: ["Indestructible"],
-    disparadas: [{ cuando: ["entra"], hacer: barajarYDesterrar(6, "resto6") }],
-    fns: { resto6: resto(6) },
+    disparadas: [{ cuando: ["entra", "bloquea"], quien: "propia", hacer: barajarYDesterrar(6, "resto6") }],
+    continuas: [{ si: "totem", silenciaDisparos: { rival: true, tipoCarta: "Aliado", costeMax: 2, eventos: ["entra"] } }],
+    fns: {
+      resto6: resto(6),
+      totem: (e, ctx) => N.enJuegoDe(e, ctx.ctrl).some((u) => N.carta(e, u).tipo === "Tótem") || jugoAntes(e, ctx.ctrl, "Tótem"),
+    },
   },
   "Ambrosio O'Higgins": {
     claves: ["Imbloqueable"],
@@ -160,6 +190,7 @@ export const HABILIDADES = {
   },
   "Andinia-X 2": {
     reduce: "red",
+    continuas: [{ gana: "DanoAlDestierro", a: "aliados", conArma: true }],
     disparadas: [{ zona: ["cementerio"], cuando: ["juega"], quien: "yo", si: "esArma", opcional: true, hacer: [sel(["fuente"], {}, "yo"), mov("mano", "yo")] }],
     fns: {
       esArma,
@@ -254,7 +285,7 @@ export const HABILIDADES = {
   },
   Aubrey: {
     claves: ["Furia"],
-    continuas: [{ armasEnGuerra: true }],
+    continuas: [{ armasEnGuerra: true }, { si: "enGuerra", proteccion: { cuesta: 1 }, a: "tusAliados", tipoObjetivo: "Aliado" }],
     disparadas: [
       {
         cuando: ["ataca"],
@@ -265,6 +296,7 @@ export const HABILIDADES = {
     ],
     fns: {
       primero: (e, ctx) => e.jugadores[ctx.ctrl].declarados.length === 1,
+      enGuerra: (e) => e.fase === "talismanes",
       atacando: (e, ctx) => {
         const p = e.jugadores[ctx.ctrl];
         for (const u of ctx.vars.b ?? []) {
@@ -292,7 +324,7 @@ export const HABILIDADES = {
   },
   "Bernardo O'Higgins": {
     claves: ["Furia", "Imbloqueable"],
-    continuas: [{ impuestoTalisman: true }],
+    continuas: [{ impuestoTodos: { tipoCarta: ["Talismán", "Tótem"], n: 1 } }, { gana: "NoBarajable", a: "aliados", conArma: true }],
     activadas: [
       {
         texto: "Barajar un Arma o Aliado Caballero de tu mano o que controles: Desterrar una carta de coste 3 o menos",
@@ -369,7 +401,7 @@ export const HABILIDADES = {
     reduce: "red",
     disparadas: [{ cuando: ["entra", "ataca"], hacer: [sel(["rival:mano"], {}, "m", { n: 2, azar: true }), { op: "fn", f: "vetar" }] }],
     fns: {
-      red: (e, ctx) => (armasRecientes(e, ctx.ctrl) ? 1 : 0),
+      red: (e, ctx) => (armasRecientes(e, ctx.ctrl, true) ? 1 : 0),
       vetar: (e, ctx) => {
         for (const u of ctx.vars.m ?? []) N.agregarEfecto(e, { tipo: "noJugarNombre", j: N.rival(ctx.ctrl), nombre: N.carta(e, u).nombre, fin: "proximoTurno" }, ctx.ctrl);
       },
@@ -428,16 +460,23 @@ export const HABILIDADES = {
           { op: "si", f: "huboArma", entonces: [robar(1)] },
         ],
       },
+      { cuando: ["alCementerio"], quien: "cualquiera", si: "talismanCae", hacer: [{ op: "fn", f: "apagar" }] },
     ],
     continuas: [{ si: "armas", gana: "Furia", a: "tusAliados" }],
     fns: {
       armas: (e, ctx) => armasRecientes(e, ctx.ctrl),
+      talismanCae: (e, ctx) => N.carta(e, ctx.datos.uid).tipo === "Talismán" && armasRecientes(e, ctx.ctrl),
+      apagar: (e, ctx) => {
+        N.agregarEfecto(e, { tipo: "pierdeHabilidad", uid: ctx.datos.uid, fuera: true, fin: "proximoTurno" }, ctx.ctrl);
+      },
       huboArma: (e, ctx) => [...(ctx.vars.d1 ?? []), ...(ctx.vars.d2 ?? [])].some((u) => N.carta(e, u).tipo === "Arma"),
     },
   },
   "Dorian Gray": {
+    noAnulableSi: "armas",
     disparadas: [{ cuando: ["entra"], hacer: [sel(["yo:mano"], {}, "x", { n: 99, hasta: true }), { op: "fn", f: "dorian" }] }],
     fns: {
+      armas: (e, ctx) => armasEsteTurno(e, ctx.ctrl),
       dorian: (e, ctx) => {
         const k = (ctx.vars.x ?? []).length;
         for (const u of ctx.vars.x ?? []) N.mover(e, u, "castillo");

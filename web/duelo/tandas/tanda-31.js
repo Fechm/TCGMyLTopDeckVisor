@@ -5,7 +5,6 @@ const esJinete = (e, u) => N.carta(e, u).nombre.includes("Jinete");
 const jinetes = (e, j) => N.aliadosDe(e, j).filter((u) => esJinete(e, u));
 const otroJinete = (e, ctx) => jinetes(e, ctx.ctrl).some((u) => u !== ctx.fuente);
 const cuatroJinetes = (e, ctx) => jinetes(e, ctx.ctrl).length >= 4;
-const unica = (e, ctx) => !N.enJuegoDe(e, ctx.ctrl).some((u) => N.carta(e, u).nombre === N.def(e, ctx.def).nombre);
 const soloEsta = (e, ctx) => N.aliadosDe(e, ctx.ctrl).every((u) => u === ctx.fuente);
 const conMano = (e, ctx) => e.jugadores[ctx.ctrl].mano.length > 0;
 
@@ -31,7 +30,7 @@ export const HABILIDADES = {
     fns: { dosTotems: (e, ctx) => e.jugadores[ctx.ctrl].apoyo.filter((u) => N.carta(e, u).tipo === "Tótem").length >= 2 },
   },
   Yggdrasil: {
-    requiere: "unica",
+    claves: ["Unica"],
     disparadas: [
       { cuando: ["entra"], hacer: [sel(["todos:aliados"], {}, "x", { n: 99 }), mov("barajar", "x")] },
       { cuando: ["faseFinal"], hacer: [{ op: "fn", f: "revertir" }] },
@@ -45,8 +44,8 @@ export const HABILIDADES = {
         hacer: [sel(["yo:apoyo"], { tipo: "Tótem" }, "t"), { op: "fn", f: "animar" }],
       },
     ],
+    continuas: [{ impuestoTodos: { tipoCarta: "Aliado", n: 1 } }],
     fns: {
-      unica,
       animar: (e, ctx) => {
         for (const u of ctx.vars.t ?? []) {
           const c = coste(e, u);
@@ -92,7 +91,7 @@ export const HABILIDADES = {
         ctx.vars.m = hallados;
       },
       nombrar: (e, ctx) => {
-        for (const u of ctx.vars.n ?? []) N.agregarEfecto(e, { tipo: "pierdeHabilidad", nombre: N.carta(e, u).nombre, origen: ctx.fuente, fin: "juego" }, ctx.ctrl);
+        for (const u of ctx.vars.n ?? []) N.agregarEfecto(e, { tipo: "pierdeHabilidad", nombre: N.carta(e, u).nombre, fuera: true, origen: ctx.fuente, fin: "juego" }, ctx.ctrl);
       },
       liberar: (e, ctx) => {
         e.efectos = e.efectos.filter((f) => f.origen !== ctx.fuente);
@@ -142,6 +141,8 @@ export const HABILIDADES = {
   },
   "Ava Rei Pua": {
     claves: ["NoBarajable"],
+    disparadas: [{ cuando: ["roba"], quien: "rival", opcional: true, hacer: [{ op: "robar", nf: "cuantas" }] }],
+    fns: { cuantas: (e, ctx) => ctx.datos.n },
   },
   Belial: {
     activadas: [
@@ -164,16 +165,17 @@ export const HABILIDADES = {
   },
   "Cleopatra VII": {
     claves: ["Indestructible"],
+    continuas: [{ proteccion: { por: "Aliado" }, a: "tusDemasAliados", tipoObjetivo: "Aliado" }],
   },
   "Don Quijote": {
     claves: ["Exhumar", "Indesterrable"],
     disparadas: [{ cuando: ["entra"], opcional: true, hacer: [sel(["yo:castillo"], { noTipo: ["Talismán"] }, "b", { n: 2 }), mov("mano", "b"), barajar()] }],
-    activadas: [{ texto: "Robar dos cartas", veces: "turno", hacer: [robar(2)] }],
+    activadas: [{ texto: "Generar un Oro para jugar cartas de coste 3 o más y Robar dos cartas", veces: "turno", hacer: [{ op: "generar", n: 1, costeMin: 3 }, robar(2)] }],
   },
   "Espiritu Kotaix": {
     claves: ["Indesterrable"],
     activadas: [{ texto: "Robar dos cartas y Barajar una carta oponente que no sea Oro", veces: "turno", hacer: [robar(2), sel(["rival:enJuego"], { noTipo: ["Oro"] }), mov("barajar")] }],
-    continuas: [{ fuerza: 2, a: "tusAliados" }, { gana: "Furia", a: "tusAliados" }],
+    continuas: [{ fuerza: 2, a: "tusAliados" }, { gana: "Furia", a: "tusAliados" }, { proteccion: { por: "Talismán" }, a: "tusAliados", tipoObjetivo: "Aliado" }],
   },
   Eva: {
     disparadas: eva.disparadas,
@@ -191,6 +193,8 @@ export const HABILIDADES = {
   },
   "Guerrillero Rodriguez": {
     claves: ["Indestructible"],
+    momentos: ["comienzoVigilia", "comienzoVigiliaRival"],
+    continuas: [{ proteccion: { por: "Oro" }, a: "propia" }],
     disparadas: [{ cuando: ["entra"], hacer: [robar(1)] }],
   },
   "Hijo de la Rebeldia": {
@@ -261,9 +265,16 @@ export const HABILIDADES = {
         veces: "turno",
         hacer: [{ op: "si", f: "cuatro", entonces: [{ op: "fn", f: "arrasar" }], sino: [sel(["todos:enJuego"], { noTipo: ["Oro"] }, "x", { para: "desterrar" }), mov("desterrar")] }],
       },
+      {
+        texto: "Barajarlo desde tu Destierro con hasta otro Jinete de ahí",
+        zona: "destierro",
+        veces: "turno",
+        hacer: [sel(["fuente"], {}, "yo"), sel(["yo:destierro"], { f: "jinete", noFuente: true }, "o", { hasta: true }), mov("barajar", "yo"), mov("barajar", "o")],
+      },
     ],
     fns: {
       cuatro: cuatroJinetes,
+      jinete: (e, ctx, u) => esJinete(e, u),
       arrasar: (e, ctx) => {
         ctx.vars.z = N.todoEnJuego(e).filter((u) => N.carta(e, u).tipo !== "Oro" && !esJinete(e, u));
         return [efecto("z", { tipo: "pierdeHabilidad" }, "mientras"), mov("destruir", "z")];
@@ -307,7 +318,17 @@ export const HABILIDADES = {
         ],
       },
     ],
-    fns: { otroJinete, conMano, jinete: (e, ctx, u) => esJinete(e, u) },
+    disparadas: [{ cuando: ["comienzoTurno", "entra"], quien: "cualquiera", si: "cuatro", hacer: [{ op: "fn", f: "limitar" }] }],
+    fns: {
+      otroJinete,
+      conMano,
+      cuatro: cuatroJinetes,
+      jinete: (e, ctx, u) => esJinete(e, u),
+      limitar: (e, ctx) => {
+        if (e.efectos.some((f) => f.tipo === "maxHabilidades" && f.origen === ctx.fuente && f.fin.finTurno === e.turno)) return;
+        N.agregarEfecto(e, { tipo: "maxHabilidades", j: N.rival(ctx.ctrl), n: 3, origen: ctx.fuente }, ctx.ctrl);
+      },
+    },
   },
   "Jonathan Harker": {
     activadas: [
@@ -318,6 +339,14 @@ export const HABILIDADES = {
         requiere: "puedeCambiar",
         coste: [sel(["yo:armas"], { costeMin: 1 }, "v"), mov("barajar", "v")],
         hacer: [sel(["yo:mano", "yo:cementerio"], { tipo: "Arma", costeMin: 1, f: "pagable" }, "a"), { op: "fn", f: "jugarArma" }],
+      },
+      {
+        texto: "Destruir un Aliado que controles para Anular un Arma o Tótem",
+        respuesta: { anula: { tipo: ["Arma", "Tótem"] } },
+        momento: "cualquiera",
+        veces: "turno",
+        requiere: { de: ["yo:aliados"], filtro: {}, para: "destruir" },
+        coste: [sel(["yo:aliados"], {}, "d", { para: "destruir" }), mov("destruir", "d")],
       },
     ],
     fns: {
@@ -400,13 +429,26 @@ export const HABILIDADES = {
     claves: ["Exhumar", "Indesterrable"],
     disparadas: [
       { cuando: ["entra"], hacer: [sel(["rival:aliados"], {}, "x", { n: 99, para: "desterrar" }), mov("desterrar")] },
-      { cuando: ["entra"], quien: "yo", veces: 2, si: "oroOCementerio", hacer: [sel(["todos:enJuego"]), efecto("x", { tipo: "pierdeHabilidad" }, "proximoTurno")] },
+      { cuando: ["entra"], quien: "yo", veces: 2, si: "oroOCementerio", hacer: [sel(["todos:enJuego", "todos:cementerio"]), efecto("x", { tipo: "pierdeHabilidad", fuera: true }, "proximoTurno")] },
     ],
     fns: { oroOCementerio: (e, ctx) => N.carta(e, ctx.datos.uid).tipo === "Oro" || ctx.datos.desde === "cementerio" },
   },
   Malevolente: {
-    requiere: "unica",
-    fns: { unica },
+    claves: ["UnaCopia"],
+    activadas: [
+      {
+        texto: "Desterrarlo para Anular un Talismán de coste 2 o menos",
+        respuesta: { anula: { tipo: "Talismán", costeMax: 2 } },
+        momento: "cualquiera",
+        coste: [sel(["fuente"], {}, "yo"), mov("desterrar", "yo")],
+      },
+      {
+        texto: "Desterrarlo para que una carta no pueda salir del juego este turno",
+        momento: "cualquiera",
+        coste: [sel(["fuente"], {}, "yo"), mov("desterrar", "yo")],
+        hacer: [sel(["todos:enJuego"]), efecto("x", { tipo: "noSale" })],
+      },
+    ],
   },
   Metalmorfo: {
     claves: ["Furia"],

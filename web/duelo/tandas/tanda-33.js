@@ -5,15 +5,8 @@ import { armaCabe, disponibles, pagarOros, hayObjetivo, impuestoSinPagar } from 
 const botar = (n, quien = "rival") => ({ op: "botar", n, quien });
 const esCaballero = (e, u) => (N.carta(e, u).razas ?? []).includes("Caballero");
 const controlaArmas = (e, ctx) => N.armasDe(e, ctx.ctrl).length > 0;
-const claveArmas = (j) => `armasJugadas|${j}`;
-const jugoArmasAntes = (e, ctx) => e.usos[claveArmas(ctx.ctrl)] === e.turno - 2;
+const jugoArmasAntes = (e, ctx) => (e.jugadores[ctx.ctrl].jugadasMiTurnoAnterior?.Arma ?? 0) > 0;
 const armasOAntes = (e, ctx) => controlaArmas(e, ctx) || jugoArmasAntes(e, ctx);
-const registrarArmas = { cuando: ["juega"], quien: "yo", zona: ["mano", "cementerio"], si: "registrar", hacer: [] };
-const registrar = (e, ctx) => {
-  if (ctx.datos.tipo === "Arma") e.usos[claveArmas(ctx.ctrl)] = e.turno;
-  return false;
-};
-const conArma = (e, ctx) => ((e.armas[ctx.objetivo] ?? []).length ? 1 : 0);
 const esArma = (e, ctx) => ctx.datos.tipo === "Arma";
 const deTipoEn = (e, j, zonas, tipos) => zonas.some((z) => e.jugadores[j][z].some((u) => tipos.includes(N.carta(e, u).tipo)));
 
@@ -114,7 +107,6 @@ export const HABILIDADES = {
   "Dr. Jack Seward": {
     disparadas: [
       { cuando: ["entra"], si: "armasOAntes", hacer: [sel(["rival:aliados"], {}, "x", { n: 99 }), efecto("x", { tipo: "pierdeHabilidad" }, "mientras"), mov("destruir")] },
-      registrarArmas,
     ],
     activadas: [
       {
@@ -140,7 +132,7 @@ export const HABILIDADES = {
         ],
       },
     ],
-    fns: { armasOAntes, registrar, resto: (e, ctx) => 4 - (ctx.vars.c ?? []).length },
+    fns: { armasOAntes, resto: (e, ctx) => 4 - (ctx.vars.c ?? []).length },
   },
   "Duque Godofredo": {
     continuas: [{ fuerza: 1, a: "tusAliados", raza: "Caballero" }],
@@ -201,10 +193,12 @@ export const HABILIDADES = {
         hacer: [sel(["yo:mano"], {}, "m", { n: 3, hasta: true }), { op: "fn", f: "recordar" }, mov("barajar", "m"), { op: "robar", nf: "cuantas", quien: "yo" }],
       },
     ],
-    continuas: [{ fuerzaPor: "conArma", a: "aliados" }],
+    continuas: [
+      { gana: "Imbloqueable", a: "aliados", conArma: true },
+      { fuerza: 1, a: "aliados", conArma: true },
+    ],
     fns: {
       controlaArmas,
-      conArma,
       recordar: (e, ctx) => {
         ctx.vars.k = (ctx.vars.m ?? []).length;
       },
@@ -355,9 +349,9 @@ export const HABILIDADES = {
   },
   "John Trelawney": {
     reduce: "red",
-    disparadas: [registrarArmas],
+    continuas: [{ noAnulables: { tipoCarta: "Aliado", primera: true }, si: "controlaArmas" }],
     fns: {
-      registrar,
+      controlaArmas,
       red: (e, ctx) => (jugoArmasAntes(e, ctx) || controlaArmas(e, ctx) || deTipoEn(e, ctx.ctrl, ["mano"], ["Arma"]) ? 2 : 0),
     },
   },
@@ -526,15 +520,18 @@ export const HABILIDADES = {
   "Manuel Bulnes": {
     claves: ["Imbloqueable"],
     disparadas: [{ cuando: ["entra"], hacer: [robar(1), sel(["yo:mano"], {}, "m"), mov("barajar", "m")] }],
-    continuas: [{ fuerzaPor: "porArmas", a: "propia" }],
+    continuas: [
+      { fuerzaPor: "porArmas", a: "propia" },
+      { noPierden: true, a: "tusAliados", conArma: true },
+    ],
     fns: { porArmas: (e, ctx) => N.armasDe(e, ctx.ctrl).length },
   },
   "Manuel de Salas": {
     continuas: [
       { gana: "Imbloqueable", a: "tusAliados" },
-      { fuerzaPor: "conArma", a: "tusAliados" },
+      { gana: "Furia", a: "tusAliados", conArma: true },
+      { fuerza: 1, a: "tusAliados", conArma: true },
     ],
-    fns: { conArma },
   },
   "Mateo de Toro y Zambrano": {
     disparadas: [{ cuando: ["entra"], hacer: [robar(1)] }],
@@ -550,6 +547,10 @@ export const HABILIDADES = {
   Milena: {
     claves: ["Indestructible"],
     activadas: [milena.activada],
+    continuas: [
+      { gana: "Furia", a: "tusAliados", conArma: true },
+      { gana: "Imbloqueable", a: "tusAliados", conArma: true, conClave: "Furia" },
+    ],
     fns: milena.fns,
   },
 };

@@ -45,14 +45,10 @@ test("Dr. Jack Seward: sin Armas ni Armas jugadas en tu turno anterior no destru
 
 test("Dr. Jack Seward: también destruye si jugaste Armas en tu turno anterior", () => {
   let e = mesa();
-  oros(e, 0, 4);
-  const aliado = poner(e, 0, "defensa", "Valefor");
-  const ped = poner(e, 0, "mano", "Pedrenyal");
+  oros(e, 0, 3);
   const jack = poner(e, 0, "mano", "Dr. Jack Seward");
   const valefor = poner(e, 1, "defensa", "Valefor");
-  e = sinRespuesta(aplicar(e, jugar(ped, { portador: aliado })));
-  N.mover(e, ped, "cementerio");
-  e.turno += 2;
+  e.jugadores[0].jugadasMiTurnoAnterior = { total: 1, Arma: 1, nombres: { Pedrenyal: 1 } };
   e = sinRespuesta(aplicar(e, jugar(jack)));
   assert.equal(zonaDe(e, valefor), "cementerio");
 });
@@ -177,7 +173,17 @@ test("Frumos el Paladín: los Aliados que porten Arma ganan 1 de Fuerza", () => 
   assert.equal(N.fuerza(e, libre), 3);
 });
 
-test("Frumos el Paladín: los Aliados que porten Arma ganan Imbloqueable", { todo: "continua: ganar una clave solo los Aliados que portan Armas" }, () => {});
+test("Frumos el Paladín: los Aliados que porten Arma ganan Imbloqueable", () => {
+  const e = mesa();
+  const frumos = poner(e, 0, "defensa", "Frumos el Paladín");
+  const { aliado } = armado(e, 0);
+  const rival = armado(e, 1).aliado;
+  const libre = poner(e, 1, "defensa", "Valefor");
+  assert.equal(N.tiene(e, aliado, "Imbloqueable"), true);
+  assert.equal(N.tiene(e, rival, "Imbloqueable"), true);
+  assert.equal(N.tiene(e, libre, "Imbloqueable"), false);
+  assert.equal(N.tiene(e, frumos, "Imbloqueable"), false);
+});
 
 test("Gilgamesh el Paladin: tiene Furia e Imbloqueable y tus demás Aliados ganan 1 de Fuerza", () => {
   const e = mesa();
@@ -214,7 +220,7 @@ test("Gilgamesh el Paladin: al salir del juego también Destruye", () => {
   assert.equal(zonaDe(e, v), "cementerio");
 });
 
-test("Gilgamesh el Paladin: al oponente le cuesta un Oro adicional afectar a tus Aliados en la Línea de Ataque", { todo: "efecto: afectar a ciertos Aliados propios cuesta Oros adicionales al oponente" }, () => {});
+test("Gilgamesh el Paladin: al oponente le cuesta un Oro adicional afectar a tus Aliados en la Línea de Ataque", { todo: "protección: filtro por zona del objetivo (Aliados en la Línea de Ataque) para proteccion con cuesta" }, () => {});
 
 test("Gilgamesh, Paladín de Uruk: al entrar puede Desterrar un Aliado de Fuerza 4 o menos y buscar un Aliado o Arma", () => {
   let e = mesa();
@@ -468,21 +474,43 @@ test("John Trelawney: reduce su coste en dos si muestras un Arma de tu mano o en
 });
 
 test("John Trelawney: reduce su coste en dos si jugaste Armas en tu turno anterior", () => {
-  let e = mesa();
-  oros(e, 0, 1);
-  const aliado = poner(e, 0, "defensa", "Valefor");
-  const ped = poner(e, 0, "mano", "Pedrenyal");
+  const e = mesa();
   const john = poner(e, 0, "mano", "John Trelawney");
-  e = sinRespuesta(aplicar(e, jugar(ped, { portador: aliado })));
-  N.mover(e, ped, "cementerio");
+  e.jugadores[0].jugadasMiTurnoAnterior = { total: 1, Aliado: 1, nombres: { Valefor: 1 } };
   assert.equal(costeDe(e, 0, john).pagar, 3);
-  e.turno += 2;
+  e.jugadores[0].jugadasMiTurnoAnterior = { total: 1, Arma: 1, nombres: { Pedrenyal: 1 } };
   assert.equal(costeDe(e, 0, john).pagar, 1);
-  e.turno += 2;
-  assert.equal(costeDe(e, 0, john).pagar, 3);
 });
 
-test("John Trelawney: con Armas, el primer Aliado que juegues cada turno no puede ser Anulado", { todo: "protección: el primer Aliado que juegues cada turno no puede ser Anulado ni cancelada su habilidad" }, () => {});
+test("John Trelawney: con Armas, el primer Aliado que juegues cada turno no puede ser Anulado", () => {
+  let e = mesa();
+  poner(e, 0, "defensa", "John Trelawney");
+  armado(e, 0);
+  oros(e, 0, 2);
+  oros(e, 1, 5);
+  poner(e, 1, "mano", "Dragón Dorado");
+  const v1 = poner(e, 0, "mano", "Valefor");
+  const v2 = poner(e, 0, "mano", "Valefor");
+  e = aplicar(e, jugar(v1));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder"), false);
+  e = sinRespuesta(e);
+  assert.equal(zonaDe(e, v1), "defensa");
+  e = aplicar(e, jugar(v2));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder"), true);
+});
+
+test("John Trelawney: sin Armas el primer Aliado sí puede ser Anulado", () => {
+  let e = mesa();
+  poner(e, 0, "defensa", "John Trelawney");
+  oros(e, 0, 1);
+  oros(e, 1, 5);
+  poner(e, 1, "mano", "Dragón Dorado");
+  const v1 = poner(e, 0, "mano", "Valefor");
+  e = aplicar(e, jugar(v1));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder"), true);
+});
+
+test("John Trelawney: sus habilidades no pueden ser canceladas", { todo: "efecto: habilidad que no puede ser cancelada ni prevenida" }, () => {});
 
 test("Juan Mackenna: reduce su coste en un Oro si controlas Armas", () => {
   const e = mesa();
@@ -641,7 +669,7 @@ test("Lupin: al entrar convierte hasta dos cartas cuyos costes sumen 3 o menos e
   assert.equal(N.activa(e, d), false);
 });
 
-test("Lupin: con Armas, durante tu Vigilia el oponente no puede jugar Talismanes y solo puede usar una habilidad", { todo: "restricción: durante tu Vigilia el oponente no puede jugar Talismanes y solo puede usar una habilidad" }, () => {});
+test("Lupin: con Armas, durante tu Vigilia el oponente no puede jugar Talismanes y solo puede usar una habilidad", { todo: "restricción: efectos con duración «durante tu Vigilia» (maxPorTipo de Talismanes y maxHabilidades solo en esa fase)" }, () => {});
 
 test("Manuel Bulnes: tiene Imbloqueable y al entrar Roba una carta y Baraja una de tu mano", () => {
   let e = mesa();
@@ -662,7 +690,19 @@ test("Manuel Bulnes: gana 1 de Fuerza por cada Arma que controles", () => {
   assert.equal(N.fuerza(e, b), 3);
 });
 
-test("Manuel Bulnes: tus Aliados que porten Arma no pueden perder su habilidad", { todo: "continua: tus Aliados que portan Armas no pueden perder su habilidad (filtro por portar Armas)" }, () => {});
+test("Manuel Bulnes: tus Aliados que porten Arma no pueden perder su habilidad", () => {
+  const e = mesa();
+  poner(e, 0, "defensa", "Manuel Bulnes");
+  const conArma = poner(e, 0, "defensa", "Balaur");
+  poner(e, 0, "arma", "Pedrenyal", { portador: conArma });
+  const sinArma = poner(e, 0, "defensa", "Balaur");
+  const rival = poner(e, 1, "defensa", "Balaur");
+  poner(e, 1, "arma", "Pedrenyal", { portador: rival });
+  for (const u of [conArma, sinArma, rival]) N.agregarEfecto(e, { tipo: "pierdeHabilidad", uid: u, fin: "turno" }, 1);
+  assert.equal(N.activa(e, conArma), true);
+  assert.equal(N.activa(e, sinArma), false);
+  assert.equal(N.activa(e, rival), false);
+});
 
 test("Manuel de Salas: tus Aliados ganan Imbloqueable y los que portan Armas ganan 1 de Fuerza", () => {
   const e = mesa();
@@ -677,7 +717,15 @@ test("Manuel de Salas: tus Aliados ganan Imbloqueable y los que portan Armas gan
   assert.equal(N.fuerza(e, r), 5);
 });
 
-test("Manuel de Salas: tus Aliados que portan Armas ganan Furia", { todo: "continua: ganar una clave solo los Aliados que portan Armas" }, () => {});
+test("Manuel de Salas: tus Aliados que portan Armas ganan Furia", () => {
+  const e = mesa();
+  const s = poner(e, 0, "defensa", "Manuel de Salas");
+  const { aliado } = armado(e, 0, "Ileana");
+  const r = armado(e, 1, "Ileana").aliado;
+  assert.equal(N.tiene(e, aliado, "Furia"), true);
+  assert.equal(N.tiene(e, s, "Furia"), false);
+  assert.equal(N.tiene(e, r, "Furia"), false);
+});
 
 test("Mateo de Toro y Zambrano: al entrar Roba una carta", () => {
   let e = mesa();
@@ -737,4 +785,19 @@ test("Milena: tiene Indestructible y una vez por turno juega un Arma de tu mano 
   assert.equal(puedeUsar(e, mil), false);
 });
 
-test("Milena: tus Aliados que porten Armas ganan Furia, o Imbloqueable si ya la tenían", { todo: "continua: ganar una clave solo los Aliados que portan Armas" }, () => {});
+test("Milena: tus Aliados que porten Armas ganan Furia, o Imbloqueable si ya la tenían", () => {
+  const e = mesa();
+  const mil = poner(e, 0, "defensa", "Milena");
+  const { aliado } = armado(e, 0, "Ileana");
+  const furioso = poner(e, 0, "defensa", "Balaur");
+  poner(e, 0, "arma", "Pedrenyal", { portador: furioso });
+  const libre = poner(e, 0, "defensa", "Ileana");
+  const r = armado(e, 1, "Ileana").aliado;
+  assert.equal(N.tiene(e, aliado, "Furia"), true);
+  assert.equal(N.tiene(e, aliado, "Imbloqueable"), false);
+  assert.equal(N.tiene(e, furioso, "Furia"), true);
+  assert.equal(N.tiene(e, furioso, "Imbloqueable"), true);
+  assert.equal(N.tiene(e, libre, "Furia"), false);
+  assert.equal(N.tiene(e, mil, "Furia"), false);
+  assert.equal(N.tiene(e, r, "Furia"), false);
+});

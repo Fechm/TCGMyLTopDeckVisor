@@ -55,8 +55,11 @@ const esMonte = (e, ctx, u) => N.carta(e, u).nombre.startsWith("Monte");
 
 const agruparOro = [sel(["yo:pagado"], { tipo: "Oro" }, "o"), mov("reserva", "o")];
 
+const TODOS_TIPOS = ["Aliado", "Arma", "Tótem", "Oro", "Talismán"];
+
 export const HABILIDADES = {
   Humberstone: {
+    noAnulableSi: "rivalActivo",
     activadas: [
       {
         texto: "Jugar un Aliado desde tu mano o Cementerio reduciendo su coste en un Oro (mínimo 1)",
@@ -70,6 +73,10 @@ export const HABILIDADES = {
       pagable: pagable(1, 1),
       jugar: jugarPagando(1, 1),
       puede: hayPagable(["mano", "cementerio"], { tipo: "Aliado" }, 1, 1),
+      rivalActivo: (e, ctx) => {
+        const p = e.jugadores[N.rival(ctx.ctrl)];
+        return (p.habilidadesUsadas ?? 0) > 1 || (p.jugadas?.["Talismán"] ?? 0) > 1;
+      },
     },
   },
   "Hy Brasil": {
@@ -84,8 +91,16 @@ export const HABILIDADES = {
           mov("desterrar", "c"),
         ],
       },
+      {
+        texto: "Desterrar una carta de tu mano para Anular un Talismán o Tótem",
+        momento: "cualquiera",
+        veces: "turno",
+        respuesta: { anula: { tipo: ["Talismán", "Tótem"] } },
+        requiere: "conMano",
+        coste: [sel(["yo:mano"], {}, "d"), mov("desterrar", "d")],
+      },
     ],
-    fns: { nTotems: (e) => nTotemsEnJuego(e), mismo: mismoCementerio("c") },
+    fns: { conMano, nTotems: (e) => nTotemsEnJuego(e), mismo: mismoCementerio("c") },
   },
   "Karakórum": {
     activadas: [
@@ -167,8 +182,13 @@ export const HABILIDADES = {
   },
   Leng: {
     claves: ["NoAnulable"],
+    momentos: ["comienzoFase"],
+    orosMenos: "turnoRival",
     disparadas: [{ cuando: ["entra", "comienzoTurno"], hacer: [{ op: "desterrarTope", quien: "rival", nf: "orosRival" }] }],
-    fns: { orosRival: (e, ctx) => e.jugadores[N.rival(ctx.ctrl)].reserva.length },
+    fns: {
+      orosRival: (e, ctx) => e.jugadores[N.rival(ctx.ctrl)].reserva.length,
+      turnoRival: (e, ctx) => (e.activo !== ctx.ctrl ? 1 : 0),
+    },
   },
   Londres: {
     claves: ["Indesterrable"],
@@ -221,7 +241,19 @@ export const HABILIDADES = {
         requiere: { de: ["todos:aliados"], filtro: { costeMax: 3 }, para: "destruir" },
         hacer: [sel(["todos:aliados"], { costeMax: 3 }, "x", { para: "destruir" }), mov("destruir"), robar(1)],
       },
+      {
+        texto: "Elegir un Oro para que no pueda ser agrupado el próximo turno",
+        momento: "vigilia",
+        veces: "turno",
+        requiere: { de: ["todos:oros"], filtro: {} },
+        hacer: [sel(["todos:oros"], {}, "o"), { op: "fn", f: "noAgrupa" }],
+      },
     ],
+    fns: {
+      noAgrupa: (e, ctx) => {
+        for (const u of ctx.vars.o ?? []) N.agregarEfecto(e, { tipo: "noAgrupa", uid: u, j: N.controlador(e, u), fin: "juego" }, ctx.ctrl);
+      },
+    },
   },
   Manicomio: {
     activadas: [
@@ -234,7 +266,22 @@ export const HABILIDADES = {
     ],
   },
   "Mar de Azufre": {
-    claves: ["ProtegidoCoste1"],
+    momentos: ["comienzoFase"],
+    continuas: [
+      { proteccion: { por: "Oro" }, a: "propia" },
+      { proteccion: { por: "todo", costeMax: 1 }, a: "propia" },
+    ],
+    disparadas: [
+      {
+        cuando: ["entra"],
+        hacer: [
+          sel(["fuente"], {}, "s"),
+          efecto("s", { tipo: "noGenerar" }, "mientras"),
+          efecto("s", { tipo: "noReducir" }, "mientras"),
+          efecto("s", { tipo: "noSinPagar" }, "mientras"),
+        ],
+      },
+    ],
   },
   "Mesa del Te": {
     claves: ["Exhumar"],
@@ -248,13 +295,13 @@ export const HABILIDADES = {
           {
             op: "modo",
             opciones: [
-              { texto: "Generar un Oro para Aliados", pasos: [{ op: "generar", n: 1, tipos: ["Aliado"] }] },
+              { texto: "Generar un Oro para Aliados", pasos: [{ op: "generar", n: 1, tipos: ["Aliado"], costeMin: 2 }] },
               { texto: "Robar dos cartas", pasos: [robar(2)] },
             ],
           },
         ],
       },
-      { cuando: ["ataca"], hacer: [sel(["todos:aliados"], { f: "otro" }, "x"), { op: "fn", f: "fuerza5" }] },
+      { cuando: ["ataca"], hacer: [sel(["todos:aliados"], { f: "otro" }, "x"), { op: "fn", f: "aCinco" }] },
       { cuando: ["faseFinal"], si: "convertido", hacer: [{ op: "fn", f: "volver" }] },
     ],
     activadas: [
@@ -281,8 +328,11 @@ export const HABILIDADES = {
         N.sacar(e, ctx.fuente);
         e.jugadores[ctx.ctrl].apoyo.push(ctx.fuente);
       },
-      fuerza5: (e, ctx) => {
-        for (const u of ctx.vars.x ?? []) N.agregarEfecto(e, { tipo: "fuerza", uid: u, n: 5 - N.fuerza(e, u) }, ctx.ctrl);
+      aCinco: (e, ctx) => {
+        for (const u of ctx.vars.x ?? []) {
+          const prev = e.conv[u];
+          e.conv[u] = prev ? { ...prev, fuerza: 5, coste: 5 } : { tipo: "Aliado", fuerza: 5, coste: 5, hastaInicioDe: N.rival(ctx.ctrl), desde: e.turno };
+        }
       },
     },
   },
@@ -344,10 +394,22 @@ export const HABILIDADES = {
   },
   "Monumento Heroico": {
     disparadas: [{ cuando: ["entra"], hacer: [sel(["todos:cementerio"], {}, "c", { n: 4, hasta: true }), mov("barajar", "c"), robar(3)] }],
-    continuas: [{ aliadosNoPierden: true }, { fuerza: 1, a: "tusAliados" }],
+    continuas: [
+      { noPierden: true, a: "tusAliados", tipoObjetivo: ["Aliado", "Tótem"] },
+      { fuerza: 1, a: "tusAliados" },
+      { pierde: ["Indestructible", "Indesterrable"], a: "aliadosRival", tipoObjetivo: TODOS_TIPOS },
+    ],
   },
   "Monumento Inmortal": {
     respuestaMano: { anula: { tipo: "Aliado", coste: 0 }, oros: 0 },
+    activadas: [
+      {
+        texto: "Desterrarlo para Anular un Aliado de coste 0",
+        momento: "cualquiera",
+        respuesta: { anula: { tipo: "Aliado", coste: 0 } },
+        coste: [sel(["fuente"], {}, "f"), mov("desterrar", "f")],
+      },
+    ],
     disparadas: [{ cuando: ["sale"], hacer: [robar(2)] }],
   },
   "Morro de Arica": {
@@ -399,9 +461,14 @@ export const HABILIDADES = {
         ],
       },
     ],
-    continuas: [{ gana: "Indestructible", a: "tusAliados" }, { gana: "Indesterrable", a: "tusAliados" }],
+    continuas: [
+      { gana: "Indestructible", a: "tusAliados" },
+      { gana: "Indesterrable", a: "tusAliados" },
+      { noPierden: true, a: "tusAliados", tipoObjetivo: TODOS_TIPOS, costeMin: 2 },
+    ],
   },
   Olimpia: {
+    continuas: [{ noAnulables: { tipoCarta: "Talismán", costeMin: 3 } }],
     disparadas: [
       { cuando: ["juega"], quien: "yo", si: "talismanSinAliados", hacer: [{ op: "botar", n: 1, quien: "rival" }] },
       { cuando: ["faseFinal"], si: "sinAliados", opcional: true, hacer: buscar(["yo:castillo"], { tipo: "Talismán", costeMin: 3 }) },
@@ -412,7 +479,7 @@ export const HABILIDADES = {
     },
   },
   "Palacio de la Real Audiencia": {
-    claves: ["Exhumar"],
+    claves: ["Exhumar", "IndesterrableCementerio"],
     disparadas: [
       { cuando: ["entra"], hacer: [sel(["rival:enJuego"], { f: "suma3" }, "x", { n: 3, hasta: true }), mov("barajar")] },
       {

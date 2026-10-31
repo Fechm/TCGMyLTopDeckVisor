@@ -11,6 +11,18 @@ const legal = (e, uid) => accionesLegales(e).some((a) => a.tipo === "jugar" && a
 const usable = (e, uid) => accionesLegales(e).some((a) => a.tipo === "habilidad" && a.uid === uid);
 const luego = (e, ...preds) => preds.reduce((x, p) => elegir(x, p), e);
 const textos = (e) => e.pendiente.opciones.map((o) => o.texto);
+const avanzarHasta = (e, pred) => {
+  for (let i = 0; i < 60 && !pred(e); i++) {
+    const l = accionesLegales(e);
+    e = aplicar(e, l.find((x) => ["terminar", "pasarMomento", "noResponder", "pasar"].includes(x.tipo)) ?? l[0]);
+  }
+  return e;
+};
+const conMomento = (e, nombre, momentos) => {
+  const k = id(nombre);
+  e.catalogo = { ...e.catalogo, [k]: { ...e.catalogo[k], momentos } };
+  return e;
+};
 
 test("Pegana: no puede ser Anulado", () => {
   let e = mesa();
@@ -51,8 +63,21 @@ test("Pegana: una carta que llega después al Cementerio también queda restring
   assert.equal(legal(e, m2), false);
 });
 
-test("Pegana: se puede jugar al comienzo de cualquier Fase con coste reducido en el turno oponente", { todo: "momento: jugar un Tótem al comienzo de cualquier Fase (con reducción de coste en el turno oponente)" }, () => {
-  assert.fail();
+test("Pegana: se puede jugar al comienzo de cualquier Fase con coste reducido en el turno oponente", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  const p = poner(e, 0, "mano", "Pegana");
+  assert.equal(costeDe(e, 0, p).pagar, 3);
+  assert.equal(legal(e, p), false);
+  e = aplicar(e, { tipo: "terminar" });
+  e = avanzarHasta(e, (s) => s.fase === "momento");
+  assert.equal(e.activo, 1);
+  assert.equal(costeDe(e, 0, p).pagar, 2);
+  e = aplicar(e, { tipo: "pasarMomento" });
+  assert.ok(legal(e, p));
+  e = sinRespuesta(aplicar(e, jugar(p)));
+  assert.equal(zonaDe(e, p), "apoyo");
+  assert.equal(e.jugadores[0].reserva.length, 0);
 });
 
 test("Piedra de la Iglesia: tiene Indestructible", () => {
@@ -163,13 +188,18 @@ test("Plaza de Armas: muestra hasta un Arma, la pone en tu mano y genera un Oro 
   const arma = poner(e, 0, "castillo", "Pedrenyal");
   e = aplicar(e, habilidad(p, "Plaza de Armas"));
   assert.equal(zonaDe(e, arma), "mano");
-  assert.equal(disponibles(e, 0, "Arma"), 1);
-  assert.equal(disponibles(e, 0, "Talismán"), 0);
+  assert.equal(disponibles(e, 0, { tipo: "Arma", coste: 2 }), 1);
+  assert.equal(disponibles(e, 0, { tipo: "Talismán", coste: 2 }), 0);
   assert.equal(usable(e, p), false);
 });
 
-test("Plaza de Armas: el Oro generado solo sirve para Armas de coste 2 o más", { todo: "generar: Oro generado restringido a cartas de coste mínimo" }, () => {
-  assert.fail();
+test("Plaza de Armas: el Oro generado solo sirve para Armas de coste 2 o más", () => {
+  let e = mesa();
+  const p = poner(e, 0, "apoyo", "Plaza de Armas");
+  poner(e, 0, "castillo", "Pedrenyal");
+  e = aplicar(e, habilidad(p, "Plaza de Armas"));
+  assert.equal(disponibles(e, 0, { tipo: "Arma", coste: 1 }), 0);
+  assert.equal(disponibles(e, 0, { tipo: "Arma", coste: 2 }), 1);
 });
 
 test("Plaza de Armas: si controlas Aliados de coste 1 o más, jugar Talismanes en Vigilia cuesta un Oro adicional", () => {
@@ -203,8 +233,23 @@ test("Plaza de Armas - Sp: no puedes controlar más copias", () => {
   assert.equal(legal(e, otra), false);
 });
 
-test("Plaza de Armas - Sp: nombrar Arma o Tótem encarece las cartas de ese tipo", { todo: "efecto: jugar cartas de un tipo nombrado (no Talismán) cuesta un Oro adicional" }, () => {
-  assert.fail();
+test("Plaza de Armas - Sp: nombrar Arma o Tótem encarece las cartas de ese tipo", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  const p = poner(e, 0, "mano", "Plaza de Armas - Sp");
+  const arma = poner(e, 1, "mano", "Pedrenyal");
+  const totem = poner(e, 1, "mano", "Sarras");
+  const manada = poner(e, 1, "mano", "Llamar a la Manada");
+  const antes = [arma, totem, manada].map((u) => costeDe(e, 1, u).pagar);
+  e = luego(sinRespuesta(aplicar(e, jugar(p))), "Tótem");
+  assert.deepEqual([arma, totem, manada].map((u) => costeDe(e, 1, u).pagar), [antes[0], antes[1] + 1, antes[2]]);
+  let f = mesa();
+  oros(f, 0, 2);
+  const q = poner(f, 0, "mano", "Plaza de Armas - Sp");
+  const arma2 = poner(f, 0, "mano", "Pedrenyal");
+  const base = costeDe(f, 0, arma2).pagar;
+  f = luego(sinRespuesta(aplicar(f, jugar(q))), "Arma");
+  assert.equal(costeDe(f, 0, arma2).pagar, base + 1);
 });
 
 test("Pnyx: al entrar Baraja una carta de coste 2 o menos y Roba una carta", () => {
@@ -256,13 +301,21 @@ test("Puerta del Firmamento: o genera un Oro para Tótems", () => {
   let e = mesa();
   const p = poner(e, 0, "apoyo", "Puerta del Firmamento");
   e = hacer(e, habilidad(p, "Puerta del Firmamento"), "Generar un Oro para Tótems");
-  assert.equal(disponibles(e, 0, "Tótem"), 1);
-  assert.equal(disponibles(e, 0, "Aliado"), 0);
+  assert.equal(disponibles(e, 0, { tipo: "Tótem", coste: 2 }), 1);
+  assert.equal(disponibles(e, 0, { tipo: "Aliado", coste: 2 }), 0);
   assert.equal(usable(e, p), true);
 });
 
-test("Puerta del Firmamento: el Oro generado solo sirve para Tótems de coste 2 o más", { todo: "generar: Oro generado restringido a cartas de coste mínimo" }, () => {
-  assert.fail();
+test("Puerta del Firmamento: el Oro generado solo sirve para Tótems de coste 2 o más", () => {
+  let e = mesa();
+  const p = poner(e, 0, "apoyo", "Puerta del Firmamento");
+  const reino = poner(e, 0, "mano", "Reino de Midgard");
+  const sarras = poner(e, 0, "mano", "Sarras");
+  e = hacer(e, habilidad(p, "Puerta del Firmamento"), "Generar un Oro para Tótems");
+  assert.equal(disponibles(e, 0, { tipo: "Tótem", coste: 1 }), 0);
+  assert.equal(legal(e, reino), false);
+  assert.equal(disponibles(e, 0, { tipo: "Tótem", coste: 2 }), 1);
+  assert.equal(costeDe(e, 0, sarras).pagar, 2);
 });
 
 test("Puerta del Firmamento: convierte un Tótem en un Aliado de Fuerza igual a su coste con Furia por el turno", () => {
@@ -389,8 +442,18 @@ test("Santuario de la Fuerza: cuando un Aliado o Arma que juegas va al Cementeri
   assert.equal(zonaDe(e, v), "mano");
 });
 
-test("Santuario de la Fuerza: reduce en un Oro el coste de tus Aliados de coste 3 o más", { todo: "continua: reduce en un Oro el coste de tus Aliados de coste N o más" }, () => {
-  assert.fail();
+test("Santuario de la Fuerza: reduce en un Oro el coste de tus Aliados de coste 3 o más", () => {
+  const e = mesa();
+  const j = poner(e, 0, "mano", "Jaques de Molay");
+  const v = poner(e, 0, "mano", "Valefor");
+  const rival = poner(e, 1, "mano", "Jaques de Molay");
+  const antes = [j, v].map((u) => costeDe(e, 0, u).pagar);
+  poner(e, 0, "apoyo", "Santuario de la Fuerza");
+  const ahora = [j, v].map((u) => costeDe(e, 0, u).pagar);
+  assert.equal(ahora[0], antes[0] >= 3 ? antes[0] - 1 : antes[0]);
+  assert.equal(ahora[1], antes[1] >= 3 ? antes[1] - 1 : antes[1]);
+  assert.equal(costeDe(e, 1, rival).pagar, antes[0]);
+  assert.ok(antes.some((c) => c >= 3));
 });
 
 test("Sarras: en tu Vigilia busca un Talismán de coste 3 o más en tu Castillo", () => {
@@ -551,8 +614,27 @@ test("Tumba de la Esperanza: una vez por turno Destruye una carta de coste 0", (
   assert.ok(!accionesLegales(e).some((a) => a.tipo === "habilidad" && a.uid === t && a.h === 0));
 });
 
-test("Tumba de la Esperanza: Anular una carta de coste 0", { todo: "respuesta: Anular con una habilidad activada de una carta en juego" }, () => {
-  assert.fail();
+test("Tumba de la Esperanza: Anular una carta de coste 0, compartiendo el uso por turno con Destruir", () => {
+  let e = mesa();
+  const t = poner(e, 0, "apoyo", "Tumba de la Esperanza");
+  e = aplicar(e, { tipo: "terminar" });
+  e = avanzarHasta(e, (s) => s.activo === 1 && s.fase === "vigilia");
+  oros(e, 1, 3);
+  const ovejas = poner(e, 1, "mano", "Batallon de Ovejas");
+  const v = poner(e, 1, "mano", "Valefor");
+  e = aplicar(e, jugar(v));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder" && a.uid === t), false);
+  e = sinRespuesta(e);
+  e = aplicar(e, jugar(ovejas));
+  const r = accionesLegales(e).find((a) => a.tipo === "responder" && a.uid === t);
+  assert.ok(r);
+  e = sinRespuesta(aplicar(e, r));
+  assert.equal(zonaDe(e, ovejas), "cementerio");
+  const [o] = oros(e, 1, 1);
+  e.fase = "talismanes";
+  e.prioridad = 0;
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "habilidad" && a.uid === t && a.h === 0), false);
+  assert.equal(zonaDe(e, o), "reserva");
 });
 
 test("Tumba de la Esperanza: una vez por turno Descarta una carta para Robar dos", () => {
@@ -652,7 +734,36 @@ test("Tótem del Dragón Ancestral: o Destruye una carta de coste 2 o menos", ()
   assert.equal(zonaDe(e, v), "cementerio");
 });
 
-test("Tótem del Dragón Ancestral: en tu turno Barajarlo para Anular un Aliado o cancelar una habilidad", { todo: "respuesta: Anular con una habilidad activada de una carta en juego; efecto: cancelar una habilidad" }, () => {
+test("Tótem del Dragón Ancestral: en tu turno puedes Barajarlo para Anular un Aliado", () => {
+  let e = conMomento(mesa(), "Valefor", ["comienzoFase"]);
+  const t = poner(e, 0, "apoyo", "Tótem del Dragón Ancestral");
+  oros(e, 1, 5);
+  const v = poner(e, 1, "mano", "Valefor");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  assert.equal(e.activo, 0);
+  e = avanzarHasta(e, (s) => legal(s, v));
+  e = aplicar(e, jugar(v));
+  const r = accionesLegales(e).find((a) => a.tipo === "responder" && a.uid === t);
+  assert.ok(r);
+  assert.equal(usable(e, t), false);
+  e = sinRespuesta(aplicar(e, r));
+  assert.equal(zonaDe(e, t), "castillo");
+  assert.equal(zonaDe(e, v), "cementerio");
+});
+
+test("Tótem del Dragón Ancestral: en el turno oponente no puede Anular", () => {
+  let e = mesa();
+  const t = poner(e, 0, "apoyo", "Tótem del Dragón Ancestral");
+  e = aplicar(e, { tipo: "terminar" });
+  e = avanzarHasta(e, (s) => s.activo === 1 && s.fase === "vigilia");
+  oros(e, 1, 5);
+  const v = poner(e, 1, "mano", "Valefor");
+  e = aplicar(e, jugar(v));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder" && a.uid === t), false);
+});
+
+test("Tótem del Dragón Ancestral: cancelar una habilidad", { todo: "efecto: cancelar una habilidad" }, () => {
   assert.fail();
 });
 

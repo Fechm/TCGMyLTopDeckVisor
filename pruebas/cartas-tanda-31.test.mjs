@@ -1,12 +1,23 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, hacer, elegir, sinRespuesta, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
+import { cumple, disponibles } from "../web/duelo/efectos.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
 const nombreDe = (e, nombre) => (v) => v !== null && N.carta(e, v).nombre === nombre;
 const puedeUsar = (e, uid, h = 0) => accionesLegales(e).some((a) => a.tipo === "habilidad" && a.uid === uid && a.h === h);
 const puedeJugar = (e, uid) => accionesLegales(e).some((a) => a.tipo === "jugar" && a.uid === uid);
+const ctxDe = (e, uid, j) => ({ ctrl: j, fuente: uid, def: e.instancias[uid], costeFuente: N.carta(e, uid).coste ?? 0, vars: {} });
+const respuestaDe = (e, uid) => accionesLegales(e).find((a) => a.tipo === "responder" && a.uid === uid);
+
+function avanzarHasta(e, pred) {
+  for (let i = 0; i < 60 && !pred(e); i++) {
+    const l = accionesLegales(e);
+    e = aplicar(e, l.find((x) => ["terminar", "pasarMomento", "noResponder", "pasar"].includes(x.tipo)) ?? l[0]);
+  }
+  return e;
+}
 
 function alTope(e, j, ...uids) {
   const c = e.jugadores[j].castillo;
@@ -65,12 +76,14 @@ test("Yggdrasil: en tu Vigilia convierte un Tótem en un Aliado con Fuerza igual
   assert.equal(N.carta(e, t).tipo, "Tótem");
 });
 
-test("Yggdrasil: mientras esté en juego jugar Aliados cuesta un Oro adicional", { todo: "continua: jugar cartas de un tipo cuesta un Oro adicional a ambos jugadores" }, () => {
+test("Yggdrasil: mientras esté en juego jugar Aliados cuesta un Oro adicional a ambos jugadores", () => {
   const e = mesa();
   oros(e, 0, 1);
-  poner(e, 0, "apoyo", "Yggdrasil");
+  poner(e, 1, "apoyo", "Yggdrasil");
   const v = poner(e, 0, "mano", "Valefor");
   assert.equal(puedeJugar(e, v), false);
+  oros(e, 0, 1);
+  assert.equal(puedeJugar(e, v), true);
 });
 
 test("Adan: al entrar busca a Eva y, si no controlas más Aliados, la juega sin pagar su coste", () => {
@@ -139,7 +152,7 @@ test("Alicia en Wonderland: la carta nombrada pierde su habilidad mientras Alici
   assert.equal(N.activa(e, r), true);
 });
 
-test("Alicia en Wonderland: la carta nombrada pierde su habilidad también fuera del juego", { todo: "efecto: pérdida de habilidad por nombre en zonas fuera del juego" }, () => {
+test("Alicia en Wonderland: la carta nombrada pierde su habilidad también fuera del juego", () => {
   let e = mesa();
   oros(e, 0, 1);
   const alicia = poner(e, 0, "mano", "Alicia en Wonderland");
@@ -191,12 +204,23 @@ test("Ava Rei Pua: no puede ser Barajado", () => {
   assert.equal(zonaDe(e, ava), "defensa");
 });
 
-test("Ava Rei Pua: cuando tu oponente Roba cartas por efectos puedes Robar esa misma cantidad", { todo: "evento: cuando el oponente Roba cartas por efectos" }, () => {
+test("Ava Rei Pua: cuando tu oponente Roba cartas por efectos puedes Robar esa misma cantidad", () => {
   let e = mesa();
   poner(e, 0, "defensa", "Ava Rei Pua");
   const k = poner(e, 1, "defensa", "Espiritu Kotaix");
   e.activo = 1;
   e = aplicar(e, habilidad(k, "Espiritu Kotaix"));
+  for (let i = 0; i < 5 && e.pendiente; i++) e = elegir(e, e.pendiente.jugador === 0 ? true : () => true);
+  assert.equal(e.jugadores[1].mano.length, 2);
+  assert.equal(e.jugadores[0].mano.length, 2);
+});
+
+test("Ava Rei Pua: Robar por su propia habilidad no la vuelve a disparar", () => {
+  let e = mesa();
+  poner(e, 0, "defensa", "Ava Rei Pua");
+  const d = poner(e, 0, "defensa", "Don Quijote");
+  e = aplicar(e, habilidad(d, "Don Quijote"));
+  assert.equal(e.pendiente, null);
   assert.equal(e.jugadores[0].mano.length, 2);
 });
 
@@ -229,14 +253,16 @@ test("Cleopatra VII: es Indestructible", () => {
   assert.equal(N.tiene(e, c, "Indestructible"), true);
 });
 
-test("Cleopatra VII: tus demás Aliados no son afectados por habilidades de Aliados oponentes", { todo: "protección: tus Aliados no son afectados por habilidades de Aliados oponentes" }, () => {
+test("Cleopatra VII: tus demás Aliados no son afectados por habilidades de Aliados oponentes", () => {
   let e = mesa();
-  poner(e, 1, "defensa", "Cleopatra VII");
+  const c = poner(e, 1, "defensa", "Cleopatra VII");
   const v = poner(e, 1, "defensa", "Valefor");
   const k = poner(e, 0, "defensa", "Espiritu Kotaix");
+  const lucy = poner(e, 0, "mano", "Regresa Lucy");
+  assert.equal(cumple(e, ctxDe(e, lucy, 0), v, {}, "destruir"), true);
   e = aplicar(e, habilidad(k, "Espiritu Kotaix"));
-  if (e.pendiente) e = elegir(e, v);
   assert.equal(zonaDe(e, v), "defensa");
+  assert.equal(zonaDe(e, c), "castillo");
 });
 
 test("Cleopatra VII: tus demás Aliados no pueden ser bloqueados por Aliados de mayor Fuerza", { todo: "restricción de bloqueo: no puede ser bloqueado por Aliados de mayor Fuerza" }, () => {
@@ -285,11 +311,12 @@ test("Don Quijote: una vez por turno Roba dos cartas", () => {
   assert.equal(puedeUsar(e, d), false);
 });
 
-test("Don Quijote: genera un Oro para jugar cartas de coste 3 o más", { todo: "generar: Oro generado restringido a cartas de coste mínimo" }, () => {
+test("Don Quijote: genera un Oro que solo sirve para jugar cartas de coste 3 o más", () => {
   let e = mesa();
   const d = poner(e, 0, "defensa", "Don Quijote");
   e = aplicar(e, habilidad(d, "Don Quijote"));
-  assert.equal(e.jugadores[0].generados.length, 1);
+  assert.equal(disponibles(e, 0, { tipo: "Aliado", coste: 3 }), 1);
+  assert.equal(disponibles(e, 0, { tipo: "Aliado", coste: 2 }), 0);
 });
 
 test("Espiritu Kotaix: es Indesterrable y una vez por turno Roba dos cartas y Baraja una carta oponente que no sea Oro", () => {
@@ -315,14 +342,18 @@ test("Espiritu Kotaix: tus Aliados ganan 2 de Fuerza y Furia", () => {
   assert.equal(N.fuerza(e, r), 3);
 });
 
-test("Espiritu Kotaix: tus Aliados no pueden ser afectados por Talismanes", { todo: "protección: tus Aliados no pueden ser afectados por Talismanes" }, () => {
+test("Espiritu Kotaix: tus Aliados no pueden ser afectados por Talismanes", () => {
   let e = mesa();
   poner(e, 1, "defensa", "Espiritu Kotaix");
   const v = poner(e, 1, "defensa", "Valefor");
+  const t = poner(e, 1, "apoyo", "Templo Gótico");
   oros(e, 0, 1);
   const lucy = poner(e, 0, "mano", "Regresa Lucy");
   e = sinRespuesta(aplicar(e, jugar(lucy)));
   assert.equal(e.pendiente.opciones.some((o) => o.valor === v), false);
+  e = elegir(e, t);
+  assert.equal(zonaDe(e, v), "defensa");
+  assert.equal(zonaDe(e, t), "cementerio");
 });
 
 test("Eva: al entrar busca a Adan y, si no controlas más Aliados, lo juega sin pagar su coste", () => {
@@ -366,8 +397,15 @@ test("Guerrillero Rodriguez: es Indestructible y al entrar Roba una carta", () =
   assert.equal(e.jugadores[0].mano.length, 1);
 });
 
-test("Guerrillero Rodriguez: puede jugarse al comienzo de la Vigilia", { todo: "momento: jugar un Aliado al comienzo de la Vigilia" }, () => {
-  assert.fail("sin modelar");
+test("Guerrillero Rodriguez: puede jugarse al comienzo de la Vigilia oponente", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const g = poner(e, 0, "mano", "Guerrillero Rodriguez");
+  e = aplicar(e, { tipo: "terminar" });
+  e = avanzarHasta(e, (s) => s.fase === "momento" && accionesLegales(s).some((a) => a.tipo === "jugar" && a.uid === g));
+  assert.equal(e.activo, 1);
+  e = sinRespuesta(aplicar(e, jugar(g)));
+  assert.equal(zonaDe(e, g), "defensa");
 });
 
 test("Guerrillero Rodriguez: las cartas solo pueden ser puestas en juego desde la mano de su dueño", { todo: "restricción: los jugadores solo pueden poner cartas en juego desde su mano" }, () => {
@@ -378,8 +416,13 @@ test("Guerrillero Rodriguez: las cartas solo pueden ser puestas en juego desde l
   assert.equal(puedeJugar(e, d), false);
 });
 
-test("Guerrillero Rodriguez: no puede ser afectado por Oros oponentes", { todo: "protección: no puede ser afectado por Oros oponentes" }, () => {
-  assert.fail("sin modelar");
+test("Guerrillero Rodriguez: no puede ser afectado por Oros oponentes", () => {
+  const e = mesa();
+  const g = poner(e, 0, "defensa", "Guerrillero Rodriguez");
+  const [oro] = oros(e, 1, 1);
+  const lucy = poner(e, 1, "mano", "Regresa Lucy");
+  assert.equal(cumple(e, ctxDe(e, oro, 1), g, {}), false);
+  assert.equal(cumple(e, ctxDe(e, lucy, 1), g, {}), true);
 });
 
 test("Hijo de la Rebeldia: tiene Furia e Imbloqueable", () => {
@@ -522,10 +565,18 @@ test("Jinete de la Muerte: con cuatro Aliados Jinete, las cartas que no sean Jin
   assert.equal(zonaDe(e, o), "reserva");
 });
 
-test("Jinete de la Muerte: desde tu Destierro se Baraja con hasta otro Jinete", { todo: "zona: habilidad activada desde el Destierro" }, () => {
-  const e = mesa();
+test("Jinete de la Muerte: una vez por turno, desde tu Destierro se Baraja con hasta otro Jinete de ahí", () => {
+  let e = mesa();
   const m = poner(e, 0, "destierro", "Jinete de la Muerte");
-  assert.equal(puedeUsar(e, m), true);
+  const p = poner(e, 0, "destierro", "Jinete de la Peste");
+  const v = poner(e, 0, "destierro", "Valefor");
+  assert.equal(puedeUsar(e, m, 1), true);
+  e = aplicar(e, habilidad(m, "Jinete de la Muerte", 1));
+  assert.equal(e.pendiente.opciones.some((o) => o.valor === v), false);
+  e = elegir(e, p);
+  assert.equal(zonaDe(e, m), "castillo");
+  assert.equal(zonaDe(e, p), "castillo");
+  assert.equal(zonaDe(e, v), "destierro");
 });
 
 test("Jinete de la Peste: tiene Exhumar e Imbloqueable y una vez por turno busca en un Castillo dos cartas de distinto nombre y las Destierra", () => {
@@ -595,8 +646,25 @@ test("Jinete del Hambre: si controlas otro Jinete, además tu oponente Descarta 
   assert.equal(e.jugadores[1].mano.length, 1);
 });
 
-test("Jinete del Hambre: con cuatro Aliados Jinete tu oponente solo puede utilizar hasta tres habilidades por turno", { todo: "restricción: el oponente usa como máximo tres habilidades por turno" }, () => {
-  assert.fail("sin modelar");
+test("Jinete del Hambre: con cuatro Aliados Jinete tu oponente solo puede utilizar hasta tres habilidades por turno", () => {
+  let e = mesa();
+  for (const n of ["Jinete del Hambre", "Jinete de la Guerra", "Jinete de la Peste", "Jinete de la Muerte"]) poner(e, 0, "defensa", n);
+  const d = poner(e, 1, "defensa", "Don Quijote");
+  e = aplicar(e, { tipo: "terminar" });
+  e = avanzarHasta(e, (s) => s.activo === 1 && s.fase === "vigilia");
+  assert.equal(puedeUsar(e, d), true);
+  e.jugadores[1].habilidadesUsadas = 3;
+  assert.equal(puedeUsar(e, d), false);
+});
+
+test("Jinete del Hambre: con menos de cuatro Aliados Jinete no limita las habilidades oponentes", () => {
+  let e = mesa();
+  for (const n of ["Jinete del Hambre", "Jinete de la Guerra", "Jinete de la Peste"]) poner(e, 0, "defensa", n);
+  const d = poner(e, 1, "defensa", "Don Quijote");
+  e = aplicar(e, { tipo: "terminar" });
+  e = avanzarHasta(e, (s) => s.activo === 1 && s.fase === "vigilia");
+  e.jugadores[1].habilidadesUsadas = 3;
+  assert.equal(puedeUsar(e, d), true);
 });
 
 test("Jonathan Harker: en tu Vigilia Baraja un Arma que controles para jugar otra de tu mano o Cementerio pagando un Oro menos", () => {
@@ -619,8 +687,34 @@ test("Jonathan Harker: sin Arma en juego de coste 1 o más no puede usar su habi
   assert.equal(puedeUsar(e, harker), false);
 });
 
-test("Jonathan Harker: Destruyendo un Aliado que controles Anula un Arma o Tótem", { todo: "respuesta: Anular con una habilidad activada de una carta en juego" }, () => {
-  assert.fail("sin modelar");
+test("Jonathan Harker: una vez por turno, Destruyendo un Aliado que controles Anula un Arma o Tótem", () => {
+  let e = mesa();
+  const harker = poner(e, 1, "defensa", "Jonathan Harker");
+  const v = poner(e, 1, "defensa", "Valefor");
+  oros(e, 0, 2);
+  const t = poner(e, 0, "mano", "Templo Gótico");
+  e = aplicar(e, jugar(t));
+  const r = respuestaDe(e, harker);
+  assert.deepEqual(r, { tipo: "responder", uid: harker, def: id("Jonathan Harker"), h: 1 });
+  e = aplicar(e, r);
+  e = sinRespuesta(elegir(e, v));
+  assert.equal(zonaDe(e, t), "cementerio");
+  assert.equal(zonaDe(e, v), "cementerio");
+  assert.equal(zonaDe(e, harker), "defensa");
+});
+
+test("Jonathan Harker: su habilidad no Anula Aliados ni se usa como habilidad normal", () => {
+  let e = mesa();
+  const harker = poner(e, 1, "defensa", "Jonathan Harker");
+  poner(e, 1, "defensa", "Valefor");
+  oros(e, 0, 1);
+  const v = poner(e, 0, "mano", "Valefor");
+  e = aplicar(e, jugar(v));
+  assert.equal(respuestaDe(e, harker), undefined);
+  const f = mesa();
+  const h2 = poner(f, 0, "defensa", "Jonathan Harker");
+  poner(f, 0, "defensa", "Valefor");
+  assert.equal(puedeUsar(f, h2, 1), false);
 });
 
 test("Jupitris: tiene Furia, Imbloqueable e Indestructible; al entrar no recibes daño hasta tu próximo turno y puedes Robar tres", () => {
@@ -746,7 +840,7 @@ test("Lucifer el Caido: cuando un Oro entra en juego bajo tu control, una carta 
   assert.ok(e.efectos.some((f) => f.tipo === "pierdeHabilidad" && f.uid === r && f.fin.inicioDe === 0));
 });
 
-test("Lucifer el Caido: la carta elegida puede estar en el Cementerio", { todo: "efecto: pérdida de habilidad de una carta en el Cementerio" }, () => {
+test("Lucifer el Caido: la carta elegida puede estar en el Cementerio", () => {
   let e = mesa();
   poner(e, 0, "defensa", "Lucifer el Caido");
   const r = poner(e, 1, "cementerio", "Belial");
@@ -768,8 +862,36 @@ test("Malevolente: solo puedes controlar una copia", () => {
   assert.equal(puedeJugar(sola, m), true);
 });
 
-test("Malevolente: Desterrándolo Anula un Talismán de coste 2 o menos o previene que una carta salga del juego", { todo: "respuesta: Anular con una habilidad activada de una carta en juego" }, () => {
-  assert.fail("sin modelar");
+test("Malevolente: Desterrándolo Anula un Talismán de coste 2 o menos", () => {
+  let e = mesa();
+  const m = poner(e, 1, "defensa", "Malevolente");
+  oros(e, 0, 1);
+  const manada = poner(e, 0, "mano", "Llamar a la Manada");
+  e = aplicar(e, jugar(manada));
+  const r = respuestaDe(e, m);
+  assert.ok(r);
+  e = sinRespuesta(aplicar(e, r));
+  assert.equal(zonaDe(e, manada), "cementerio");
+  assert.equal(zonaDe(e, m), "destierro");
+  assert.equal(e.jugadores[0].mano.length, 0);
+});
+
+test("Malevolente: no Anula cartas que no sean Talismán", () => {
+  let e = mesa();
+  const m = poner(e, 1, "defensa", "Malevolente");
+  oros(e, 0, 1);
+  const v = poner(e, 0, "mano", "Valefor");
+  e = aplicar(e, jugar(v));
+  assert.equal(respuestaDe(e, m), undefined);
+});
+
+test("Malevolente: Desterrándolo previene que una carta salga del juego este turno", () => {
+  let e = mesa();
+  const m = poner(e, 0, "defensa", "Malevolente");
+  const v = poner(e, 0, "defensa", "Valefor");
+  e = aplicar(e, habilidad(m, "Malevolente", 1));
+  assert.equal(zonaDe(e, m), "destierro");
+  assert.equal(N.puedeSalir(e, v), false);
 });
 
 test("Malevolente: entra en juego con una Raza a tu elección", { todo: "efecto: elegir la Raza de una carta al entrar en juego" }, () => {

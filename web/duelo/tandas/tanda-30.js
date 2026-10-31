@@ -2,8 +2,6 @@ import * as N from "../nucleo.js";
 import { sel, mov, barajar, robar, efecto, buscar, castilloElegido, coste } from "../formato.js";
 import { disponibles, pagarOros } from "../efectos.js";
 
-const sinCopia = (e, ctx) => !e.jugadores[ctx.ctrl].apoyo.some((u) => u !== ctx.fuente && N.carta(e, u).id === ctx.def);
-
 const agruparOro = [sel(["yo:pagado"], { tipo: "Oro" }, "o"), mov("reserva", "o")];
 
 const barajarODesterrar = (v) => ({
@@ -39,12 +37,15 @@ const visionLibre = (e, ctx, i) => !(e.turno <= (e.usos[`vision|${ctx.fuente}|${
 export const HABILIDADES = {
   Pegana: {
     claves: ["NoAnulable"],
+    momentos: ["comienzoFase"],
+    reduce: "turnoRival",
     disparadas: [
       { cuando: ["entra"], hacer: [{ op: "fn", f: "sincronizar" }] },
       { cuando: ["alCementerio", "comienzoTurno", "juega", "saleDelJuego"], quien: "cualquiera", hacer: [{ op: "fn", f: "sincronizar" }] },
       { cuando: ["sale"], hacer: [{ op: "fn", f: "sincronizar" }] },
     ],
     fns: {
+      turnoRival: (e, ctx) => (e.activo !== ctx.ctrl ? 1 : 0),
       sincronizar: (e, ctx) => {
         e.efectos = e.efectos.filter((f) => !(f.tipo === "noJugarNombre" && f.origen === ctx.fuente));
         if (!N.enJuego(e, ctx.fuente)) return;
@@ -76,14 +77,13 @@ export const HABILIDADES = {
     ],
   },
   "Pirámide de Guiza": {
-    requiere: "sinCopia",
+    claves: ["Unica"],
     disparadas: [
       { cuando: ["entra"], hacer: [{ op: "fn", f: "razas" }] },
       { cuando: ["sale"], si: "destruidaODesterrada", hacer: [sel(["todos:aliados"], { f: "otraRaza" }, "x", { n: 99 }), mov("destruir")] },
     ],
     continuas: [{ fuerzaPor: "porRaza", a: "tusAliados" }],
     fns: {
-      sinCopia,
       razas: (e) => {
         const razas = [...new Set(Object.values(e.catalogo).filter((c) => c.tipo === "Aliado").flatMap((c) => c.razas ?? []))].filter((r) => r !== "Sin raza");
         return [{ op: "modo", opciones: razas.map((r) => ({ texto: r, pasos: [{ op: "fn", f: "fijar", raza: r }] })) }];
@@ -123,30 +123,35 @@ export const HABILIDADES = {
       {
         texto: "Mostrar del tope de tu Castillo hasta un Arma, ponerla en tu mano y generar un Oro para Armas",
         veces: "turno",
-        hacer: [{ op: "mostrarHasta", n: 1, filtro: { tipo: "Arma" }, como: "m" }, mov("mano", "m"), barajar(), { op: "generar", n: 1, tipos: ["Arma"] }],
+        hacer: [{ op: "mostrarHasta", n: 1, filtro: { tipo: "Arma" }, como: "m" }, mov("mano", "m"), barajar(), { op: "generar", n: 1, tipos: ["Arma"], costeMin: 2 }],
       },
     ],
-    continuas: [{ impuestoTalisman: true, si: "talismanVigilia" }],
+    continuas: [{ impuestoTodos: { tipoCarta: "Talismán", n: 1 }, si: "talismanVigilia" }],
     fns: {
       talismanVigilia: (e, ctx) => e.fase === "vigilia" && N.aliadosDe(e, ctx.ctrl).some((a) => coste(e, a) >= 1),
     },
   },
   "Plaza de Armas - Sp": {
-    claves: ["NoAnulable"],
-    requiere: "sinCopia",
+    claves: ["NoAnulable", "Unica"],
     disparadas: [
       {
         cuando: ["entra"],
         hacer: [{ op: "modo", opciones: ["Talismán", "Arma", "Tótem"].map((t) => ({ texto: t, pasos: [{ op: "fn", f: "nombrar", tipo: t }] })) }],
       },
     ],
-    continuas: [{ impuestoTalisman: true, si: "nombroTalisman" }, { fuerza: 1, a: "tusAliados" }],
+    continuas: [
+      { impuestoTodos: { tipoCarta: "Talismán", n: 1 }, si: "nombroTalisman" },
+      { impuestoTodos: { tipoCarta: "Arma", n: 1 }, si: "nombroArma" },
+      { impuestoTodos: { tipoCarta: "Tótem", n: 1 }, si: "nombroTotem" },
+      { fuerza: 1, a: "tusAliados" },
+    ],
     fns: {
-      sinCopia,
       nombrar: (e, ctx, api, p) => {
         e.usos[`tipo|${ctx.fuente}`] = p.tipo;
       },
       nombroTalisman: (e, ctx) => e.usos[`tipo|${ctx.fuente}`] === "Talismán",
+      nombroArma: (e, ctx) => e.usos[`tipo|${ctx.fuente}`] === "Arma",
+      nombroTotem: (e, ctx) => e.usos[`tipo|${ctx.fuente}`] === "Tótem",
     },
   },
   Pnyx: {
@@ -181,7 +186,7 @@ export const HABILIDADES = {
             op: "modo",
             opciones: [
               { texto: "Buscar un Tótem", pasos: buscar(["yo:castillo"], { tipo: "Tótem" }) },
-              { texto: "Generar un Oro para Tótems", pasos: [{ op: "generar", n: 1, tipos: ["Tótem"] }] },
+              { texto: "Generar un Oro para Tótems", pasos: [{ op: "generar", n: 1, tipos: ["Tótem"], costeMin: 2 }] },
             ],
           },
         ],
@@ -234,7 +239,7 @@ export const HABILIDADES = {
   },
   "Santuario de la Fuerza": {
     disparadas: [{ cuando: ["anulada"], quien: "yo", si: "aliadoOArma", opcional: true, hacer: [{ op: "fn", f: "tomarDato" }, mov("mano", "s")] }],
-    continuas: [{ gana: "AtacaAlEntrar", a: "tusAliados" }, { fuerza: 1, a: "tusAliados" }],
+    continuas: [{ reduceCoste: { n: 1, tipoCarta: "Aliado", costeMin: 3 } }, { gana: "AtacaAlEntrar", a: "tusAliados" }, { fuerza: 1, a: "tusAliados" }],
     fns: {
       tomarDato,
       aliadoOArma: (e, ctx) => ["Aliado", "Arma"].includes(ctx.datos.tipo) && e.jugadores[ctx.ctrl].cementerio.includes(ctx.datos.uid),
@@ -244,7 +249,7 @@ export const HABILIDADES = {
     activadas: [{ texto: "Buscar en tu Castillo un Talismán de coste 3 o más", momento: "vigilia", veces: "turno", hacer: buscar(["yo:castillo"], { tipo: "Talismán", costeMin: 3 }) }],
   },
   Stonehenge: {
-    requiere: "sinCopia",
+    claves: ["Unica"],
     activadas: [
       {
         texto: "Botar dos cartas para subir una carta que no sea Talismán de tu Cementerio a tu mano",
@@ -255,7 +260,7 @@ export const HABILIDADES = {
         hacer: [sel(["yo:cementerio"], { noTipo: ["Talismán"] }), mov("mano")],
       },
     ],
-    fns: { sinCopia, puedeBotar: (e, ctx) => e.jugadores[ctx.ctrl].castillo.length > 2 },
+    fns: { puedeBotar: (e, ctx) => e.jugadores[ctx.ctrl].castillo.length > 2 },
   },
   "Templo de Hatshepsut": {
     claves: ["Exhumar"],
@@ -330,6 +335,7 @@ export const HABILIDADES = {
       {
         texto: "Destruir una carta de coste 0",
         veces: "turno",
+        grupo: "coste0",
         requiere: { de: ["todos:enJuego"], filtro: { costeMax: 0 }, para: "destruir" },
         hacer: [sel(["todos:enJuego"], { costeMax: 0 }, "x", { para: "destruir" }), mov("destruir")],
       },
@@ -340,6 +346,7 @@ export const HABILIDADES = {
         coste: [sel(["yo:mano"], {}, "d"), mov("cementerio", "d")],
         hacer: [robar(2)],
       },
+      { texto: "Anular una carta de coste 0", veces: "turno", grupo: "coste0", respuesta: { anula: { costeMax: 0 } } },
     ],
     disparadas: [
       {
@@ -435,6 +442,15 @@ export const HABILIDADES = {
         ],
       },
     ],
+    activadas: [
+      {
+        texto: "Barajarlo para Anular un Aliado",
+        respuesta: { anula: { tipo: "Aliado" } },
+        requiere: "tuTurno",
+        coste: [sel(["fuente"], {}, "yo"), mov("barajar", "yo")],
+      },
+    ],
+    fns: { tuTurno: (e, ctx) => e.activo === ctx.ctrl },
   },
   "Túneles Secretos": {
     disparadas: [

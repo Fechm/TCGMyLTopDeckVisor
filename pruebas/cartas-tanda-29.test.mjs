@@ -1,12 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mesa, poner, oros, hacer, elegir, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
+import { mesa, poner, oros, hacer, elegir, accionesLegales, aplicar, zonaDe, id, N, sinRespuesta, pasarHasta } from "./ayuda-duelo.mjs";
 import { costeDe } from "../web/duelo/motor.js";
-import { cumple } from "../web/duelo/efectos.js";
+import { cumple, OPS } from "../web/duelo/efectos.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
 const nombreDe = (e, nombre) => (v) => v !== null && N.carta(e, v).nombre === nombre;
+const ctxDe = (e, uid, j) => ({ ctrl: j, fuente: uid, def: e.instancias[uid], costeFuente: N.carta(e, uid).coste ?? 0, vars: {} });
+const jugable = (e, uid) => accionesLegales(e).some((a) => a.tipo === "jugar" && a.uid === uid);
+const responde = (e, uid) => accionesLegales(e).find((a) => a.tipo === "responder" && a.uid === uid);
+const hayRespuesta = (e) => accionesLegales(e).some((a) => a.tipo === "responder");
 const usable = (e, uid, h = 0) => accionesLegales(e).some((a) => a.tipo === "habilidad" && a.uid === uid && a.h === h);
 
 function resolverTodo(e) {
@@ -36,7 +40,21 @@ test("Humberstone: el coste reducido no baja de 1", () => {
   assert.equal(e.jugadores[0].pagado.length, 1);
 });
 
-test("Humberstone: no puede ser Anulado si el oponente usó varias habilidades o Talismanes", { todo: "anulación: no Anulable condicionado a habilidades o Talismanes usados por el oponente este turno" }, () => {});
+test("Humberstone: no puede ser Anulado si el oponente usó más de una habilidad o jugó más de un Talismán", () => {
+  const preparar = (ajuste) => {
+    const e = mesa();
+    oros(e, 0, 1);
+    const h = poner(e, 0, "mano", "Humberstone");
+    poner(e, 1, "apoyo", "Hy Brasil");
+    poner(e, 1, "mano", "Valefor");
+    ajuste(e.jugadores[1]);
+    return aplicar(e, jugar(h));
+  };
+  assert.equal(hayRespuesta(preparar(() => {})), true);
+  assert.equal(hayRespuesta(preparar((p) => (p.habilidadesUsadas = 1))), true);
+  assert.equal(hayRespuesta(preparar((p) => (p.habilidadesUsadas = 2))), false);
+  assert.equal(hayRespuesta(preparar((p) => (p.jugadas["Talismán"] = 2))), false);
+});
 
 test("Hy Brasil: el oponente Bota una carta por Tótem en juego y luego Destierras hasta tres cartas de un Cementerio", () => {
   let e = mesa();
@@ -53,7 +71,24 @@ test("Hy Brasil: el oponente Bota una carta por Tótem en juego y luego Destierr
   assert.equal(zonaDe(e, a), "cementerio");
 });
 
-test("Hy Brasil: Desterrar una carta de la mano para Anular un Talismán o Tótem", { todo: "respuesta: Anular con una habilidad activada de una carta en juego" }, () => {});
+test("Hy Brasil: Destierra una carta de tu mano para Anular un Talismán o Tótem", () => {
+  let e = mesa();
+  const h = poner(e, 1, "apoyo", "Hy Brasil");
+  const d = poner(e, 1, "mano", "Valefor");
+  poner(e, 1, "mano", "Guardia Real");
+  oros(e, 0, 2);
+  const k = poner(e, 0, "mano", "Karakórum");
+  const v = poner(e, 0, "mano", "Valefor");
+  e = aplicar(e, jugar(v));
+  assert.equal(responde(e, h), undefined);
+  e = sinRespuesta(e);
+  e = aplicar(e, jugar(k));
+  const r = responde(e, h);
+  assert.deepEqual(r, { tipo: "responder", uid: h, def: id("Hy Brasil"), h: 1 });
+  e = sinRespuesta(hacer(e, r, d));
+  assert.equal(zonaDe(e, d), "destierro");
+  assert.equal(zonaDe(e, k), "cementerio");
+});
 
 test("Karakórum: mira tantas cartas como Aliados controles, pone dos en la mano y Baraja el resto", () => {
   let e = mesa();
@@ -187,7 +222,26 @@ test("Leng: al comienzo de tu turno el oponente Destierra del tope tantas cartas
   assert.equal(e.jugadores[0].destierro.length, 2);
 });
 
-test("Leng: se juega al comienzo de cualquier Fase y cuesta un Oro menos en turno oponente", { todo: "momentos: jugar Tótems al comienzo de cualquier Fase, también en el turno oponente, con reducción de coste" }, () => {});
+test("Leng: se juega al comienzo de una Fase del turno oponente con un Oro menos", () => {
+  let e = mesa();
+  oros(e, 1, 1);
+  const l = poner(e, 1, "mano", "Leng");
+  poner(e, 0, "defensa", "Valefor");
+  assert.equal(costeDe(e, 1, l).pagar, 1);
+  e = aplicar(e, { tipo: "batalla" });
+  assert.equal(e.fase, "momento");
+  e = aplicar(e, { tipo: "pasarMomento" });
+  assert.equal(jugable(e, l), true);
+  e = sinRespuesta(aplicar(e, jugar(l)));
+  assert.equal(zonaDe(e, l), "apoyo");
+  assert.equal(e.jugadores[1].pagado.length, 1);
+});
+
+test("Leng: en tu turno cuesta su coste completo", () => {
+  const e = mesa();
+  const l = poner(e, 0, "mano", "Leng");
+  assert.equal(costeDe(e, 0, l).pagar, 2);
+});
 
 test("Londres: Indesterrable", () => {
   const e = mesa();
@@ -257,7 +311,19 @@ test("Magog: Destruye un Aliado de coste 3 o menos y Roba una carta", () => {
   assert.equal(e.jugadores[0].mano.length, 1);
 });
 
-test("Magog: un Oro elegido no puede ser agrupado el próximo turno", { todo: "efecto: un Oro elegido no se agrupa en el próximo turno" }, () => {});
+test("Magog: en tu Vigilia un Oro elegido no puede ser agrupado el próximo turno", () => {
+  let e = mesa();
+  const m = poner(e, 0, "apoyo", "Magog");
+  const [o, otro] = oros(e, 1, 2);
+  e.jugadores[1].reserva = [];
+  e.jugadores[1].pagado = [o, otro];
+  e = hacer(e, habilidad(m, "Magog", 1), o);
+  assert.equal(usable(e, m, 1), false);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.activo, 1);
+  assert.equal(zonaDe(e, o), "pagado");
+  assert.equal(zonaDe(e, otro), "reserva");
+});
 
 test("Manicomio: muestra cartas hasta un Aliado de coste 2 o menos y lo pone en tu mano", () => {
   let e = mesa();
@@ -275,18 +341,50 @@ test("Manicomio: muestra cartas hasta un Aliado de coste 2 o menos y lo pone en 
 
 test("Manicomio: al jugar un Aliado de coste 2 o menos se lanza un dado", { todo: "dado: al jugar un Aliado de coste bajo se lanza un dado y si sale impar no dispara sus habilidades al entrar" }, () => {});
 
-test("Mar de Azufre: no puede ser afectado por cartas de coste 1", () => {
+test("Mar de Azufre: no puede ser afectado por Oros ni cartas oponentes de coste 1 o menos", () => {
   const e = mesa();
   const m = poner(e, 0, "apoyo", "Mar de Azufre");
-  assert.equal(cumple(e, { ctrl: 1, costeFuente: 1, vars: {} }, m, {}), false);
-  assert.equal(cumple(e, { ctrl: 1, costeFuente: 2, vars: {} }, m, {}), true);
+  const k = poner(e, 1, "apoyo", "Karakórum");
+  const [o] = oros(e, 1, 1);
+  const h = poner(e, 1, "apoyo", "Hy Brasil");
+  const propia = poner(e, 0, "apoyo", "Luxor");
+  assert.equal(cumple(e, ctxDe(e, k, 1), m, {}), false);
+  assert.equal(cumple(e, ctxDe(e, o, 1), m, {}), false);
+  assert.equal(cumple(e, ctxDe(e, h, 1), m, {}), true);
+  assert.equal(cumple(e, ctxDe(e, propia, 0), m, {}), true);
 });
 
-test("Mar de Azufre: protección contra Oros y cartas oponentes de coste 0", { todo: "protección: no puede ser afectado por Oros ni cartas oponentes de coste n o menos" }, () => {});
+test("Mar de Azufre: se puede jugar al comienzo de una Fase", () => {
+  let e = mesa();
+  oros(e, 1, 2);
+  const m = poner(e, 1, "mano", "Mar de Azufre");
+  poner(e, 0, "defensa", "Valefor");
+  e = aplicar(e, { tipo: "batalla" });
+  e = aplicar(e, { tipo: "pasarMomento" });
+  assert.equal(jugable(e, m), true);
+  e = sinRespuesta(aplicar(e, jugar(m)));
+  assert.equal(zonaDe(e, m), "apoyo");
+  assert.equal(e.jugadores[1].pagado.length, 2);
+});
 
-test("Mar de Azufre: se juega al comienzo de cualquier Fase", { todo: "momentos: jugar Tótems al comienzo de cualquier Fase, también en el turno oponente, con reducción de coste" }, () => {});
-
-test("Mar de Azufre: no se puede generar Oros, reducir costes ni jugar sin pagar", { todo: "prohibición global: generar Oros, reducir costes y jugar cartas sin pagar su coste" }, () => {});
+test("Mar de Azufre: no se puede generar Oros, reducir costes ni jugar sin pagar", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  const m = poner(e, 0, "mano", "Mar de Azufre");
+  const l = poner(e, 0, "mano", "Ladurum");
+  poner(e, 0, "mano", "Sir Persival");
+  const v = poner(e, 0, "cementerio", "Valefor");
+  assert.equal(costeDe(e, 0, l).pagar < 7, true);
+  e = sinRespuesta(aplicar(e, jugar(m)));
+  assert.equal(zonaDe(e, m), "apoyo");
+  assert.equal(costeDe(e, 0, l).pagar, 7);
+  OPS.generar(e, { n: 1 }, { ctx: { ctrl: 1, vars: {} } });
+  assert.deepEqual(e.jugadores[1].generados, []);
+  const fr = { pasos: [], i: 0, ctx: { ctrl: 0, vars: { g: [v] } } };
+  OPS.jugarGratis(e, { var: "g" }, fr);
+  assert.deepEqual(fr.pasos, []);
+  assert.equal(zonaDe(e, v), "cementerio");
+});
 
 test("Mesa del Te: Exhumar y tus Aliados ganan 1 de Fuerza", () => {
   const e = mesa();
@@ -311,7 +409,7 @@ test("Metropolitan: al entrar genera un Oro para Aliados", () => {
   oros(e, 0, 3);
   const m = poner(e, 0, "mano", "Metropolitan");
   e = hacer(e, jugar(m), "Generar un Oro para Aliados");
-  assert.deepEqual(e.jugadores[0].generados, [{ n: 1, tipos: ["Aliado"] }]);
+  assert.deepEqual(e.jugadores[0].generados, [{ n: 1, tipos: ["Aliado"], costeMin: 2 }]);
 });
 
 test("Metropolitan: al entrar Roba dos cartas", () => {
@@ -344,7 +442,21 @@ test("Metropolitan: cuando ataca otro Aliado pasa a Fuerza 5 por el turno", () =
   assert.equal(N.fuerza(e, p), 5);
 });
 
-test("Metropolitan: el Aliado afectado también pasa a coste 5", { todo: "conversión: un Aliado pasa a tener Fuerza y coste fijos por el turno" }, () => {});
+test("Metropolitan: el Aliado afectado pasa a coste 5 y vuelve a la normalidad al terminar el turno", () => {
+  let e = mesa();
+  const m = poner(e, 0, "apoyo", "Metropolitan");
+  const p = poner(e, 0, "defensa", "Sir Persival");
+  const base = e.catalogo[id("Sir Persival")].coste;
+  e = aplicar(e, habilidad(m, "Metropolitan"));
+  e = aplicar(e, { tipo: "batalla" });
+  e = aplicar(e, { tipo: "atacar", uid: m });
+  assert.equal(N.carta(e, p).coste, 5);
+  assert.equal(N.carta(e, p).tipo, "Aliado");
+  e = pasarHasta(e, "vigilia");
+  assert.equal(e.activo, 1);
+  assert.equal(N.carta(e, p).coste, base);
+  assert.equal(N.fuerza(e, p), 2);
+});
 
 test("Mina Maldita: al entrar Destierra las cartas oponentes de coste 2 o menos", () => {
   let e = mesa();
@@ -462,9 +574,27 @@ test("Monumento Heroico: tus Aliados no pierden su habilidad y ganan 1 de Fuerza
   assert.equal(N.fuerza(e, v), 4);
 });
 
-test("Monumento Heroico: tus Tótems no pierden su habilidad", { todo: "protección: Tótems propios no pueden perder su habilidad" }, () => {});
+test("Monumento Heroico: tus Tótems no pierden su habilidad", () => {
+  const e = mesa();
+  poner(e, 0, "apoyo", "Monumento Heroico");
+  const l = poner(e, 0, "apoyo", "Luxor");
+  const r = poner(e, 1, "apoyo", "Luxor");
+  N.agregarEfecto(e, { tipo: "pierdeHabilidad", uid: l }, 1);
+  N.agregarEfecto(e, { tipo: "pierdeHabilidad", uid: r }, 0);
+  assert.equal(N.activa(e, l), true);
+  assert.equal(N.activa(e, r), false);
+});
 
-test("Monumento Heroico: las cartas oponentes pierden Indestructible e Indesterrable", { todo: "efecto: las cartas oponentes pierden Indestructible e Indesterrable" }, () => {});
+test("Monumento Heroico: las cartas oponentes pierden Indestructible e Indesterrable", () => {
+  const e = mesa();
+  const lm = poner(e, 1, "apoyo", "La Mancha");
+  const propia = poner(e, 0, "apoyo", "La Mancha");
+  assert.equal(N.tiene(e, lm, "Indestructible"), true);
+  poner(e, 0, "apoyo", "Monumento Heroico");
+  assert.equal(N.tiene(e, lm, "Indestructible"), false);
+  assert.equal(N.tiene(e, lm, "Indesterrable"), false);
+  assert.equal(N.tiene(e, propia, "Indestructible"), true);
+});
 
 test("Monumento Inmortal: Desterrarlo de la mano Anula un Aliado de coste 0", () => {
   let e = mesa();
@@ -477,7 +607,26 @@ test("Monumento Inmortal: Desterrarlo de la mano Anula un Aliado de coste 0", ()
   assert.equal(zonaDe(e, a), "cementerio");
 });
 
-test("Monumento Inmortal: Anular un Aliado jugado sin pagar o desde el juego", { todo: "respuesta: Anular con una carta en juego o un Aliado jugado sin pagar su coste" }, () => {});
+test("Monumento Inmortal: Desterrarlo en juego Anula un Aliado de coste 0 y Robas dos cartas", () => {
+  let e = mesa();
+  const m = poner(e, 1, "apoyo", "Monumento Inmortal");
+  const a = poner(e, 0, "mano", "Hijos del Fuego Blanco");
+  const v = poner(e, 0, "mano", "Valefor");
+  oros(e, 0, 1);
+  e = aplicar(e, jugar(v));
+  assert.equal(responde(e, m), undefined);
+  e = sinRespuesta(e);
+  e = aplicar(e, jugar(a));
+  const r = responde(e, m);
+  assert.ok(r);
+  const mano = e.jugadores[1].mano.length;
+  e = sinRespuesta(aplicar(e, r));
+  assert.equal(zonaDe(e, m), "destierro");
+  assert.equal(zonaDe(e, a), "cementerio");
+  assert.equal(e.jugadores[1].mano.length, mano + 2);
+});
+
+test("Monumento Inmortal: Anular un Aliado jugado sin pagar su coste", { todo: "respuesta: Anular una carta jugada sin pagar su coste" }, () => {});
 
 test("Monumento Inmortal: la primera carta de coste 1 de cada jugador por turno cuesta un Oro más", { todo: "impuesto: la primera carta de coste n que juegue cada jugador por turno cuesta un Oro más" }, () => {});
 
@@ -561,7 +710,17 @@ test("Ojo Antiguo: tus Aliados ganan Indestructible e Indesterrable", () => {
   assert.equal(N.tiene(e, v, "Indesterrable"), true);
 });
 
-test("Ojo Antiguo: tus cartas de coste 2 o más no pierden su habilidad", { todo: "protección: cartas propias de coste mínimo no pueden perder su habilidad" }, () => {});
+test("Ojo Antiguo: tus cartas de coste 2 o más no pierden su habilidad", () => {
+  const e = mesa();
+  poner(e, 0, "apoyo", "Ojo Antiguo");
+  const h = poner(e, 0, "apoyo", "Hy Brasil");
+  const k = poner(e, 0, "apoyo", "Karakórum");
+  const r = poner(e, 1, "apoyo", "Hy Brasil");
+  for (const u of [h, k, r]) N.agregarEfecto(e, { tipo: "pierdeHabilidad", uid: u }, 1);
+  assert.equal(N.activa(e, h), true);
+  assert.equal(N.activa(e, k), false);
+  assert.equal(N.activa(e, r), false);
+});
 
 test("Olimpia: al jugar un Talismán sin controlar Aliados el oponente Bota una carta", () => {
   let e = mesa();
@@ -595,7 +754,20 @@ test("Olimpia: en tu Fase Final sin Aliados busca un Talismán de coste 3 o más
   assert.equal(zonaDe(e, t), "mano");
 });
 
-test("Olimpia: los Talismanes de coste 3 o más que juegues no pueden ser Anulados", { todo: "anulación: tus Talismanes de coste mínimo no pueden ser Anulados" }, () => {});
+test("Olimpia: los Talismanes de coste 3 o más que juegues no pueden ser Anulados", () => {
+  const preparar = (nombre) => {
+    const e = mesa();
+    poner(e, 0, "apoyo", "Olimpia");
+    oros(e, 0, 5);
+    poner(e, 1, "apoyo", "Hy Brasil");
+    poner(e, 1, "mano", "Valefor");
+    poner(e, 1, "defensa", "Valefor");
+    const t = poner(e, 0, "mano", nombre);
+    return aplicar(e, jugar(t));
+  };
+  assert.equal(hayRespuesta(preparar("Caminar el Tablón")), true);
+  assert.equal(hayRespuesta(preparar("Efigie")), false);
+});
 
 test("Palacio de la Real Audiencia: al entrar Baraja hasta tres cartas oponentes cuyos costes sumen 3", () => {
   let e = mesa();
@@ -629,7 +801,14 @@ test("Palacio de la Real Audiencia: al jugar un Aliado Baraja hasta dos cartas d
   assert.equal(e.jugadores[0].mano.length, 1);
 });
 
-test("Palacio de la Real Audiencia: no puede ser Desterrado del Cementerio", { todo: "protección: no puede ser Desterrada desde el Cementerio" }, () => {});
+test("Palacio de la Real Audiencia: no puede ser Desterrado del Cementerio", () => {
+  const e = mesa();
+  const p = poner(e, 0, "cementerio", "Palacio de la Real Audiencia");
+  const v = poner(e, 0, "cementerio", "Valefor");
+  OPS.mover(e, { var: "x", a: "desterrar" }, { ctx: { ctrl: 1, vars: { x: [p, v] } } });
+  assert.equal(zonaDe(e, p), "cementerio");
+  assert.equal(zonaDe(e, v), "destierro");
+});
 
 test("París: busca un Oro sin habilidad y lo pone en tu Oro Pagado", () => {
   let e = mesa();

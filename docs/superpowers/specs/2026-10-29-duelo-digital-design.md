@@ -133,3 +133,25 @@ Textos y datos de las cartas: tabla `cartas` en Supabase (lectura pública con l
   - habilidades desde el Destierro.
 
   Se cerró el vacío de las Armas que caen con su portador: ahora disparan sus salidas, y se quitaron los parches que lo suplían en las tandas 24 y 27. Arreglo: `sinLimiteMano` por un turno expiraba antes de revisar el límite de mano. Rendimiento: con el catálogo grande el bot había subido a 60 ms por decisión (100 con este lote). Un caché de definiciones, un índice del catálogo y buscar primero en las zonas en juego lo dejaron en 54 ms. 2.954 pruebas, 0 fallas. Estrés 200/200 al azar y 30/30 con el bot; el autojuego da el mismo resultado que antes. Falta: (1) adaptar las cartas transcritas para que usen estos ganchos y convertir sus `todo` en pruebas reales; (2) los ~180 `todo` restantes, que necesitan una noción de «efecto en curso» para cancelar, prevenir o reemplazar (cancelar habilidades, prevenir un efecto, reemplazos al salir del juego, búsquedas).
+- **Adaptación de cartas a los ganchos nuevos (2026-10-31), en pausa en la tanda 33.** Las tandas 04-33 se adaptaron con subagentes (`brief-adaptar.md`): sus `todo` y simplificaciones pasaron a usar los ganchos genéricos. Los `todo` bajaron de 533 a 320, con 3.029 pruebas y 0 fallas. Estrés de las tandas adaptadas: 300/300 al azar y 40/40 con el bot; el autojuego sigue sin errores.
+
+  Correcciones de motor que salieron de la adaptación:
+  - `momentos` ahora agrega momentos también para Talismanes («Puedes jugarlo…»); `soloMomentos` lo hace exclusivo.
+  - Activadas con `maxVeces` y `grupo`. Las activadas con `respuesta` ya no se ofrecen como habilidad normal y evalúan su `requiere`.
+  - Disparadas desde el Destierro, `reduceDanoCastilloPor`, duración `finProximoTurno` y `maxPorTipo` con `tipoCarta`.
+  - `noPierden` desde el Cementerio, sin recursión y respetando `si` y `zona`.
+  - `pierde` se aplica después de las claves ganadas por efecto.
+  - Las activadas fuera del juego respetan la pérdida de habilidad de su zona.
+
+  Pendiente:
+  - (1) Adaptar las tandas 34-38.
+  - (2) Transcribir las tandas 39-50.
+  - (3) Los vacíos de motor anotados en `mecanicas-pendientes.md`:
+    - subtipos por nombre (Bandido, Azi, Sello);
+    - «primera carta del turno» general;
+    - límites variables;
+    - ventana de Anular para cartas jugadas por efecto;
+    - protección del jugador;
+    - cancelar o prevenir efectos.
+  - (4) El traductor por reglas para transcribir solas las cartas nuevas del job diario.
+  - (5) El armador de mazos.

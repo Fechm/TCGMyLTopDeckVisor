@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, hacer, elegir, sinRespuesta, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
 import { costeDe } from "../web/duelo/motor.js";
+import { cumple, resolver } from "../web/duelo/efectos.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
@@ -68,9 +69,39 @@ test("Nanna: es Única", () => {
   assert.equal(N.tiene(e, nanna, "UnaCopia"), true);
 });
 
-test("Nanna: no se juega una segunda copia si ya controlas una", { todo: "restricción: Única para cartas que no son Oro" }, () => {});
+test("Nanna: no se juega una segunda copia si ya controlas una", () => {
+  const e = mesa();
+  oros(e, 0, 2);
+  poner(e, 0, "defensa", "Nanna");
+  const otra = poner(e, 0, "mano", "Nanna");
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "jugar" && a.uid === otra), false);
+});
 
-test("Nanna: puedes Desterrarla para Anular un Talismán oponente", { todo: "respuesta: Anular con una habilidad activada de una carta en juego" }, () => {});
+test("Nanna: puedes Desterrarla para Anular un Talismán oponente", () => {
+  let e = mesa();
+  const nanna = poner(e, 1, "defensa", "Nanna");
+  oros(e, 0, 1);
+  const t = poner(e, 0, "mano", "Llamar a la Manada");
+  e = aplicar(e, jugar(t));
+  const r = accionesLegales(e).find((a) => a.tipo === "responder" && a.uid === nanna);
+  assert.ok(r);
+  e = sinRespuesta(aplicar(e, r));
+  assert.equal(zonaDe(e, nanna), "destierro");
+  assert.equal(zonaDe(e, t), "cementerio");
+  assert.equal(e.jugadores[0].mano.length, 0);
+});
+
+test("Nanna: no Anula Aliados ni se usa como habilidad normal", () => {
+  let e = mesa();
+  const nanna = poner(e, 1, "defensa", "Nanna");
+  oros(e, 0, 1);
+  const v = poner(e, 0, "mano", "Valefor");
+  e = aplicar(e, jugar(v));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder" && a.uid === nanna), false);
+  e = sinRespuesta(e);
+  e.activo = 1;
+  assert.equal(puedeUsar(e, nanna), false);
+});
 
 test("Origenes: al entrar Baraja hasta seis cartas de los Cementerios y Roba dos", () => {
   let e = mesa();
@@ -94,7 +125,29 @@ test("Origenes: en tu Agrupación puedes Descartar una carta para subirlo de tu 
   assert.equal(zonaDe(e, v), "cementerio");
 });
 
-test("Origenes: puede jugarse al comienzo del Bloqueo o de la Fase Final", { todo: "momento: jugar un Aliado al comienzo del Bloqueo o de la Fase Final" }, () => {});
+test("Origenes: puede jugarse al comienzo del Bloqueo", () => {
+  let e = mesa();
+  oros(e, 1, 1);
+  const o = poner(e, 1, "mano", "Origenes");
+  const v = poner(e, 0, "defensa", "Valefor");
+  e = aplicar(e, { tipo: "batalla" });
+  e = aplicar(e, { tipo: "atacar", uid: v });
+  e = aplicar(e, { tipo: "finAtaque" });
+  assert.equal(e.fase, "momento");
+  e = aplicar(e, { tipo: "pasarMomento" });
+  e = sinRespuesta(aplicar(e, jugar(o)));
+  assert.equal(zonaDe(e, o), "defensa");
+});
+
+test("Origenes: puede jugarse al comienzo de la Fase Final", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const o = poner(e, 0, "mano", "Origenes");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  e = sinRespuesta(aplicar(e, jugar(o)));
+  assert.equal(zonaDe(e, o), "defensa");
+});
 
 test("Paladin de la Luz: Barajando un Arma Baraja y/o Destierra dos cartas de los Cementerios y busca un Aliado", () => {
   let e = mesa();
@@ -121,7 +174,15 @@ test("Paladin de la Luz: si controlas Armas tus Aliados no cambian de controlado
   assert.equal(N.puedeTomar(e, v, 1), false);
 });
 
-test("Paladin de la Luz: cuenta las Armas jugadas en tu turno anterior", { todo: "condición: jugaste cartas de cierto tipo en tu turno anterior" }, () => {});
+test("Paladin de la Luz: cuenta las Armas jugadas en tu turno anterior", () => {
+  const e = mesa();
+  poner(e, 0, "defensa", "Paladin de la Luz");
+  const v = poner(e, 0, "defensa", "Valefor");
+  e.jugadores[0].jugadas.Arma = 1;
+  assert.equal(N.puedeTomar(e, v, 1), true);
+  e.jugadores[0].jugadasMiTurnoAnterior = { total: 1, nombres: {}, Arma: 1 };
+  assert.equal(N.puedeTomar(e, v, 1), false);
+});
 
 test("Papa Legba: muestra hasta un Aliado con Furia y un Arma, uno a la mano y otro al Cementerio, y Destierra dos cartas de distinto nombre de un Castillo", () => {
   let e = mesa();
@@ -163,7 +224,22 @@ test("Serafin: entra en juego como Aliado de Fuerza 3", () => {
   assert.equal(N.fuerza(e, s), 3);
 });
 
-test("Serafin: al entrar nombra una carta y usar sus habilidades cuesta un Oro adicional", { todo: "restricción: usar habilidades de cartas nombradas cuesta un Oro" }, () => {});
+test("Serafin: al entrar nombra una carta y usar sus habilidades cuesta un Oro adicional", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const s = poner(e, 0, "mano", "Serafin");
+  const miguel = poner(e, 1, "defensa", "Miguel Grau");
+  const otra = poner(e, 0, "defensa", "Miguel Grau");
+  e = sinRespuesta(aplicar(e, jugar(s)));
+  e = elegir(e, miguel);
+  assert.equal(N.impuestoHabilidad(e, 1, miguel, "activada"), 1);
+  assert.equal(N.impuestoHabilidad(e, 0, otra, "activada"), 1);
+  assert.equal(puedeUsar(e, otra), false);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(N.impuestoHabilidad(e, 1, miguel, "activada"), 1);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(N.impuestoHabilidad(e, 0, otra, "activada"), 0);
+});
 
 test("Serafin: Desterrándolo previene que un Aliado o Tótem sea Anulado o su habilidad cancelada", { todo: "respuesta: prevenir que una carta propia sea Anulada o su habilidad cancelada desde una carta en juego" }, () => {});
 
@@ -197,7 +273,20 @@ test("Shade: al entrar puede Barajar y/o Desterrar hasta tres cartas de los Ceme
   assert.equal(N.tiene(e, shade, "Furia"), false);
 });
 
-test("Shade: jugado sin pagar su coste no puede ser cancelado", { todo: "protección condicional: no puede ser Anulado mientras se cumpla una condición" }, () => {});
+test("Shade: jugado sin pagar su coste no puede ser cancelado", () => {
+  const anulable = (ataco) => {
+    let e = mesa();
+    oros(e, 0, 1);
+    oros(e, 1, 5);
+    poner(e, 1, "mano", "Dragón Dorado");
+    const shade = poner(e, 0, "mano", "Shade");
+    e.jugadores[0].atacoTurnoAnterior = ataco;
+    e = aplicar(e, jugar(shade));
+    return accionesLegales(e).some((a) => a.tipo === "responder");
+  };
+  assert.equal(anulable(false), true);
+  assert.equal(anulable(true), false);
+});
 
 test("Ángel Miguel, el Protector: es Indestructible y al entrar Baraja y/o Destierra hasta seis cartas de los Cementerios", () => {
   let e = mesa();
@@ -210,9 +299,43 @@ test("Ángel Miguel, el Protector: es Indestructible y al entrar Baraja y/o Dest
   assert.equal(zonaDe(e, a), "destierro");
 });
 
-test("Ángel Miguel, el Protector: también se dispara al bloquear", { todo: "disparo: al bloquear" }, () => {});
+test("Ángel Miguel, el Protector: también se dispara al bloquear", () => {
+  let e = mesa();
+  const angel = poner(e, 1, "defensa", "Ángel Miguel, el Protector");
+  const v = poner(e, 0, "defensa", "Valefor");
+  const c = poner(e, 0, "cementerio", "Valefor");
+  e = aplicar(e, { tipo: "batalla" });
+  e = aplicar(e, { tipo: "atacar", uid: v });
+  e = aplicar(e, { tipo: "finAtaque" });
+  e = con(aplicar(e, { tipo: "bloquear", uid: angel, atacante: v }), c);
+  assert.equal(zonaDe(e, c), "castillo");
+});
 
-test("Ángel Miguel, el Protector: con Tótem los Aliados oponentes de coste 2 o menos no disparan al entrar", { todo: "continua: solo los Aliados oponentes de coste ≤ n no disparan al entrar" }, () => {});
+test("Ángel Miguel, el Protector: con Tótem los Aliados oponentes de coste 2 o menos no disparan al entrar", () => {
+  const roba = (totem) => {
+    let e = mesa();
+    poner(e, 0, "defensa", "Ángel Miguel, el Protector");
+    if (totem) poner(e, 0, "apoyo", "Templo Gótico");
+    e.activo = 1;
+    oros(e, 1, 1);
+    const m = poner(e, 1, "mano", "Miguel Grau");
+    e = sinRespuesta(aplicar(e, jugar(m)));
+    if (e.pendiente) e = elegir(e, null);
+    return e.jugadores[1].mano.length;
+  };
+  assert.equal(roba(false), 2);
+  assert.equal(roba(true), 0);
+});
+
+test("Ángel Miguel, el Protector: cuenta los Tótem jugados en tu turno anterior", () => {
+  const e = mesa();
+  const angel = poner(e, 0, "defensa", "Ángel Miguel, el Protector");
+  const ctx = { ctrl: 0, fuente: angel };
+  const fns = N.carta(e, angel).fns;
+  assert.equal(fns.totem(e, ctx), false);
+  e.jugadores[0].jugadasMiTurnoAnterior = { total: 1, nombres: {}, "Tótem": 1 };
+  assert.equal(fns.totem(e, ctx), true);
+});
 
 test("Ambrosio O'Higgins: es Imbloqueable y una vez por turno busca un Arma en tu Castillo", () => {
   let e = mesa();
@@ -246,7 +369,17 @@ test("Andinia-X 2: su coste baja en uno si tienes un Arma o Tótem en tu mano o 
   assert.equal(costeDe(e, 0, andinia).pagar, 2);
 });
 
-test("Andinia-X 2: el daño de combate de los Aliados que porten Armas va al Destierro", { todo: "continua: los Aliados que porten Armas ganan una clave" }, () => {});
+test("Andinia-X 2: el daño de combate de los Aliados que porten Armas va al Destierro", () => {
+  let e = mesa();
+  poner(e, 0, "defensa", "Andinia-X 2");
+  const v = poner(e, 0, "defensa", "Valefor");
+  const r = poner(e, 1, "defensa", "Valefor");
+  poner(e, 0, "arma", "Pedrenyal", { portador: v });
+  assert.equal(N.tiene(e, v, "DanoAlDestierro"), true);
+  assert.equal(N.tiene(e, r, "DanoAlDestierro"), false);
+  poner(e, 1, "arma", "Pedrenyal", { portador: r });
+  assert.equal(N.tiene(e, r, "DanoAlDestierro"), true);
+});
 
 test("Arturo Pendragón, Rey Paladín: al entrar hasta dos Aliados ganan Furia e Imbloqueable por el turno", () => {
   let e = mesa();
@@ -366,7 +499,17 @@ test("Aubrey: puedes jugar Armas en la Guerra de Talismanes", () => {
   assert.ok(accionesLegales(e).some((a) => a.tipo === "jugar" && a.uid === p));
 });
 
-test("Aubrey: afectar a tus Aliados cuesta un Oro adicional al oponente en la Guerra de Talismanes", { todo: "efecto: afectar a tus Aliados cuesta un Oro adicional al oponente" }, () => {});
+test("Aubrey: afectar a tus Aliados cuesta un Oro adicional al oponente en la Guerra de Talismanes", () => {
+  const e = mesa();
+  const aubrey = poner(e, 0, "defensa", "Aubrey");
+  const danza = poner(e, 1, "mano", "Danza del Cuchillo");
+  const ctx = { ctrl: 1, fuente: danza, def: e.instancias[danza], costeFuente: N.carta(e, danza).coste ?? 0, vars: {} };
+  assert.equal(cumple(e, ctx, aubrey, {}, "destruir"), true);
+  e.fase = "talismanes";
+  assert.equal(cumple(e, ctx, aubrey, {}, "destruir"), false);
+  oros(e, 1, 1);
+  assert.equal(cumple(e, ctx, aubrey, {}, "destruir"), true);
+});
 
 test("Baron Vordenburg: al entrar el oponente Bota la Fuerza de un Aliado tuyo más una por cada Arma", () => {
   let e = mesa();
@@ -431,7 +574,18 @@ test("Bernardo O'Higgins: los Talismanes cuestan un Oro adicional", () => {
 
 test("Bernardo O'Higgins: puede cancelar una habilidad", { todo: "respuesta: cancelar una habilidad" }, () => {});
 
-test("Bernardo O'Higgins: no se pueden Barajar Aliados con Arma y los Tótem cuestan un Oro adicional", { todo: "continua: los Aliados que porten Armas ganan una clave; continua: los Tótems cuestan un Oro adicional" }, () => {});
+test("Bernardo O'Higgins: no se pueden Barajar Aliados con Arma y los Tótem cuestan un Oro adicional", () => {
+  const e = mesa();
+  poner(e, 0, "defensa", "Bernardo O'Higgins");
+  const v = poner(e, 1, "defensa", "Valefor");
+  assert.equal(N.tiene(e, v, "NoBarajable"), false);
+  poner(e, 1, "arma", "Pedrenyal", { portador: v });
+  assert.equal(N.tiene(e, v, "NoBarajable"), true);
+  const t = poner(e, 0, "mano", "Templo Gótico");
+  assert.equal(costeDe(e, 0, t).pagar, N.carta(e, t).coste + 1);
+  const a = poner(e, 0, "mano", "Valefor");
+  assert.equal(costeDe(e, 0, a).pagar, N.carta(e, a).coste);
+});
 
 test("Caballero Espejado: al entrar Destruye una carta de coste 2 o menos y juega gratis un Aliado de coste 1 de tu Cementerio", () => {
   let e = mesa();
@@ -562,7 +716,19 @@ test("Danel: si controlas Armas tus Aliados ganan Furia", () => {
   assert.equal(N.tiene(e, g, "Furia"), true);
 });
 
-test("Danel: los Talismanes puestos este turno en los Cementerios pierden su habilidad", { todo: "efecto: cartas en el Cementerio pierden su habilidad" }, () => {});
+test("Danel: si controlas Armas los Talismanes puestos en los Cementerios pierden su habilidad", () => {
+  const cae = (armas) => {
+    const e = mesa();
+    const danel = poner(e, 0, "defensa", "Danel");
+    if (armas) poner(e, 0, "arma", "Pedrenyal", { portador: danel });
+    const t = poner(e, 1, "mano", "Llamar a la Manada");
+    N.mover(e, t, "cementerio");
+    resolver(e);
+    return N.activa(e, t);
+  };
+  assert.equal(cae(false), true);
+  assert.equal(cae(true), false);
+});
 
 test("Dorian Gray: al entrar Baraja cartas de tu mano y Roba esa cantidad más una", () => {
   let e = mesa();
@@ -575,4 +741,20 @@ test("Dorian Gray: al entrar Baraja cartas de tu mano y Roba esa cantidad más u
   assert.equal(e.jugadores[0].castillo.length, 29);
 });
 
-test("Dorian Gray: si controlas o jugaste Armas no se puede Anular ni cancelar su habilidad", { todo: "protección condicional: no puede ser Anulado mientras se cumpla una condición" }, () => {});
+test("Dorian Gray: si controlas o jugaste Armas este turno no se puede Anular", () => {
+  const anulable = (prep) => {
+    let e = mesa();
+    oros(e, 0, 2);
+    oros(e, 1, 5);
+    poner(e, 1, "mano", "Dragón Dorado");
+    const dorian = poner(e, 0, "mano", "Dorian Gray");
+    prep(e);
+    e = aplicar(e, jugar(dorian));
+    return accionesLegales(e).some((a) => a.tipo === "responder");
+  };
+  assert.equal(anulable(() => {}), true);
+  assert.equal(anulable((e) => (e.jugadores[0].jugadas.Arma = 1)), false);
+  assert.equal(anulable((e) => poner(e, 0, "arma", "Pedrenyal", { portador: poner(e, 0, "defensa", "Valefor") })), false);
+});
+
+test("Dorian Gray: no se puede cancelar su habilidad", { todo: "respuesta: cancelar una habilidad" }, () => {});
