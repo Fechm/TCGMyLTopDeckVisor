@@ -68,13 +68,39 @@ export function costeDe(e, j, uid, alternativo = false) {
   const impreso = c.coste ?? 0;
   const ctx = ctxDe(e, j, uid);
   let coste = impreso;
-  if (c.reduce) coste = Math.max(Math.min(impreso, 1), impreso - c.fns[c.reduce](e, ctx));
+  const sinReducir = e.efectos.some((f) => f.tipo === "noReducir" && (f.j === undefined || f.j === j));
+  if (c.reduce && !sinReducir) coste = Math.max(Math.min(impreso, 1), impreso - c.fns[c.reduce](e, ctx));
+  if (!sinReducir) {
+    let rebaja = 0;
+    for (const { j: js, k } of N.continuas(e)) {
+      const r = k.reduceCoste;
+      if (!r || js !== j) continue;
+      if (r.tipoCarta && ![].concat(r.tipoCarta).includes(c.tipo)) continue;
+      if (r.costeMin !== undefined && impreso < r.costeMin) continue;
+      if (r.raza && !(c.razas ?? []).includes(r.raza)) continue;
+      rebaja += r.n ?? 1;
+    }
+    if (rebaja) coste = Math.max(Math.min(coste, 1), coste - rebaja);
+  }
   let pagar = coste;
-  if (c.orosMenos) pagar = Math.max(0, pagar - c.fns[c.orosMenos](e, ctx));
+  if (c.orosMenos && !sinReducir) pagar = Math.max(0, pagar - c.fns[c.orosMenos](e, ctx));
   if (impreso === 0 && N.hay(e, j, (k, propio) => !propio && k.rivalImpuestoCoste0)) pagar += 1;
   if (c.tipo === "Talismán") pagar += N.cuantas(e, j, (k) => k.impuestoTalisman) + e.efectos.filter((f) => f.tipo === "impuestoTalisman").length;
   if (c.costeExtra) pagar += c.fns[c.costeExtra](e, ctx);
-  if (alternativo && c.costeAlternativo) pagar = Math.max(Math.min(pagar, 1), pagar - c.costeAlternativo.reduce);
+  if (alternativo && c.costeAlternativo && !sinReducir) pagar = Math.max(Math.min(pagar, 1), pagar - c.costeAlternativo.reduce);
+  const jugadas = e.jugadores[j].jugadas ?? {};
+  const aplica = (s) =>
+    (!s.tipoCarta || [].concat(s.tipoCarta).includes(c.tipo)) &&
+    (!s.nombre || s.nombre === c.nombre) &&
+    (s.costeMax === undefined || impreso <= s.costeMax) &&
+    (s.costeMin === undefined || impreso >= s.costeMin) &&
+    (!s.primera || (jugadas[c.tipo] ?? 0) === 0) &&
+    (!s.yaJugado || (jugadas[c.tipo] ?? 0) > 0);
+  for (const f of e.efectos) if (f.tipo === "impuesto" && (f.j === undefined || f.j === j) && aplica(f)) pagar += f.n ?? 1;
+  for (const { j: js, k } of N.continuas(e)) {
+    if (k.impuestoRival && js !== j && aplica(k.impuestoRival)) pagar += k.impuestoRival.n ?? 1;
+    if (k.impuestoTodos && aplica(k.impuestoTodos)) pagar += k.impuestoTodos.n ?? 1;
+  }
   return { coste, pagar };
 }
 
@@ -86,6 +112,7 @@ function restringido(e, j, uid) {
   if (e.efectos.some((f) => f.tipo === "unaPorTipo" && (f.j === undefined || f.j === j)) && (p.jugadas[c.tipo] ?? 0) >= 1) return true;
   if (e.efectos.some((f) => f.tipo === "noJugarNombre" && f.j === j && f.nombre === c.nombre)) return true;
   if (c.unoPorTurno && p.jugadas.nombres[c.nombre]) return true;
+  if ((c.claves.includes("Unica") || c.claves.includes("UnaCopia")) && c.tipo !== "Oro" && N.enJuegoDe(e, j).some((x) => N.carta(e, x).nombre === c.nombre)) return true;
   const mio = (f) => f.j === undefined || f.j === j;
   if (e.efectos.some((f) => f.tipo === "noJugarMas" && mio(f))) return true;
   if (e.efectos.some((f) => f.tipo === "maxPorTipo" && mio(f) && (p.jugadas[c.tipo] ?? 0) >= f.n)) return true;
@@ -106,12 +133,15 @@ function desdeCementerio(e, j, uid) {
 const VENTANAS = {
   vigilia: (j, activo) => (j === activo ? ["comienzoVigilia", "comienzoFase"] : ["comienzoVigiliaRival", "comienzoFase"]),
   final: () => ["faseFinal", "comienzoFase"],
+  ataque: () => ["comienzoAtaque", "comienzoFase"],
+  bloqueo: () => ["comienzoBloqueo", "comienzoFase"],
 };
 
 function coincideMomento(e, c, j, momento) {
-  if (momento === "momento") return c.tipo === "Talismán" && !!c.momentos?.some((m) => VENTANAS[e.momento.nombre](j, e.activo).includes(m));
+  if (momento === "momento") return !!c.momentos?.some((m) => VENTANAS[e.momento.nombre](j, e.activo).includes(m));
   if (!c.momentos) return true;
-  return momento === "talismanes" && c.momentos.includes("comienzoFase");
+  if (momento === "talismanes") return c.momentos.includes("comienzoFase") || c.momentos.includes("talismanes");
+  return c.tipo !== "Talismán";
 }
 
 function momentoJugar(e, j) {
@@ -132,7 +162,7 @@ function jugadas(e, j, forzado) {
   for (const [uid, desde] of origenes) {
     const c = N.carta(e, uid);
     if (c.tipo === "Oro" || c.soloRespuesta) continue;
-    if (momento === "talismanes" && !(c.tipo === "Talismán" || (c.tipo === "Arma" && armasEnGuerra))) continue;
+    if (momento === "talismanes" && !(c.tipo === "Talismán" || (c.tipo === "Arma" && armasEnGuerra) || c.momentos?.includes("talismanes"))) continue;
     if (!coincideMomento(e, c, j, momento)) continue;
     const alt = desde === "cementerio" ? desdeCementerio(e, j, uid) : {};
     if (!alt) continue;
@@ -140,13 +170,13 @@ function jugadas(e, j, forzado) {
     if (vistos.has(clave)) continue;
     const { pagar } = costeDe(e, j, uid);
     const pagarMin = c.costeAlternativo && desde === "mano" ? Math.min(pagar, costeDe(e, j, uid, true).pagar) : pagar;
-    if (pagarMin > disponibles(e, j, c.tipo)) continue;
+    if (pagarMin > disponibles(e, j, c)) continue;
     if (alt.botar && p.castillo.length <= alt.botar) continue;
     if (restringido(e, j, uid)) continue;
     if (!requiere(e, ctxDe(e, j, uid), c.requiere)) continue;
     vistos.add(clave);
     const extra = desde === "cementerio" ? { desde } : {};
-    const variantes = pagar <= disponibles(e, j, c.tipo) ? [extra] : [];
+    const variantes = pagar <= disponibles(e, j, c) ? [extra] : [];
     const alterno = c.costeAlternativo;
     if (alterno && desde === "mano" && p.castillo.length > (alterno.botar ?? 0) && pagarMin < pagar) variantes.push({ alternativo: true });
     for (const v of variantes) {
@@ -208,7 +238,7 @@ function habilidadesUsables(e, j) {
   const p = e.jugadores[j];
   const fuentes = [];
   for (const uid of N.enJuegoDe(e, j)) for (const d of N.habilidades(e, uid)) fuentes.push([uid, d, "juego"]);
-  for (const z of ["mano", "cementerio"]) {
+  for (const z of ["mano", "cementerio", "destierro"]) {
     for (const uid of p[z]) {
       const d = N.carta(e, uid);
       if (!d.sinHabilidad) fuentes.push([uid, d, z]);
@@ -225,6 +255,7 @@ function habilidadesUsables(e, j) {
       const ctx = { ctrl: j, fuente: uid, def: d.id, costeFuente: d.coste ?? 0, vars: {} };
       if (!requiere(e, ctx, a.requiere)) return;
       if (!costePagable(e, uid, a)) return;
+      if (e.efectos.some((f) => f.tipo === "maxHabilidades" && (f.j === undefined || f.j === j) && (p.habilidadesUsadas ?? 0) >= f.n)) return;
       acciones.push({ tipo: "habilidad", uid, def: d.id, h });
     });
   }
@@ -254,10 +285,11 @@ function respuestas(e, j, item) {
   const p = e.jugadores[j];
   const objetivo = N.carta(e, item.uid);
   if (objetivo.claves.includes("NoAnulable") && !objetivo.sinHabilidad) return [];
+  if (noAnulable(e, item, objetivo)) return [];
   const extra = objetivo.sinHabilidad ? 0 : objetivo.anularCuestaMas ?? 0;
   const protegido = (c) => !objetivo.sinHabilidad && objetivo.noAnulableCosteMax !== undefined && (c.coste ?? 0) <= objetivo.noAnulableCosteMax;
   const sirve = (f) =>
-    (!f.tipo || f.tipo === objetivo.tipo) &&
+    (!f.tipo || [].concat(f.tipo).includes(objetivo.tipo)) &&
     (f.costeMax === undefined || item.coste <= f.costeMax) &&
     (f.coste === undefined || item.coste === f.coste);
   const a = [];
@@ -266,7 +298,7 @@ function respuestas(e, j, item) {
     const c = N.carta(e, uid);
     if (c.sinHabilidad || vistos.has(c.id) || protegido(c)) continue;
     if (c.respuesta && c.tipo === "Talismán" && sirve(c.respuesta.anula)) {
-      if (costeDe(e, j, uid).pagar + extra > disponibles(e, j, c.tipo) || restringido(e, j, uid)) continue;
+      if (costeDe(e, j, uid).pagar + extra > disponibles(e, j, c) || restringido(e, j, uid)) continue;
       vistos.add(c.id);
       a.push({ tipo: "responder", uid });
     } else if (c.respuestaMano && sirve(c.respuestaMano.anula) && c.respuestaMano.oros + extra <= p.reserva.length) {
@@ -274,7 +306,35 @@ function respuestas(e, j, item) {
       a.push({ tipo: "responder", uid });
     }
   }
+  const fuentesRespuesta = [...N.enJuegoDe(e, j).map((u) => [u, "juego"]), ...p.cementerio.map((u) => [u, "cementerio"])];
+  for (const [uid, zona] of fuentesRespuesta) {
+    if (!N.activa(e, uid)) continue;
+    for (const d of zona === "juego" ? N.habilidades(e, uid) : [N.carta(e, uid)]) {
+      d.activadas.forEach((h, i) => {
+        if ((h.zona ?? "juego") !== zona) return;
+        if (!h.respuesta || !sirve(h.respuesta.anula ?? {})) return;
+        if (h.veces && e.usos[claveUso(e, j, uid, d, i, h)] === e.turno) return;
+        if ((h.oros ?? 0) + extra + N.impuestoHabilidad(e, j, uid, "activada") > disponibles(e, j)) return;
+        if (!costePagable(e, uid, h)) return;
+        a.push({ tipo: "responder", uid, def: d.id, h: i });
+      });
+    }
+  }
   return a;
+}
+
+function noAnulable(e, item, objetivo) {
+  if (objetivo.sinHabilidad) return false;
+  if (objetivo.noAnulableSi && objetivo.fns[objetivo.noAnulableSi](e, { ctrl: item.ctrl, fuente: item.uid, def: objetivo.id, vars: {} })) return true;
+  const jugadas = e.jugadores[item.ctrl].jugadas ?? {};
+  const aplica = (s) =>
+    (!s.tipoCarta || [].concat(s.tipoCarta).includes(objetivo.tipo)) &&
+    (s.costeMin === undefined || (item.coste ?? objetivo.coste ?? 0) >= s.costeMin) &&
+    (s.costeMax === undefined || (item.coste ?? objetivo.coste ?? 0) <= s.costeMax) &&
+    (!s.raza || (objetivo.razas ?? []).includes(s.raza)) &&
+    (!s.primera || (jugadas[objetivo.tipo] ?? 0) <= 1);
+  for (const { j, k } of N.continuas(e)) if (k.noAnulables && j === item.ctrl && aplica(k.noAnulables)) return true;
+  return e.efectos.some((f) => f.tipo === "noAnulables" && (f.j === undefined || f.j === item.ctrl) && aplica(f));
 }
 
 export function jugadorQueDecide(e) {
@@ -311,7 +371,8 @@ export function accionesLegales(e) {
       return a;
     }
     case "ataque": {
-      const a = atacables(e, j).map((uid) => ({ tipo: "atacar", uid }));
+      const tope = e.efectos.filter((f) => f.tipo === "maxAtacantes" && (f.j === undefined || f.j === j)).reduce((m, f) => Math.min(m, f.n), Infinity);
+      const a = e.atacantes.length >= tope ? [] : atacables(e, j).map((uid) => ({ tipo: "atacar", uid }));
       const pendientes = atacantesObligados(e, j);
       if (!pendientes.length && (e.atacantes.length || !debeAtacar(e, j))) a.push({ tipo: "finAtaque" });
       return a;
@@ -319,13 +380,15 @@ export function accionesLegales(e) {
     case "bloqueo": {
       const a = [];
       const bloqueados = new Set(Object.values(e.bloqueos));
-      const libres = e.atacantes.filter((u) => !bloqueados.has(u) && !N.tiene(e, u, "Imbloqueable"));
+      const libres = e.atacantes.filter((u) => !bloqueados.has(u));
       const usados = new Set(Object.keys(e.bloqueos));
-      const posibles = p.defensa.filter((b) => !usados.has(b) && !e.efectos.some((f) => f.tipo === "noAtacarBloquear" && f.uid === b));
+      const topeBloqueo = e.efectos.filter((f) => f.tipo === "maxBloqueadores" && (f.j === undefined || f.j === j)).reduce((m, f) => Math.min(m, f.n), Infinity);
+      const posibles = usados.size >= topeBloqueo ? [] : p.defensa.filter((b) => !usados.has(b) && !e.efectos.some((f) => f.tipo === "noAtacarBloquear" && f.uid === b));
+      const bloqueaImb = (b) => N.tiene(e, b, "BloqueaImbloqueables") || N.hay(e, j, (k, propio) => propio && k.bloqueaImbloqueables);
       const forzados = e.efectos.filter((f) => f.tipo === "debeBloquearA" && posibles.includes(f.uid) && e.atacantes.includes(f.atacante) && !bloqueados.has(f.atacante));
       if (forzados.length) return forzados.map((f) => ({ tipo: "bloquear", uid: f.uid, atacante: f.atacante }));
-      for (const b of posibles) for (const at of libres) a.push({ tipo: "bloquear", uid: b, atacante: at });
-      const obligado = libres.length && posibles.some((b) => e.efectos.some((f) => f.tipo === "debeBloquear" && f.uid === b));
+      for (const b of posibles) for (const at of libres) if (!N.tiene(e, at, "Imbloqueable") || bloqueaImb(b)) a.push({ tipo: "bloquear", uid: b, atacante: at });
+      const obligado = a.length > 0 && posibles.some((b) => e.efectos.some((f) => f.tipo === "debeBloquear" && f.uid === b));
       if (!obligado) a.push({ tipo: "finBloqueo" });
       return a;
     }
@@ -380,8 +443,18 @@ const FLUJO = {
     p.nuevos = [];
     p.atacoTurnoAnterior = p.atacoEsteTurno;
     p.atacoEsteTurno = false;
+    const saliente = e.jugadores[N.rival(j)];
+    saliente.jugadasMiTurnoAnterior = saliente.jugadas;
+    saliente.bloqueoTurnoAnterior = saliente.bloqueoEsteTurno ?? false;
+    for (const id of e.efectos.filter((f) => f.tipo === "noAgrupa").map((f) => f.uid)) {
+      if (p.reserva.includes(id)) {
+        p.reserva.splice(p.reserva.indexOf(id), 1);
+        p.pagado.push(id);
+      }
+    }
+    e.efectos = e.efectos.filter((f) => f.tipo !== "noAgrupa" || f.j !== j);
     for (const q of e.jugadores) {
-      Object.assign(q, { oroJugado: false, otraJugada: false, orosPuestos: 0, salidasCastillo: 0, jugadas: { total: 0, nombres: {} }, declarados: [], generados: [], barajadasCementerio: 0 });
+      Object.assign(q, { habilidadesUsadas: 0, bloqueoEsteTurno: false, oroJugado: false, otraJugada: false, orosPuestos: 0, salidasCastillo: 0, jugadas: { total: 0, nombres: {} }, declarados: [], generados: [], barajadasCementerio: 0 });
     }
     N.expirar(e, "inicio");
     if (e.turno > 0) N.disparar(e, "comienzoTurno", { j });
@@ -391,6 +464,12 @@ const FLUJO = {
   },
   vigilia(e) {
     e.fase = "vigilia";
+  },
+  faseAtaque(e) {
+    e.fase = "ataque";
+  },
+  faseBloqueo(e) {
+    e.fase = "bloqueo";
   },
   dano(e) {
     const def = N.rival(e.activo);
@@ -433,13 +512,17 @@ const FLUJO = {
   final(e) {
     e.fase = "finalizando";
     N.disparar(e, "faseFinal", { j: e.activo });
+    const listos = e.efectos.filter((f) => f.tipo === "diferido" && (f.cuando === "faseFinal" || (f.cuando === "faseFinalRival" && f.ctx.ctrl !== e.activo && f.desde < e.turno + 1) || (f.cuando === "faseFinalPropia" && f.ctx.ctrl === e.activo)));
+    e.efectos = e.efectos.filter((f) => !listos.includes(f));
+    for (const f of listos.reverse()) e.cola.unshift(N.nuevoFrame(f.pasos, f.ctx));
   },
   cierre(e) {
+    const libre = sinLimiteMano(e, e.activo);
     N.expirar(e, "finTurno");
     if (e.turno > 0) N.robar(e, e.activo, 1);
     revisarDerrota(e);
     if (e.ganador !== null) return;
-    if (e.jugadores[e.activo].mano.length > LIMITE_MANO) e.fase = "final";
+    if (e.jugadores[e.activo].mano.length > LIMITE_MANO && !libre) e.fase = "final";
     else flujo(e, "pasarTurno");
   },
   pasarTurno(e) {
@@ -451,6 +534,10 @@ const FLUJO = {
 };
 
 OPS.flujo = (e, p) => FLUJO[p.paso](e);
+
+function sinLimiteMano(e, j) {
+  return e.efectos.some((f) => f.tipo === "sinLimiteMano" && (f.j === undefined || f.j === j)) || N.hay(e, j, (k, propio) => propio && k.sinLimiteMano);
+}
 
 function prevenirDano(e, j, d) {
   if (d <= 0) return d;
@@ -516,7 +603,7 @@ function jugar(e, j, accion) {
   const alt = desde === "cementerio" ? desdeCementerio(e, j, accion.uid) : {};
   const { coste, pagar } = costeDe(e, j, accion.uid, !!accion.alternativo);
   N.sacar(e, accion.uid);
-  pagarOros(e, j, pagar, c.tipo);
+  pagarOros(e, j, pagar, c);
   if (alt.botar) N.quitarDelCastillo(e, j, alt.botar, "cementerio");
   if (accion.alternativo) N.quitarDelCastillo(e, j, c.costeAlternativo.botar ?? 0, "cementerio");
   if (e.fase === "vigilia") p.otraJugada = true;
@@ -534,16 +621,27 @@ function jugar(e, j, accion) {
   abrirVentana(e, { uid: accion.uid, ctrl: j, coste, portador: accion.portador, destierro, desde, cerrada: false, anulado: false });
 }
 
-function responder(e, j, uid) {
+function responder(e, j, uid, accion = {}) {
   const c = N.carta(e, uid);
   const objetivo = e.pila.length - 1;
   e.pila[objetivo].cerrada = true;
+  if (accion.h !== undefined) {
+    const d = N.def(e, accion.def);
+    const h = d.activadas[accion.h];
+    const anulado = N.carta(e, e.pila[objetivo].uid);
+    const extra = anulado.sinHabilidad ? 0 : anulado.anularCuestaMas ?? 0;
+    e.usos[claveUso(e, j, uid, d, accion.h, h)] = e.turno;
+    pagarOros(e, j, (h.oros ?? 0) + extra + N.impuestoHabilidad(e, j, uid, "activada"));
+    const ctx = { ctrl: j, fuente: uid, def: d.id, costeFuente: d.coste ?? 0, objetivoPila: objetivo };
+    e.cola.unshift(N.nuevoFrame([...(h.coste ?? []), { op: "anular" }, ...(h.hacer ?? [])], ctx));
+    return;
+  }
   const anulado = N.carta(e, e.pila[objetivo].uid);
   const extra = anulado.sinHabilidad ? 0 : anulado.anularCuestaMas ?? 0;
   if (c.tipo === "Talismán") {
     const { coste, pagar } = costeDe(e, j, uid);
     N.sacar(e, uid);
-    pagarOros(e, j, pagar + extra, c.tipo);
+    pagarOros(e, j, pagar + extra, c);
     contarJugada(e, j, c);
     N.disparar(e, "juega", { uid, j, tipo: c.tipo, pagado: true, desde: "mano" });
     abrirVentana(e, { uid, ctrl: j, coste, objetivo, comoRespuesta: true, destierro: !!c.destierroAlJugar, cerrada: false, anulado: false });
@@ -590,6 +688,7 @@ function avanzar(e) {
 function usarHabilidad(e, j, accion) {
   const d = N.def(e, accion.def);
   const a = d.activadas[accion.h];
+  e.jugadores[j].habilidadesUsadas = (e.jugadores[j].habilidadesUsadas ?? 0) + 1;
   e.usos[claveUso(e, j, accion.uid, d, accion.h, a)] = e.turno;
   pagarOros(e, j, (a.oros ?? 0) + N.impuestoHabilidad(e, j, accion.uid, "activada"));
   if (e.fase === "talismanes") {
@@ -616,7 +715,7 @@ export function aplicar(estado, accion) {
       e.pila.at(-1).cerrada = true;
       break;
     case "responder":
-      responder(e, j, accion.uid);
+      responder(e, j, accion.uid, accion);
       break;
     case "quedarse":
       siguienteMulligan(e);
@@ -639,7 +738,8 @@ export function aplicar(estado, accion) {
       usarHabilidad(e, j, accion);
       break;
     case "batalla":
-      e.fase = "ataque";
+      e.fase = "iniciandoAtaque";
+      flujo(e, "momento:ataque", "faseAtaque");
       break;
     case "terminar":
       irAFinal(e);
@@ -653,11 +753,15 @@ export function aplicar(estado, accion) {
       N.disparar(e, "ataca", { uid: accion.uid, j });
       break;
     case "finAtaque":
-      if (e.atacantes.length) e.fase = "bloqueo";
-      else irAFinal(e);
+      if (e.atacantes.length) {
+        e.fase = "iniciandoBloqueo";
+        flujo(e, "momento:bloqueo", "faseBloqueo");
+      } else irAFinal(e);
       break;
     case "bloquear":
       e.bloqueos[accion.uid] = accion.atacante;
+      p.bloqueoEsteTurno = true;
+      N.disparar(e, "bloquea", { uid: accion.uid, j, atacante: accion.atacante });
       break;
     case "finBloqueo":
       e.fase = "talismanes";
@@ -683,6 +787,7 @@ export function aplicar(estado, accion) {
     case "descartar":
       N.mover(e, accion.uid, "cementerio");
       if (p.mano.length <= LIMITE_MANO) flujo(e, "pasarTurno");
+      N.disparar(e, "descarta", { uid: accion.uid, j, porEfecto: false });
       break;
   }
   avanzar(e);

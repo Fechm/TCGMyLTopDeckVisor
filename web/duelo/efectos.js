@@ -21,11 +21,19 @@ export function fuente(e, ctx, spec) {
 
 export function limiteArmas(e, aliado) {
   const j = N.controlador(e, aliado);
+  if (N.hay(e, j, (k, propio) => propio && k.armasSinLimite)) return Infinity;
   return 1 + (N.hay(e, j, (k, propio) => propio && k.armaAdicional) ? 1 : 0);
 }
 
 export function armaCabe(e, aliado, arma) {
   if (N.tiene(e, aliado, "NoPortaArmas")) return false;
+  const req = N.carta(e, arma).portadorSi;
+  if (req) {
+    const p = N.carta(e, aliado);
+    if (req.raza && !(p.razas ?? []).includes(req.raza)) return false;
+    if (req.fuerzaMin !== undefined && N.fuerza(e, aliado) < req.fuerzaMin) return false;
+    if (req.fuerzaMax !== undefined && N.fuerza(e, aliado) > req.fuerzaMax) return false;
+  }
   if (N.carta(e, arma).claves.includes("NoCuentaLimite")) return true;
   const usadas = (e.armas[aliado] ?? []).filter((a) => !N.carta(e, a).claves.includes("NoCuentaLimite")).length;
   return usadas < limiteArmas(e, aliado);
@@ -44,6 +52,13 @@ export function cumple(e, ctx, uid, f = {}, para) {
   if (f.zona && N.ubicar(e, uid)?.zona !== f.zona) return false;
   if (f.armaLibre && !armaCabe(e, uid, f.armaLibre)) return false;
   if (f.f && !N.def(e, ctx.def).fns[f.f](e, ctx, uid)) return false;
+  const zona = N.ubicar(e, uid)?.zona;
+  if (zona && zona !== "castillo" && zona !== "mano") {
+    const pr = N.proteccionContra(e, uid, ctx);
+    if (pr.inmune) return false;
+    if (pr.cuesta && pr.cuesta > disponibles(e, ctx.ctrl)) return false;
+    if (para === "convertir" && N.tiene(e, uid, "NoConvertible")) return false;
+  }
   if (N.enJuego(e, uid)) {
     if (para === "destruir" && N.tiene(e, uid, "Indestructible")) return false;
     if (para === "desterrar" && N.tiene(e, uid, "Indesterrable")) return false;
@@ -62,6 +77,13 @@ function cantidad(e, p, ctx) {
   return p.n ?? 1;
 }
 
+function cobrarProteccion(e, ctx, uids) {
+  for (const u of uids) {
+    const { cuesta } = N.proteccionContra(e, u, ctx);
+    if (cuesta) pagarOros(e, ctx.ctrl, cuesta);
+  }
+}
+
 function candidatos(e, p, ctx) {
   const ya = ctx.vars[p.como];
   const todos = p.de.flatMap((s) => fuente(e, ctx, s));
@@ -78,11 +100,14 @@ function pedir(e, p, fr) {
   const cands = candidatos(e, p, ctx);
   if (!cands.length) return;
   if (p.azar) {
-    ya.push(cands[Math.floor(N.azar(e) * cands.length)]);
+    const u = cands[Math.floor(N.azar(e) * cands.length)];
+    cobrarProteccion(e, ctx, [u]);
+    ya.push(u);
     return pedir(e, p, fr);
   }
   const buscar = p.de.some((s) => PRIVADAS.includes(s.split(":")[1]));
   if (!p.hasta && !buscar && cands.length <= n - ya.length) {
+    cobrarProteccion(e, ctx, cands);
     ya.push(...cands);
     return;
   }
@@ -113,6 +138,7 @@ OPS.sel = (e, p, fr) => {
 };
 OPS.sel.elegir = (e, cont, valor, fr) => {
   if (valor === null) return;
+  cobrarProteccion(e, fr.ctx, [valor]);
   fr.ctx.vars[cont.p.como].push(valor);
   pedir(e, cont.p, fr);
 };
@@ -145,6 +171,14 @@ export function entrarEnJuego(e, uid, j, portador, datos = {}) {
   N.disparar(e, "entra", { uid, j, ...datos });
 }
 
+function indesterrableCementerio(e, uid) {
+  const u = N.ubicar(e, uid);
+  if (u?.zona !== "cementerio") return false;
+  const c = N.carta(e, uid);
+  if (!c.sinHabilidad && c.claves.includes("IndesterrableCementerio")) return true;
+  return N.hay(e, u.j, (k, propio) => propio && k.cementerioIndesterrable && (!k.cementerioIndesterrable.conClave || c.claves.includes(k.cementerioIndesterrable.conClave)));
+}
+
 function noBarajable(e, uid) {
   if (N.tiene(e, uid, "NoBarajable")) return true;
   return N.carta(e, uid).tipo === "Aliado" && N.hay(e, N.controlador(e, uid), (k, propio) => propio && k.aliadosNoBarajables);
@@ -170,7 +204,9 @@ function moverA(e, uid, a, ctx) {
       if (dentro && !N.tiene(e, uid, "Indestructible")) N.mover(e, uid, "cementerio");
       break;
     case "desterrar":
-      if (!(dentro && N.tiene(e, uid, "Indesterrable"))) N.mover(e, uid, "destierro");
+      if (dentro && N.tiene(e, uid, "Indesterrable")) break;
+      if (!dentro && indesterrableCementerio(e, uid)) break;
+      N.mover(e, uid, "destierro");
       break;
     case "barajar":
       if (!sePuedeBarajar(e, uid, ctx) || (dentro && noBarajable(e, uid))) break;
@@ -212,6 +248,7 @@ OPS.convertir = (e, p, fr) => {
   const ctx = fr.ctx;
   for (const uid of fr.ctx.vars[p.var] ?? []) {
     if (!N.puedeTomar(e, uid, ctx.ctrl)) continue;
+    if (N.enJuego(e, uid) && N.tiene(e, uid, "NoConvertible")) continue;
     for (const a of e.armas[uid] ?? []) N.mover(e, a, "cementerio");
     delete e.armas[uid];
     delete e.ganadas[uid];
@@ -252,7 +289,7 @@ OPS.mostrarHasta = (e, p, fr) => {
   fr.ctx.vars[p.como] = hallados;
 };
 
-OPS.robar = (e, p, fr) => N.robar(e, jugadorDe(fr.ctx, p.quien), cantidad(e, p, fr.ctx));
+OPS.robar = (e, p, fr) => N.robar(e, jugadorDe(fr.ctx, p.quien), cantidad(e, p, fr.ctx), true);
 
 OPS.robarHasta = (e, p, fr) => {
   const opciones = Array.from({ length: p.n + 1 }, (_, i) => ({ valor: i }));
@@ -309,7 +346,13 @@ OPS.opcional.elegir = (e, cont, valor, fr) => {
   fr.pasos.splice(fr.i, 0, ...cont.p.pasos);
 };
 
-const sirve = (g, tipo) => !g.tipos || (tipo && g.tipos.includes(tipo));
+function sirve(g, carta) {
+  const c = typeof carta === "object" && carta ? carta : { tipo: carta };
+  if (g.tipos && !(c.tipo && g.tipos.includes(c.tipo))) return false;
+  if (g.costeMin !== undefined && (c.coste ?? 0) < g.costeMin) return false;
+  if (g.raza && !(c.razas ?? []).includes(g.raza)) return false;
+  return true;
+}
 
 export function disponibles(e, j, tipo) {
   const p = e.jugadores[j];
@@ -333,9 +376,18 @@ export function impuestoSinPagar(e, j) {
   return N.cuantas(e, j, (k) => k.impuestoSinPagar) + e.efectos.filter((f) => f.tipo === "impuestoSinPagar").length;
 }
 
+OPS.diferir = (e, p, fr) => {
+  const ctx = { ctrl: fr.ctx.ctrl, fuente: fr.ctx.fuente, def: fr.ctx.def, costeFuente: fr.ctx.costeFuente };
+  N.agregarEfecto(e, { tipo: "diferido", cuando: p.cuando, pasos: p.pasos, ctx, desde: e.turno, fin: "juego" }, fr.ctx.ctrl);
+};
+
 OPS.generar = (e, p, fr) => {
+  if (e.efectos.some((f) => f.tipo === "noGenerar" && (f.j === undefined || f.j === fr.ctx.ctrl))) return;
   const pj = e.jugadores[jugadorDe(fr.ctx, p.quien)];
-  pj.generados = [...(pj.generados ?? []), { n: p.n ?? 1, tipos: p.tipos ?? null }];
+  const g = { n: p.n ?? 1, tipos: p.tipos ?? null };
+  if (p.costeMin !== undefined) g.costeMin = p.costeMin;
+  if (p.raza) g.raza = p.raza;
+  pj.generados = [...(pj.generados ?? []), g];
 };
 
 OPS.pagar = (e, p, fr) => pagarOros(e, fr.ctx.ctrl, p.n);
@@ -372,9 +424,10 @@ OPS.jugarGratis = (e, p, fr) => {
   for (const uid of fr.ctx.vars[p.var] ?? []) {
     const c = N.carta(e, uid);
     if (c.soloPagando) continue;
+    if (e.efectos.some((f) => f.tipo === "noSinPagar" && (f.j === undefined || f.j === j))) continue;
     const imp = impuestoSinPagar(e, j);
-    if (imp > disponibles(e, j, c.tipo)) continue;
-    pagarOros(e, j, imp, c.tipo);
+    if (imp > disponibles(e, j, c)) continue;
+    pagarOros(e, j, imp, c);
     const datos = { pagado: false, desde: N.ubicar(e, uid)?.zona ?? null };
     pasos.push({ op: "ventanaSinPagar", uid });
     if (c.tipo === "Arma") {
@@ -418,7 +471,7 @@ OPS.ponerOro = (e, p, fr) => {
   for (const uid of fr.ctx.vars[p.var] ?? []) entrarOro(e, uid, fr.ctx.ctrl, p.a);
 };
 
-OPS.finTalisman = (e, p) => N.mover(e, p.uid, p.destierro ? "destierro" : "cementerio");
+OPS.finTalisman = (e, p) => N.mover(e, p.uid, p.destierro || N.hay(e, 0, (k) => k.talismanesAlDestierro) ? "destierro" : "cementerio");
 
 Object.assign(API, N, { entrarOro, entrarEnJuego, fuente, cumple, pagarOros, disponibles, impuestoSinPagar, armaCabe, hayObjetivo });
 

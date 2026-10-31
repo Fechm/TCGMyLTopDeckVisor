@@ -205,8 +205,16 @@ test("mecánica: ventana de la Fase Final y comienzoFase en la Guerra de Talisma
   const otra = poner(f, 1, "mano", "Llamar a la Manada");
   const balaur = poner(f, 0, "defensa", "Balaur");
   f = aplicar(f, { tipo: "batalla" });
+  assert.equal(f.fase, "momento");
+  f = aplicar(f, { tipo: "pasarMomento" });
+  f = aplicar(f, { tipo: "pasarMomento" });
   f = aplicar(f, { tipo: "atacar", uid: balaur });
   f = aplicar(f, { tipo: "finAtaque" });
+  assert.equal(f.fase, "momento");
+  assert.deepEqual(jugarDe(f, otra), []);
+  f = aplicar(f, { tipo: "pasarMomento" });
+  assert.deepEqual(jugarDe(f, otra), [{ tipo: "jugar", uid: otra }]);
+  f = aplicar(f, { tipo: "pasarMomento" });
   f = aplicar(f, { tipo: "finBloqueo" });
   assert.equal(f.fase, "talismanes");
   assert.deepEqual(jugarDe(f, otra), [{ tipo: "jugar", uid: otra }]);

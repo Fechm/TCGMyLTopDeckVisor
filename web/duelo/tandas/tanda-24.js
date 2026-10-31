@@ -15,19 +15,7 @@ const barajarYDesterrar = [
   mov("desterrar", "d"),
 ];
 
-const salida = (hacer) => [
-  { cuando: ["entra"], hacer: [{ op: "fn", f: "registrarPortador" }] },
-  { cuando: ["sale"], hacer },
-  { zona: ["cementerio"], cuando: ["saleDelJuego"], quien: "cualquiera", si: "salioPortador", hacer },
-];
-
-const fnsSalida = {
-  registrarPortador: (e, ctx) => {
-    const p = N.portadorDe(e, ctx.fuente);
-    if (p) e.usos[`portador|${ctx.fuente}`] = p;
-  },
-  salioPortador: (e, ctx) => N.ubicar(e, ctx.fuente)?.zona === "cementerio" && e.usos[`portador|${ctx.fuente}`] === ctx.datos.uid,
-};
+const salida = (hacer) => [{ cuando: ["sale"], hacer }];
 
 const mismaRaza = (e, ctx) => {
   const aliados = N.aliadosDe(e, ctx.ctrl);
@@ -121,7 +109,6 @@ export const HABILIDADES = {
       },
     ],
     fns: {
-      ...fnsSalida,
       puede: (e, ctx) => N.aliadosDe(e, ctx.ctrl).some((a) => !N.tiene(e, a, "Indestructible") && N.puedeSalir(e, a)) && N.todoEnJuego(e).some((u) => coste(e, u) <= 3),
     },
   },
@@ -135,7 +122,6 @@ export const HABILIDADES = {
         pasos: [sel(["yo:mano"], {}, "m"), mov("cementerio", "m"), sel(["fuente"], {}, "yo"), mov("mano", "yo")],
       },
     ]),
-    fns: { ...fnsSalida },
   },
   "Armadura Dorada": {
     claves: ["Exhumar"],
@@ -314,7 +300,6 @@ export const HABILIDADES = {
       },
     ],
     fns: {
-      ...fnsSalida,
       puedeAgrupar: (e, ctx) => e.jugadores[ctx.ctrl].castillo.length > 2 && e.jugadores[ctx.ctrl].pagado.some((o) => N.carta(e, o).tipo === "Oro"),
     },
   },

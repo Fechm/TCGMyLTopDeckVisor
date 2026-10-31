@@ -34,6 +34,10 @@ function asentar(e, prof) {
       e = aplicar(e, { tipo: "noResponder" });
       continue;
     }
+    if (e.fase === "momento") {
+      e = aplicar(e, { tipo: "pasarMomento" });
+      continue;
+    }
     break;
   }
   return e;
@@ -117,7 +121,7 @@ function cerrarTurno(s, j) {
     let a;
     if (s.fase === "bloqueo") a = reglaBloqueo(s, quien, legales);
     else if (s.fase === "final") a = decidirDescarte(s, quien, legales);
-    else a = legales.find((x) => ["pasar", "finAtaque", "terminar", "finBloqueo"].includes(x.tipo)) ?? legales[0];
+    else a = legales.find((x) => ["pasar", "finAtaque", "terminar", "finBloqueo", "pasarMomento"].includes(x.tipo)) ?? legales[0];
     s = aplicar(s, a);
   }
   return s;
@@ -204,7 +208,7 @@ function vigiliaHeuristica(e, j, legales) {
   const terminar = legales.find((a) => a.tipo === "terminar");
   if (batalla) {
     if (!terminar) return batalla;
-    const posibles = accionesLegales(aplicar(e, batalla)).filter((a) => a.tipo === "atacar").map((a) => a.uid);
+    const posibles = accionesLegales(asentar(aplicar(e, batalla), 1)).filter((a) => a.tipo === "atacar").map((a) => a.uid);
     if (planAtaque(e, j, posibles).length) return batalla;
   }
   return terminar ?? legales[0];

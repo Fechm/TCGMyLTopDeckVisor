@@ -21,9 +21,6 @@ const registrarPortador = (clave) => (e, ctx) => {
 
 const salioPortador = (clave) => (e, ctx) => N.ubicar(e, ctx.fuente)?.zona === "cementerio" && e.usos[`${clave}|${ctx.fuente}`] === ctx.datos.uid;
 
-const olvidarPortador = (clave) => (e, ctx) => {
-  delete e.usos[`${clave}|${ctx.fuente}`];
-};
 
 const libreUnaVez = (clave) => (e, ctx) => e.usos[`${clave}|${ctx.fuente}`] !== e.turno;
 const marcarUnaVez = (clave) => (e, ctx) => {
@@ -76,15 +73,11 @@ export const HABILIDADES = {
   "Rifle Winchester": {
     portador: { fuerza: 2, claves: ["Indestructible"] },
     disparadas: [
-      { cuando: ["entra"], hacer: [{ op: "fn", f: "registrar" }, ...buscar(["yo:castillo"], { tipo: "Aliado" })] },
+      { cuando: ["entra"], hacer: buscar(["yo:castillo"], { tipo: "Aliado" }) },
       { cuando: ["ataca"], quien: "cualquiera", si: "portadorAtaca", hacer: buscar(["yo:castillo"], { tipo: "Aliado" }) },
-      { cuando: ["sale"], hacer: [{ op: "fn", f: "olvidar" }, botar(3)] },
-      { zona: ["cementerio"], cuando: ["saleDelJuego"], quien: "cualquiera", si: "salioPortador", hacer: [{ op: "fn", f: "olvidar" }, botar(3)] },
+      { cuando: ["sale"], hacer: [botar(3)] },
     ],
     fns: {
-      registrar: registrarPortador("rifle"),
-      olvidar: olvidarPortador("rifle"),
-      salioPortador: salioPortador("rifle"),
       portadorAtaca: (e, ctx) => N.portadorDe(e, ctx.fuente) === ctx.datos.uid,
     },
   },
