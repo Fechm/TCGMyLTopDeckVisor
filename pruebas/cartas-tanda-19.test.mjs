@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, elegir, sinRespuesta, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
-import { resolver, limiteArmas } from "../web/duelo/efectos.js";
+import { resolver, limiteArmas, cumple } from "../web/duelo/efectos.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
@@ -9,6 +9,7 @@ const nombreDe = (e, nombre) => (v) => v !== null && N.carta(e, v).nombre === no
 const texto = (inicio) => (v, o) => (o.texto ?? "").startsWith(inicio);
 const puedeJugar = (e, uid) => accionesLegales(e).some((a) => a.tipo === "jugar" && a.uid === uid);
 const puedeUsar = (e, uid) => accionesLegales(e).some((a) => a.tipo === "habilidad" && a.uid === uid);
+const ctxDe = (e, uid, j) => ({ ctrl: j, fuente: uid, def: e.instancias[uid], costeFuente: N.carta(e, uid).coste ?? 0, vars: {} });
 const opcionesDe = (e) => e.pendiente.opciones.map((o) => o.valor);
 const textosDe = (e) => e.pendiente.opciones.map((o) => o.texto);
 
@@ -337,7 +338,29 @@ test("Colmillo de Vampiro: también se dispara en la Vigilia oponente y sin Alia
   assert.equal(e.jugadores[0].mano.length, 0);
 });
 
-test("Colmillo de Vampiro: afectar tus demás Oros o Aliados atacantes cuesta un Oro adicional al oponente", { todo: "efecto: afectar a ciertas cartas cuesta un Oro adicional al oponente" }, () => {});
+test("Colmillo de Vampiro: afectar tus demás Oros cuesta un Oro adicional al oponente si lo hace con Aliados u Oros", () => {
+  const e = mesa();
+  const colmillo = poner(e, 0, "reserva", "Colmillo de Vampiro");
+  const [oro] = oros(e, 0, 1);
+  const balaur = poner(e, 1, "defensa", "Balaur");
+  const danza = poner(e, 1, "mano", "Danza del Cuchillo");
+  assert.equal(cumple(e, ctxDe(e, balaur, 1), oro, {}, "destruir"), false);
+  assert.equal(cumple(e, ctxDe(e, danza, 1), oro, {}, "destruir"), true);
+  assert.equal(cumple(e, ctxDe(e, balaur, 1), colmillo, {}, "destruir"), true);
+  oros(e, 1, 1);
+  assert.equal(cumple(e, ctxDe(e, balaur, 1), oro, {}, "destruir"), true);
+});
+
+test("Colmillo de Vampiro: afectar tus Aliados atacantes cuesta un Oro adicional al oponente", () => {
+  let e = mesa();
+  poner(e, 0, "reserva", "Colmillo de Vampiro");
+  const valefor = poner(e, 0, "defensa", "Valefor");
+  const rival = poner(e, 1, "defensa", "Valefor");
+  assert.equal(N.proteccionContra(e, valefor, ctxDe(e, rival, 1)).cuesta, 0);
+  e = aplicar(e, { tipo: "batalla" });
+  e = sinRespuesta(aplicar(e, { tipo: "atacar", uid: valefor }));
+  assert.equal(N.proteccionContra(e, valefor, ctxDe(e, rival, 1)).cuesta, 1);
+});
 
 test("Compendium Maleficarum: al entrar nombras una carta que tu oponente no puede jugar en su próximo turno", () => {
   let e = mesa();
@@ -361,7 +384,28 @@ test("Compendium Maleficarum: al comienzo de tu Vigilia, desde tu Cementerio, De
   assert.equal(zonaDe(e, compendium), "mano");
 });
 
-test("Corazon de Muerte: al entrar desde tu mano, afectar una carta elegida cuesta un Oro adicional al oponente", { todo: "efecto: afectar a ciertas cartas cuesta un Oro adicional al oponente" }, () => {});
+test("Corazon de Muerte: al entrar desde tu mano, afectar una carta elegida cuesta un Oro adicional al oponente hasta tu próximo turno", () => {
+  let e = mesa();
+  const corazon = poner(e, 0, "mano", "Corazon de Muerte");
+  const valefor = poner(e, 0, "defensa", "Valefor");
+  const otro = poner(e, 0, "defensa", "Valefor");
+  const danza = poner(e, 1, "mano", "Danza del Cuchillo");
+  e = aplicar(e, { tipo: "oro", uid: corazon });
+  e = elegir(e, valefor);
+  assert.equal(N.proteccionContra(e, valefor, ctxDe(e, danza, 1)).cuesta, 1);
+  assert.equal(N.proteccionContra(e, otro, ctxDe(e, danza, 1)).cuesta, 0);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.activo, 1);
+  assert.equal(N.proteccionContra(e, valefor, ctxDe(e, danza, 1)).cuesta, 1);
+});
+
+test("Corazon de Muerte: si no entra desde tu mano no elige carta", () => {
+  let e = mesa();
+  const corazon = poner(e, 0, "reserva", "Corazon de Muerte");
+  poner(e, 0, "defensa", "Valefor");
+  e = disparar(e, "entra", { uid: corazon, j: 0 });
+  assert.equal(e.pendiente, null);
+});
 
 test("Corazon de Muerte: en tu Vigilia lo pagas para jugar una carta de tu Cementerio que no sea Talismán reduciendo su coste en uno", () => {
   let e = mesa();
@@ -493,7 +537,23 @@ test("Crono Diamante: el Aliado jugado cuesta como mínimo un Oro", () => {
   assert.equal(zonaDe(e, valefor), "mano");
 });
 
-test("Crono Diamante: la primera habilidad de Oro no puede ser cancelada ni tu primer Aliado o Tótem de coste 2 o más Anulado", { todo: "protección: la primera carta de cierto tipo y coste que juegas cada turno no puede ser Anulada" }, () => {});
+test("Crono Diamante: tu primer Aliado de coste 2 o más del turno no puede ser Anulado", () => {
+  let e = mesa();
+  poner(e, 0, "reserva", "Crono Diamante");
+  oros(e, 0, 4);
+  oros(e, 1, 5);
+  poner(e, 1, "mano", "Dragón Dorado");
+  const guardia = poner(e, 0, "mano", "Guardia Real");
+  const ileana = poner(e, 0, "mano", "Ileana");
+  e = aplicar(e, jugar(guardia));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder"), false);
+  e = sinRespuesta(e);
+  assert.equal(zonaDe(e, guardia), "defensa");
+  e = aplicar(e, jugar(ileana));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder"), true);
+});
+
+test("Crono Diamante: la primera habilidad de Oro que utilizas cada turno no puede ser cancelada", { todo: "protección: la primera habilidad de cierto tipo de carta que usas cada turno no puede ser cancelada" }, () => {});
 
 test("Cruz de Borgoa: al entrar busca en tu Castillo un Aliado de Fuerza 2 o menos", () => {
   let e = mesa();
@@ -702,7 +762,14 @@ test("Diadema Celestial: tus Aliados bloqueadores ganan 1 de Fuerza", () => {
   assert.equal(N.fuerza(e, suyo), 3);
 });
 
-test("Diadema Celestial: los Aliados oponentes pierden Imbloqueable", { todo: "continua: los Aliados oponentes pierden una clave (Imbloqueable)" }, () => {});
+test("Diadema Celestial: los Aliados oponentes pierden Imbloqueable", () => {
+  const e = mesa();
+  poner(e, 0, "reserva", "Diadema Celestial");
+  const mio = poner(e, 0, "defensa", "Gusano Rojo");
+  const suyo = poner(e, 1, "defensa", "Gusano Rojo");
+  assert.equal(N.tiene(e, mio, "Imbloqueable"), true);
+  assert.equal(N.tiene(e, suyo, "Imbloqueable"), false);
+});
 
 test("Diadema Celestial: si la Botas por daño dejas de Botar cartas y la Destierras", () => {
   let e = mesa();

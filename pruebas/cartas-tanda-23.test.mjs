@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, hacer, elegir, sinRespuesta, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
-import { resolver } from "../web/duelo/efectos.js";
+import { resolver, cumple, OPS } from "../web/duelo/efectos.js";
+import { costeDe } from "../web/duelo/motor.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const oro = (uid) => ({ tipo: "oro", uid });
@@ -10,6 +11,8 @@ const puedeUsar = (e, uid, nombre, h = 0) => accionesLegales(e).some((a) => a.ti
 const puedeJugarOro = (e, uid) => accionesLegales(e).some((a) => a.tipo === "oro" && a.uid === uid);
 const nombreDe = (e, nombre) => (v) => v !== null && N.carta(e, v).nombre === nombre;
 const deJugador = (j) => (v) => v !== null && N.dueno(v) === j;
+const ctxDe = (e, uid, j) => ({ ctrl: j, fuente: uid, def: e.instancias[uid], costeFuente: N.carta(e, uid).coste ?? 0, vars: {} });
+const hayRespuesta = (e) => accionesLegales(e).some((a) => a.tipo === "responder");
 
 function disparar(e, evento, datos) {
   N.disparar(e, evento, datos);
@@ -53,8 +56,13 @@ test("Salmón del Saber: al comienzo de tu Vigilia Roba hasta tener dos cartas e
   assert.equal(e.jugadores[0].mano.length, 3);
 });
 
-test("Salmón del Saber: no puede salir del juego por efectos de Talismanes", { todo: "protección: no puede salir del juego por efectos de Talismanes" }, () => {
-  assert.fail();
+test("Salmón del Saber: no puede salir del juego por efectos de Talismanes", () => {
+  const e = mesa();
+  const s = poner(e, 0, "reserva", "Salmón del Saber");
+  const danza = poner(e, 1, "mano", "Danza del Cuchillo");
+  const aliado = poner(e, 1, "defensa", "Valefor");
+  assert.equal(cumple(e, ctxDe(e, danza, 1), s, {}, "destruir"), false);
+  assert.equal(cumple(e, ctxDe(e, aliado, 1), s, {}, "destruir"), true);
 });
 
 test("Salmón del Saber: al comienzo del juego Roba una carta si tienes menos de ocho en la mano", { todo: "evento: al comienzo del juego" }, () => {
@@ -94,8 +102,14 @@ test("Sarcófago: sin cartas en la mano no se puede usar", () => {
   assert.equal(puedeUsar(e, s, "Sarcófago"), false);
 });
 
-test("Sarcófago: el oponente no puede Desterrar Aliados con Exhumar de tu Cementerio", { todo: "protección: el oponente no puede Desterrar Aliados con Exhumar de tu Cementerio" }, () => {
-  assert.fail();
+test("Sarcófago: el oponente no puede Desterrar Aliados con Exhumar de tu Cementerio", () => {
+  const e = mesa();
+  poner(e, 0, "reserva", "Sarcófago");
+  const ex = ficticia(e, 0, "cementerio", { claves: ["Exhumar"] });
+  const comun = poner(e, 0, "cementerio", "Valefor");
+  OPS.mover(e, { var: "x", a: "desterrar" }, { ctx: { ctrl: 1, vars: { x: [ex, comun] } } });
+  assert.equal(zonaDe(e, ex), "cementerio");
+  assert.equal(zonaDe(e, comun), "destierro");
 });
 
 test("Sarcófago Impío: mira cuatro cartas del fondo de tu Castillo, una a tu mano y otra a tu Cementerio", () => {
@@ -209,7 +223,24 @@ test("Tablas del Juramento: también funciona desde el Cementerio y no por tus p
   assert.equal(zonaDe(e, t), "pagado");
 });
 
-test("Tablas del Juramento: no se puede reducir costes ni jugar cartas sin pagar su coste más de una vez por turno", { todo: "restricción: reducir costes o jugar cartas sin pagar su coste solo una vez por turno" }, () => {
+test("Tablas del Juramento: no se puede jugar cartas sin pagar su coste más de una vez por turno", () => {
+  let e = mesa();
+  poner(e, 0, "reserva", "Tablas del Juramento");
+  const x = poner(e, 1, "defensa", "Valefor");
+  e = disparar(e, "juega", { uid: x, j: 1, tipo: "Aliado", pagado: true });
+  const libre = { pasos: [], i: 0, ctx: { ctrl: 1, vars: { x: [poner(e, 1, "mano", "Valefor")] } } };
+  OPS.jugarGratis(e, { var: "x" }, libre);
+  assert.ok(libre.pasos.length > 0);
+  e = disparar(e, "juega", { uid: x, j: 1, tipo: "Aliado", pagado: false });
+  const bloqueada = { pasos: [], i: 0, ctx: { ctrl: 1, vars: { x: [poner(e, 1, "mano", "Valefor")] } } };
+  OPS.jugarGratis(e, { var: "x" }, bloqueada);
+  assert.equal(bloqueada.pasos.length, 0);
+  const propia = { pasos: [], i: 0, ctx: { ctrl: 0, vars: { x: [poner(e, 0, "mano", "Valefor")] } } };
+  OPS.jugarGratis(e, { var: "x" }, propia);
+  assert.ok(propia.pasos.length > 0);
+});
+
+test("Tablas del Juramento: no se puede reducir costes más de una vez por turno", { todo: "restricción: reducir costes solo una vez por turno" }, () => {
   assert.fail();
 });
 
@@ -229,8 +260,13 @@ test("Tamales: es Oro Inicial y en tu Fase Final puedes Barajar hasta tres carta
   assert.equal(zonaDe(e, c), "cementerio");
 });
 
-test("Tamales: no puede ser afectado por Aliados", { todo: "protección: no puede ser afectado por Aliados" }, () => {
-  assert.fail();
+test("Tamales: no puede ser afectado por Aliados", () => {
+  const e = mesa();
+  const t = poner(e, 0, "reserva", "Tamales");
+  const aliado = poner(e, 1, "defensa", "Valefor");
+  const danza = poner(e, 1, "mano", "Danza del Cuchillo");
+  assert.equal(cumple(e, ctxDe(e, aliado, 1), t, {}, "destruir"), false);
+  assert.equal(cumple(e, ctxDe(e, danza, 1), t, {}, "destruir"), true);
 });
 
 test("Tamales: el oponente no puede usar habilidades de Oros y cartas de coste 2 o más si controla otra copia", { todo: "restricción: el oponente no puede usar habilidades de Oros y de cartas de coste 2 o más de las que controle otra copia" }, () => {
@@ -242,8 +278,16 @@ test("Terminal P-12: es Oro Inicial", () => {
   assert.equal(N.carta(e, poner(e, 0, "reserva", "Terminal P-12")).oroInicial, true);
 });
 
-test("Terminal P-12: tus cartas no pierden su habilidad por efectos oponentes", { todo: "protección: tus cartas no pueden perder su habilidad por efectos oponentes" }, () => {
-  assert.fail();
+test("Terminal P-12: en tu Reserva, tus cartas no pierden su habilidad por efectos oponentes", () => {
+  const e = mesa();
+  poner(e, 0, "reserva", "Terminal P-12");
+  const balaur = poner(e, 0, "defensa", "Balaur");
+  const onsen = poner(e, 0, "reserva", "Onsen");
+  const suyo = poner(e, 1, "reserva", "Onsen");
+  for (const u of [balaur, onsen, suyo]) N.agregarEfecto(e, { tipo: "pierdeHabilidad", uid: u, fin: "turno" }, 1);
+  assert.equal(N.activa(e, balaur), true);
+  assert.equal(N.activa(e, onsen), true);
+  assert.equal(N.activa(e, suyo), false);
 });
 
 test("Terminal P-12: el oponente no puede mirar tu mano ni tu Castillo", { todo: "protección: el oponente no puede mirar tu mano ni tu Castillo" }, () => {
@@ -351,12 +395,25 @@ test("Tesoro de los Cesares: una vez por turno Baraja una carta de tu mano para 
   const objetivo = poner(e, 1, "mano", "Balaur");
   e = hacer(e, habilidad(t, "Tesoro de los Cesares"), objetivo);
   assert.equal(zonaDe(e, d), "castillo");
-  assert.ok(e.efectos.some((f) => f.tipo === "costeExtraNombre" && f.nombre === "Balaur"));
   assert.equal(puedeUsar(e, t, "Tesoro de los Cesares"), false);
 });
 
-test("Tesoro de los Cesares: la carta nombrada cuesta un Oro adicional el próximo turno", { todo: "efecto: una carta nombrada cuesta Oros adicionales durante un período" }, () => {
-  assert.fail();
+test("Tesoro de los Cesares: la carta nombrada cuesta un Oro adicional el próximo turno", () => {
+  let e = mesa();
+  const t = poner(e, 0, "reserva", "Tesoro de los Cesares");
+  poner(e, 0, "mano", "Drácula");
+  const objetivo = poner(e, 1, "mano", "Balaur");
+  const otra = poner(e, 1, "mano", "Valefor");
+  const base = costeDe(e, 1, objetivo).pagar;
+  const baseOtra = costeDe(e, 1, otra).pagar;
+  e = hacer(e, habilidad(t, "Tesoro de los Cesares"), objetivo);
+  N.expirar(e, "finTurno");
+  e.turno += 1;
+  assert.equal(costeDe(e, 1, objetivo).pagar, base + 1);
+  assert.equal(costeDe(e, 0, poner(e, 0, "mano", "Balaur")).pagar, base + 1);
+  assert.equal(costeDe(e, 1, otra).pagar, baseOtra);
+  N.expirar(e, "finTurno");
+  assert.equal(costeDe(e, 1, objetivo).pagar, base);
 });
 
 test("Tesoro del Santiaguillo: al entrar busca un Aliado en un Castillo y lo pone en el Cementerio de su dueño", () => {
@@ -490,8 +547,19 @@ test("Trono Divino: con menos de dos Armas y/o Tótem no se dispara", () => {
   assert.equal(e.pendiente, null);
 });
 
-test("Trono Divino: la primera Arma o Tótem de coste 2 o más que juegues en tu turno no puede ser Anulada", { todo: "protección: la primera carta de ciertos tipos y coste mínimo jugada en el turno no puede ser Anulada" }, () => {
-  assert.fail();
+test("Trono Divino: la primera Arma o Tótem de coste 2 o más que juegues en tu turno no puede ser Anulada", () => {
+  const jugarAho = (conTrono) => {
+    const e = mesa();
+    if (conTrono) poner(e, 0, "reserva", "Trono Divino");
+    oros(e, 0, 5);
+    oros(e, 1, 5);
+    poner(e, 1, "mano", "Dragón Dorado");
+    const a = poner(e, 0, "defensa", "Valefor");
+    const aho = poner(e, 0, "mano", "Aho");
+    return aplicar(e, jugar(aho, { portador: a }));
+  };
+  assert.equal(hayRespuesta(jugarAho(false)), true);
+  assert.equal(hayRespuesta(jugarAho(true)), false);
 });
 
 test("Trono del Cielo: mira tres cartas del tope, una a tu mano y otra al fondo de tu Castillo", () => {
@@ -743,11 +811,27 @@ test("Zapatillas Rojas: al entrar nombra una carta de coste 3 o menos y Roba una
   e = aplicar(e, oro(t));
   assert.equal(e.pendiente.opciones.some((o) => o.valor !== null && N.carta(e, o.valor).coste > 3), false);
   e = elegir(e, objetivo);
-  assert.equal(e.usos[`zapatillas|${t}`], "Valefor");
   assert.equal(e.jugadores[0].mano.length, 1);
 });
 
-test("Zapatillas Rojas: su habilidad no puede ser cancelada y las cartas nombradas cuestan un Oro para usar sus habilidades", { todo: "restricción: usar habilidades de cartas nombradas cuesta un Oro; protección: habilidad que no puede ser cancelada" }, () => {
+test("Zapatillas Rojas: usar habilidades de cartas nombradas cuesta un Oro mientras esté en juego", () => {
+  let e = mesa();
+  const objetivo = poner(e, 1, "mano", "Valefor");
+  const t = poner(e, 0, "mano", "Zapatillas Rojas");
+  e = aplicar(e, oro(t));
+  e = elegir(e, objetivo);
+  const suyo = poner(e, 1, "defensa", "Valefor");
+  const mio = poner(e, 0, "defensa", "Valefor");
+  const otro = poner(e, 1, "defensa", "Balaur");
+  assert.equal(N.impuestoHabilidad(e, 1, suyo, "activada"), 1);
+  assert.equal(N.impuestoHabilidad(e, 0, mio, "activada"), 1);
+  assert.equal(N.impuestoHabilidad(e, 1, otro, "activada"), 0);
+  N.mover(e, t, "cementerio");
+  N.expirar(e, "finTurno");
+  assert.equal(N.impuestoHabilidad(e, 1, suyo, "activada"), 0);
+});
+
+test("Zapatillas Rojas: su habilidad no puede ser cancelada", { todo: "protección: habilidad que no puede ser cancelada" }, () => {
   assert.fail();
 });
 

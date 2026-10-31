@@ -115,7 +115,7 @@ function restringido(e, j, uid) {
   if ((c.claves.includes("Unica") || c.claves.includes("UnaCopia")) && c.tipo !== "Oro" && N.enJuegoDe(e, j).some((x) => N.carta(e, x).nombre === c.nombre)) return true;
   const mio = (f) => f.j === undefined || f.j === j;
   if (e.efectos.some((f) => f.tipo === "noJugarMas" && mio(f))) return true;
-  if (e.efectos.some((f) => f.tipo === "maxPorTipo" && mio(f) && (p.jugadas[c.tipo] ?? 0) >= f.n)) return true;
+  if (e.efectos.some((f) => f.tipo === "maxPorTipo" && mio(f) && (!f.tipoCarta || [].concat(f.tipoCarta).includes(c.tipo)) && (p.jugadas[c.tipo] ?? 0) >= f.n)) return true;
   const noOro = Object.entries(p.jugadas).filter(([t]) => !["Oro", "total", "nombres", "anuladas"].includes(t)).reduce((s, [, n]) => s + n, 0);
   if (e.efectos.some((f) => f.tipo === "maxNoOro" && mio(f) && noOro >= f.n)) return true;
   return false;
@@ -331,6 +331,7 @@ function respuestas(e, j, item) {
         if (agotada(e, claveUso(e, j, uid, d, i, h), h)) return;
         if ((h.oros ?? 0) + extra + N.impuestoHabilidad(e, j, uid, "activada") > disponibles(e, j)) return;
         if (!costePagable(e, uid, h)) return;
+        if (!requiere(e, { ctrl: j, fuente: uid, def: d.id, costeFuente: d.coste ?? 0, vars: {} }, h.requiere)) return;
         a.push({ tipo: "responder", uid, def: d.id, h: i });
       });
     }

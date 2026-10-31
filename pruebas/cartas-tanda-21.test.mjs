@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, elegir, sinRespuesta, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
-import { resolver, armaCabe, OPS } from "../web/duelo/efectos.js";
+import { resolver, armaCabe, OPS, cumple, disponibles } from "../web/duelo/efectos.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
@@ -22,6 +22,13 @@ function con(e, nombre, extra) {
   const k = id(nombre);
   e.catalogo = { ...e.catalogo, [k]: { ...e.catalogo[k], ...extra } };
   return e;
+}
+
+const ctxDe = (e, uid, j) => ({ ctrl: j, fuente: uid, def: e.instancias[uid], costeFuente: N.carta(e, uid).coste ?? 0, vars: {} });
+
+function convertirA(e, uid, j) {
+  OPS.convertir(e, { var: "x", en: "Aliado", fuerza: 2, a: "defensa" }, { ctx: { ctrl: j, vars: { x: [uid] } } });
+  return zonaDe(e, uid);
 }
 
 function turnoRival(e) {
@@ -268,7 +275,13 @@ test("Kultrung: es Única y pagándolo genera dos Oros por el turno", () => {
   assert.equal(generados(e, 0), 2);
 });
 
-test("Kultrung: los Oros generados solo sirven para jugar cartas de coste 4 o más", { todo: "generar: Oro generado restringido a cartas de coste mínimo" }, () => {});
+test("Kultrung: los Oros generados solo sirven para jugar cartas de coste 4 o más", () => {
+  let e = mesa();
+  const k = poner(e, 0, "reserva", "Kultrung");
+  e = aplicar(e, habilidad(k, "Kultrung"));
+  assert.equal(disponibles(e, 0, { tipo: "Aliado", coste: 3 }), 0);
+  assert.equal(disponibles(e, 0, { tipo: "Aliado", coste: 4 }), 2);
+});
 
 test("Kultrung: si el daño oponente lo pone en tu Cementerio puedes subirlo a tu mano", () => {
   let e = mesa();
@@ -314,7 +327,16 @@ test("La Estrella Solitaria: tus Aliados no pueden perder su habilidad", () => {
   assert.equal(N.activa(e, suyo), false);
 });
 
-test("La Estrella Solitaria: tus demás Oros no pueden ser afectados por Talismanes oponentes", { todo: "efecto: no puede ser afectado por Talismanes oponentes" }, () => {});
+test("La Estrella Solitaria: tus demás Oros no pueden ser afectados por Talismanes oponentes", () => {
+  const e = mesa();
+  const es = poner(e, 0, "reserva", "La Estrella Solitaria");
+  const [oro] = oros(e, 0, 1);
+  const danza = poner(e, 1, "mano", "Danza del Cuchillo");
+  const balaur = poner(e, 1, "defensa", "Balaur");
+  assert.equal(cumple(e, ctxDe(e, danza, 1), oro, {}, "destruir"), false);
+  assert.equal(cumple(e, ctxDe(e, danza, 1), es, {}, "destruir"), true);
+  assert.equal(cumple(e, ctxDe(e, balaur, 1), oro, {}, "destruir"), true);
+});
 
 test("La Isla del Doctor Moreau: al entrar genera un Oro", () => {
   let e = mesa();
@@ -323,7 +345,13 @@ test("La Isla del Doctor Moreau: al entrar genera un Oro", () => {
   assert.equal(generados(e, 0), 1);
 });
 
-test("La Isla del Doctor Moreau: el Oro generado solo sirve para jugar cartas de coste 4 o más", { todo: "generar: Oro generado restringido a cartas de coste mínimo" }, () => {});
+test("La Isla del Doctor Moreau: el Oro generado solo sirve para jugar cartas de coste 4 o más", () => {
+  let e = mesa();
+  const m = poner(e, 0, "mano", "La Isla del Doctor Moreau");
+  e = aplicar(e, { tipo: "oro", uid: m });
+  assert.equal(disponibles(e, 0, { tipo: "Aliado", coste: 3 }), 1);
+  assert.equal(disponibles(e, 0, { tipo: "Aliado", coste: 4 }), 2);
+});
 
 test("La Isla del Doctor Moreau: una vez por turno pagas un Oro para Barajar hasta dos cartas de los Cementerios y Robar una", () => {
   let e = mesa();
@@ -564,7 +592,18 @@ test("Libro de Revelaciones: es Única y al entrar pone en tu mano una de las tr
   assert.equal(e.jugadores[0].castillo.length, 30);
 });
 
-test("Libro de Revelaciones: en tu Reserva no pierde su habilidad y los demás Oros no pueden ser convertidos", { todo: "efecto: no pierde su habilidad mientras esté en la Reserva; los Oros no pueden ser convertidos" }, () => {});
+test("Libro de Revelaciones: en tu Reserva los demás Oros no pueden ser convertidos", () => {
+  const e = mesa();
+  const l = poner(e, 0, "reserva", "Libro de Revelaciones");
+  const [suyo] = oros(e, 1, 1);
+  const [mio] = oros(e, 0, 1);
+  assert.equal(convertirA(e, suyo, 0), "reserva");
+  assert.equal(convertirA(e, mio, 1), "reserva");
+  N.mover(e, l, "pagado");
+  assert.equal(convertirA(e, suyo, 0), "defensa");
+});
+
+test("Libro de Revelaciones: en tu Reserva no pierde su habilidad", { todo: "efecto: no puede perder su habilidad solo mientras esté en una zona (noPierden con zona)" }, () => {});
 
 test("Libro de las Obras: al entrar Baraja hasta cuatro cartas de los Cementerios y Roba una", () => {
   let e = mesa();
@@ -646,7 +685,13 @@ test("Los Siete Sellos: un Sello que llega al Cementerio sin resolverse no hace 
   assert.equal(e.jugadores[1].castillo.length, 30);
 });
 
-test("Los Siete Sellos: no puede ser convertido y no pagas costes adicionales de cartas Sello", { todo: "efecto: no puede ser convertido; ignora costes adicionales de cartas de un subtipo" }, () => {});
+test("Los Siete Sellos: no puede ser convertido", () => {
+  const e = mesa();
+  const s = poner(e, 0, "reserva", "Los Siete Sellos");
+  assert.equal(convertirA(e, s, 1), "reserva");
+});
+
+test("Los Siete Sellos: no pagas costes adicionales de cartas Sello", { todo: "efecto: ignora costes adicionales de cartas de un subtipo" }, () => {});
 
 test("Lycón: en tu Oro Pagado, con entre uno y tres Aliados atacando, las cartas del Cementerio oponente pierden su habilidad", () => {
   const e = mesa();

@@ -45,6 +45,7 @@ const portadorLibre = (e, ctx, u) => u !== ctx.fuente && armaCabe(e, u, ctx.fuen
 
 export const HABILIDADES = {
   "Salmón del Saber": {
+    continuas: [{ proteccion: { por: ["Talismán"] }, a: "propia" }],
     disparadas: [{ cuando: ["comienzoVigilia"], hacer: [{ op: "fn", f: "robarHastaDos" }] }],
     fns: {
       robarHastaDos: (e, ctx) => {
@@ -69,6 +70,7 @@ export const HABILIDADES = {
         ],
       },
     ],
+    continuas: [{ cementerioIndesterrable: { conClave: "Exhumar" } }],
     fns: { conMano },
   },
   "Sarcófago Impío": {
@@ -129,8 +131,13 @@ export const HABILIDADES = {
         opcional: true,
         hacer: [sel(["fuente"], {}, "yo"), { op: "ponerOro", var: "yo", a: "pagado" }],
       },
+      { cuando: ["juega"], quien: "cualquiera", si: "sinPagar", hacer: [{ op: "fn", f: "limitarSinPagar" }] },
     ],
     fns: {
+      sinPagar: (e, ctx) => ctx.datos.pagado === false,
+      limitarSinPagar: (e, ctx) => {
+        N.agregarEfecto(e, { tipo: "noSinPagar", j: ctx.datos.j, fin: "turno" }, ctx.ctrl);
+      },
       segundaSinPagar: (e, ctx) => {
         if (ctx.datos.pagado !== false) return false;
         const clave = `tablas|${ctx.fuente}`;
@@ -142,9 +149,12 @@ export const HABILIDADES = {
     },
   },
   Tamales: {
+    continuas: [{ proteccion: { por: ["Aliado"] }, a: "propia" }],
     disparadas: [{ cuando: ["faseFinal"], hacer: [sel(["todos:cementerio"], {}, "c", { n: 3, hasta: true }), mov("barajar", "c")] }],
   },
-  "Terminal P-12": {},
+  "Terminal P-12": {
+    continuas: [{ zona: "reserva", noPierden: true, a: "tusAliados", tipoObjetivo: ["Aliado", "Arma", "Tótem", "Oro", "Talismán"] }],
+  },
   "Tesoro de Bandido": {
     disparadas: [{ cuando: ["entra"], hacer: buscar(["yo:castillo"], { f: "bandido" }) }],
     activadas: [
@@ -191,7 +201,7 @@ export const HABILIDADES = {
       nOros,
       conMano,
       encarecer: (e, ctx) => {
-        for (const u of ctx.vars.n ?? []) N.agregarEfecto(e, { tipo: "costeExtraNombre", nombre: N.carta(e, u).nombre, n: 1, fin: "dosTurnos" }, ctx.ctrl);
+        for (const u of ctx.vars.n ?? []) N.agregarEfecto(e, { tipo: "impuesto", nombre: N.carta(e, u).nombre, n: 1, fin: "dosTurnos" }, ctx.ctrl);
       },
     },
   },
@@ -272,6 +282,7 @@ export const HABILIDADES = {
     },
   },
   "Trono Divino": {
+    continuas: [{ si: "miTurno", noAnulables: { tipoCarta: ["Arma", "Tótem"], costeMin: 2, primera: true } }],
     disparadas: [
       {
         cuando: ["comienzoVigilia"],
@@ -284,6 +295,7 @@ export const HABILIDADES = {
       },
     ],
     fns: {
+      miTurno: (e, ctx) => e.activo === ctx.ctrl,
       dosArmasTotem: (e, ctx) => N.armasDe(e, ctx.ctrl).length + e.jugadores[ctx.ctrl].apoyo.filter((u) => N.carta(e, u).tipo === "Tótem").length >= 2,
     },
   },
@@ -419,7 +431,7 @@ export const HABILIDADES = {
     fns: {
       recordar: (e, ctx) => {
         const [u] = ctx.vars.n ?? [];
-        if (u) e.usos[`zapatillas|${ctx.fuente}`] = N.carta(e, u).nombre;
+        if (u) N.agregarEfecto(e, { tipo: "impuestoHabilidad", nombre: N.carta(e, u).nombre, n: 1, uid: ctx.fuente, fin: "mientras" }, ctx.ctrl);
       },
     },
   },

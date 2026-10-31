@@ -183,13 +183,11 @@ export const HABILIDADES = {
       {
         texto: "Desterrarlo: Anular una carta de coste 1 o menos",
         respuesta: { anula: { costeMax: 1 } },
-        requiere: "soloRespuesta",
         coste: [sel(["fuente"], {}, "yo"), mov("desterrar", "yo")],
         hacer: [],
       },
     ],
     fns: {
-      soloRespuesta: () => false,
       dragon: (e, ctx, u) => (N.carta(e, u).razas ?? []).includes("Dragón") && asequible(0)(e, ctx, u),
       jugar: jugarReducido(0),
     },
@@ -238,12 +236,10 @@ export const HABILIDADES = {
         respuesta: { anula: {} },
         veces: "turno",
         oros: 1,
-        requiere: "soloRespuesta",
         hacer: [{ op: "fn", f: "gastar" }],
       },
     ],
     fns: {
-      soloRespuesta: () => false,
       gastar: (e, ctx) => {
         for (const h of [0, 1]) e.usos[`${ctx.fuente}|${ctx.def}|${h}`] = e.turno;
       },

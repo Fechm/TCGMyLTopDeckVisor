@@ -85,6 +85,7 @@ export const HABILIDADES = {
     },
   },
   "Matriz V": {
+    claves: ["NoConvertible"],
     disparadas: [{ cuando: ["entra"], hacer: [robar(1), sel(["yo:enJuego"], {}, "i", { n: 2, hasta: true }), efecto("i", { tipo: "gana", clave: "Indestructible" }, "mientras")] }],
   },
   "Medalla de Papa Legba": {
@@ -102,7 +103,7 @@ export const HABILIDADES = {
       puede: (e, ctx) => {
         const jugadas = e.jugadores[N.rival(ctx.ctrl)].jugadas;
         const n = Object.entries(jugadas).filter(([t]) => !["total", "nombres", "anuladas"].includes(t)).reduce((s, [, k]) => s + k, 0);
-        return n > 2 && N.aliadosDe(e, ctx.ctrl).some((a) => N.tiene(e, a, "Furia"));
+        return n + (e.jugadores[N.rival(ctx.ctrl)].habilidadesUsadas ?? 0) > 2 && N.aliadosDe(e, ctx.ctrl).some((a) => N.tiene(e, a, "Furia"));
       },
     },
   },
@@ -123,7 +124,10 @@ export const HABILIDADES = {
       },
     },
   },
-  "Mente Suprema": {},
+  "Mente Suprema": {
+    continuas: [{ talismanesAlDestierro: true, si: "dosConHabilidad" }],
+    fns: { dosConHabilidad: (e, ctx) => N.aliadosDe(e, ctx.ctrl).filter((a) => !N.carta(e, a).sinHabilidad).length >= 2 },
+  },
   "Miguel de Cervantes": {
     activadas: [
       {
@@ -133,7 +137,7 @@ export const HABILIDADES = {
         hacer: [sel(["yo:cementerio"], { tipo: "Aliado", costeMax: 2 }, "a"), { op: "convertir", var: "a", en: "Aliado", a: "defensa" }],
       },
     ],
-    disparadas: [{ cuando: ["anulada"], quien: "yo", veces: 1, si: "aliadoCaro", hacer: [{ op: "generar", n: 1, tipos: ["Aliado"] }] }],
+    disparadas: [{ cuando: ["anulada"], quien: "yo", veces: 1, si: "aliadoCaro", hacer: [{ op: "generar", n: 1, tipos: ["Aliado"], costeMin: 2 }] }],
     fns: {
       sinAliados: (e, ctx) =>
         N.aliadosDe(e, ctx.ctrl).length === 0 && e.jugadores[ctx.ctrl].cementerio.some((u) => N.carta(e, u).tipo === "Aliado" && (N.carta(e, u).coste ?? 0) <= 2),
@@ -154,6 +158,7 @@ export const HABILIDADES = {
     disparadas: [{ cuando: ["entra"], opcional: true, hacer: buscar(["yo:castillo"], { tipo: ["Aliado", "Tótem"], costeMin: 2 }) }],
   },
   Necronomicon: {
+    continuas: [{ gana: "Indestructible", tipoObjetivo: "Oro", a: "aliados" }],
     activadas: [
       {
         texto: "Poner hasta dos cartas de tu mano en el fondo de tu Castillo y Robar esa cantidad",
@@ -211,6 +216,7 @@ export const HABILIDADES = {
     ],
   },
   Pallax: {
+    continuas: [{ proteccion: { por: ["Oro"], cuesta: 1 }, a: "tusAliados", tipoObjetivo: "Aliado", conArma: true }],
     disparadas: [{ cuando: ["entra"], hacer: [{ op: "tope", n: 1, como: "a" }, { op: "tope", n: 1, fondo: true, como: "b" }, mov("mano", "a"), mov("mano", "b")] }],
     activadas: [
       {
@@ -378,8 +384,18 @@ export const HABILIDADES = {
     ],
   },
   "Primer Escudo": {
-    activadas: [ponerDesde("mano"), ponerDesde("cementerio")],
-    fns: { sinOros: sinOrosPuestos, marcarOro },
+    activadas: [
+      ponerDesde("mano"),
+      ponerDesde("cementerio"),
+      {
+        texto: "Convertirlo en un Oro sin habilidad, pagar un Oro y mostrar dos Aliados de tu mano: Anular un Talismán",
+        oros: 1,
+        respuesta: { anula: { tipo: "Talismán" } },
+        coste: [{ op: "fn", f: "apagar" }, sel(["yo:mano"], { tipo: "Aliado" }, "m", { n: 2 })],
+        hacer: [],
+      },
+    ],
+    fns: { sinOros: sinOrosPuestos, marcarOro, apagar },
   },
   "Quantum Megumi": {
     activadas: [
@@ -410,6 +426,7 @@ export const HABILIDADES = {
     fns: { sinReserva: (e, ctx) => e.jugadores[ctx.ctrl].reserva.length === 0 },
   },
   Salitre: {
+    continuas: [{ gana: "Indesterrable", tipoObjetivo: "Oro", a: "aliados" }],
     disparadas: [
       { cuando: ["entra"], hacer: [robar(2), sel(["yo:mano"], {}, "m"), mov("barajar", "m")] },
       { cuando: ["saleDelJuego"], quien: "cualquiera", si: "oroDestruido", hacer: [{ op: "fn", f: "cargar" }, mov("barajar", "c")] },

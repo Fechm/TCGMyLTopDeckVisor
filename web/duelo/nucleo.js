@@ -106,6 +106,8 @@ function noPuedePerder(e, uid, prof) {
   if (!candidatas.length) return false;
   const protege = (x, k) =>
     enCem.has(x) === (k.zona === "cementerio") &&
+    (!k.zona || k.zona === "cementerio" || e.jugadores[j][k.zona].includes(x)) &&
+    (!k.si || carta(e, x).fns[k.si](e, { ctrl: j, fuente: x, def: e.instancias[x] })) &&
     ((k.aliadosNoPierden && c.tipo === "Aliado" && x !== uid) ||
       (k.noPierden && tipoObjetivo(k, c, "Aliado") && alcanza(e, k.a ?? "tusAliados", x, j, uid) && filtraObjetivo(e, k, uid)));
   const viva = (x) => {
@@ -268,8 +270,8 @@ export function claves(e, uid) {
   for (const a of e.armas[uid] ?? []) if (activa(e, a)) (carta(e, a).portador?.claves ?? []).forEach((k) => s.add(k));
   const c = carta(e, uid);
   for (const { uid: f, j, k } of continuas(e)) if (k.gana && tipoObjetivo(k, c, "Aliado") && alcanza(e, k.a, f, j, uid) && filtraObjetivo(e, k, uid)) s.add(k.gana);
-  for (const { uid: f, j, k } of continuas(e)) if (k.pierde && tipoObjetivo(k, c, "Aliado") && alcanza(e, k.a, f, j, uid) && filtraObjetivo(e, k, uid)) [].concat(k.pierde).forEach((x) => s.delete(x));
   for (const f of e.efectos) if (f.tipo === "gana" && (f.uid === uid || (f.aliadosDe !== undefined && controlador(e, uid) === f.aliadosDe))) s.add(f.clave);
+  for (const { uid: f, j, k } of continuas(e)) if (k.pierde && tipoObjetivo(k, c, "Aliado") && alcanza(e, k.a, f, j, uid) && filtraObjetivo(e, k, uid)) [].concat(k.pierde).forEach((x) => s.delete(x));
   return s;
 }
 

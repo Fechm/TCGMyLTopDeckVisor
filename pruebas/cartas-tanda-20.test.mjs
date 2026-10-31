@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, hacer, elegir, sinRespuesta, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
-import { limiteArmas } from "../web/duelo/efectos.js";
+import { limiteArmas, cumple } from "../web/duelo/efectos.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const oro = (uid) => ({ tipo: "oro", uid });
@@ -10,6 +10,8 @@ const nombreDe = (e, nombre) => (v) => v !== null && N.carta(e, v).nombre === no
 const texto = (inicio) => (v, o) => (o.texto ?? "").startsWith(inicio);
 const puedeUsar = (e, uid, h) => accionesLegales(e).some((a) => a.tipo === "habilidad" && a.uid === uid && (h === undefined || a.h === h));
 const nombres = (e, lista) => lista.map((u) => N.carta(e, u).nombre);
+const ctxDe = (e, uid, j) => ({ ctrl: j, fuente: uid, def: e.instancias[uid], costeFuente: N.carta(e, uid).coste ?? 0, vars: {} });
+const puedeJugar = (e, uid) => accionesLegales(e).some((a) => a.tipo === "jugar" && a.uid === uid);
 
 function alTope(e, j, nombre) {
   const uid = poner(e, j, "castillo", nombre);
@@ -196,7 +198,16 @@ test("Embrion Titán: o busca en tu Castillo una carta que no sea Talismán", ()
   assert.equal(zonaDe(e, g), "mano");
 });
 
-test("Embrion Titán: no puede ser afectado por efectos en ninguna Zona", { todo: "protección: carta que no puede ser afectada por efectos en ninguna Zona" }, () => {});
+test("Embrion Titán: en juego no puede ser afectado por efectos oponentes", () => {
+  const e = mesa();
+  const titan = poner(e, 1, "reserva", "Embrion Titán");
+  const cuervo = poner(e, 0, "reserva", "El Cuervo y Otros Poemas");
+  const otro = poner(e, 1, "reserva", "Don de Belial");
+  assert.equal(cumple(e, ctxDe(e, cuervo, 0), titan, {}, "destruir"), false);
+  assert.equal(cumple(e, ctxDe(e, cuervo, 0), otro, {}, "destruir"), true);
+});
+
+test("Embrion Titán: no puede ser afectado por efectos fuera del juego ni por efectos propios", { todo: "protección: inmunidad a todo efecto (propio y oponente) en cualquier Zona" }, () => {});
 
 test("Embrion Titán: al pagar un coste cuenta como dos Oros", { todo: "pago: un Oro que cuenta como dos Oros al pagar un coste" }, () => {});
 
@@ -281,7 +292,20 @@ test("Escamas de Azi: en tu Fase Final Destierras o Barajas hasta dos cartas de 
   assert.deepEqual([a, b, c].map((u) => zonaDe(e, u)), ["destierro", "destierro", "cementerio"]);
 });
 
-test("Escamas de Azi: los Aliados Azi y los Oros ganan Indesterrable", { todo: "continua: ganar una clave filtrando por nombre y aplicada también a Oros" }, () => {});
+test("Escamas de Azi: los Oros ganan Indesterrable", () => {
+  const e = mesa();
+  poner(e, 0, "reserva", "Escamas de Azi");
+  const propio = poner(e, 0, "reserva", "Don de Belial");
+  const ajeno = poner(e, 1, "reserva", "Don de Belial");
+  const v = poner(e, 1, "defensa", "Valefor");
+  const cuervo = poner(e, 1, "reserva", "El Cuervo y Otros Poemas");
+  assert.equal(N.tiene(e, propio, "Indesterrable"), true);
+  assert.equal(N.tiene(e, ajeno, "Indesterrable"), true);
+  assert.equal(N.tiene(e, v, "Indesterrable"), false);
+  assert.equal(cumple(e, ctxDe(e, cuervo, 1), ajeno, {}, "desterrar"), false);
+});
+
+test("Escamas de Azi: los Aliados Azi ganan Indesterrable", { todo: "continua: ganar una clave filtrando por nombre de carta" }, () => {});
 
 test("Escamas de Dragón: al entrar cada jugador Bota tres cartas y tú Robas una", () => {
   let e = mesa();
@@ -453,7 +477,22 @@ test("Espada Ceremonial: sin Oros en tu Reserva tus Aliados ganan 1 de Fuerza cu
   assert.equal(N.fuerza(e, v), 3);
 });
 
-test("Espada Ceremonial: sin Oros en tu Reserva tus Aliados pueden bloquear Aliados Imbloqueables", { todo: "bloqueo: permitir bloquear Aliados Imbloqueables" }, () => {});
+test("Espada Ceremonial: sin Oros en tu Reserva tus Aliados pueden bloquear Aliados Imbloqueables", () => {
+  const preparar = (conOro) => {
+    let e = mesa();
+    poner(e, 1, "pagado", "Espada Ceremonial");
+    if (conOro) oros(e, 1, 1);
+    const v = poner(e, 1, "defensa", "Valefor");
+    const b = poner(e, 0, "defensa", "Balaur");
+    N.agregarEfecto(e, { tipo: "gana", uid: b, clave: "Imbloqueable", fin: "turno" }, 0);
+    e = aplicar(e, { tipo: "batalla" });
+    e = aplicar(e, { tipo: "atacar", uid: b });
+    e = aplicar(e, { tipo: "finAtaque" });
+    return accionesLegales(e).some((a) => a.tipo === "bloquear" && a.uid === v && a.atacante === b);
+  };
+  assert.equal(preparar(false), true);
+  assert.equal(preparar(true), false);
+});
 
 test("Espejo Magico: al entrar Robas una carta", () => {
   let e = mesa();
@@ -614,7 +653,17 @@ test("Fuente de la Juventud: al entrar Robas dos cartas", () => {
   assert.equal(e.jugadores[0].mano.length, 2);
 });
 
-test("Fuente de la Juventud: jugar Talismanes cuesta un Oro más a quien ya jugó Talismanes este turno", { todo: "impuesto: Oro adicional por tipo para el jugador que ya jugó ese tipo este turno" }, () => {});
+test("Fuente de la Juventud: jugar Talismanes cuesta un Oro más a quien ya jugó Talismanes este turno", () => {
+  const e = mesa();
+  poner(e, 1, "reserva", "Fuente de la Juventud");
+  oros(e, 0, 2);
+  const danza = poner(e, 0, "mano", "Danza del Cuchillo");
+  assert.equal(puedeJugar(e, danza), true);
+  e.jugadores[0].jugadas["Talismán"] = 1;
+  assert.equal(puedeJugar(e, danza), false);
+  oros(e, 0, 1);
+  assert.equal(puedeJugar(e, danza), true);
+});
 
 test("Fuente de la Juventud: poner Oros cuesta un Oro más a quien ya puso Oros este turno", { todo: "impuesto: coste adicional para poner Oros en juego" }, () => {});
 

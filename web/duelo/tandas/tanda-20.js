@@ -165,6 +165,7 @@ export const HABILIDADES = {
     },
   },
   "Embrion Titán": {
+    continuas: [{ proteccion: { por: "todo" }, a: "propia" }],
     disparadas: [
       {
         cuando: ["entra"],
@@ -230,6 +231,7 @@ export const HABILIDADES = {
         hacer: buscar(["yo:castillo"], { f: "azi" }),
       },
     ],
+    continuas: [{ gana: "Indesterrable", a: "aliados", tipoObjetivo: "Oro" }],
     disparadas: [{ cuando: ["faseFinal"], si: "hayCementerio", hacer: [sel(["todos:cementerio"], {}, "c", { n: 2, hasta: true }), barajarODesterrar("c")] }],
     fns: {
       azi: (e, ctx, u) => /\bAzi\b/.test(N.carta(e, u).nombre),
@@ -333,7 +335,10 @@ export const HABILIDADES = {
   },
   "Espada Ceremonial": {
     disparadas: [{ cuando: ["entra"], hacer: [sel(["yo:cementerio"], {}, "c", { n: 2, hasta: true }), mov("barajar", "c"), robar(1)] }],
-    continuas: [{ si: "sinReserva", fuerzaPor: "bloquea", a: "tusAliados" }],
+    continuas: [
+      { si: "sinReserva", fuerzaPor: "bloquea", a: "tusAliados" },
+      { si: "sinReserva", bloqueaImbloqueables: true },
+    ],
     fns: {
       sinReserva: (e, ctx) => e.jugadores[ctx.ctrl].reserva.length === 0,
       bloquea: (e, ctx) => (Object.keys(e.bloqueos).includes(ctx.objetivo) ? 1 : 0),
@@ -440,6 +445,7 @@ export const HABILIDADES = {
   "Frankenstein o el Nuevo Prometeo": frankenstein,
   "Fuente de la Juventud": {
     disparadas: [{ cuando: ["entra"], hacer: [robar(2)] }],
+    continuas: [{ impuestoTodos: { tipoCarta: "Talismán", yaJugado: true, n: 1 } }],
   },
   "Garrote Vil": {
     disparadas: [{ cuando: ["entra"], hacer: [{ op: "mostrarHasta", tipos: ["Tótem", "Oro"], como: "m" }, mov("mano", "m"), barajar()] }],

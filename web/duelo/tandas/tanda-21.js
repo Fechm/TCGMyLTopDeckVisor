@@ -231,10 +231,10 @@ export const HABILIDADES = {
     ],
     activadas: [
       {
-        texto: "Pagar este Oro: generar dos Oros por el turno para jugar cartas",
+        texto: "Pagar este Oro: generar dos Oros por el turno para jugar cartas de coste 4 o más",
         requiere: "enReserva",
         coste: desdeLaFuente("pagado"),
-        hacer: [{ op: "generar", n: 2 }],
+        hacer: [{ op: "generar", n: 2, costeMin: 4 }],
       },
     ],
     fns: {
@@ -252,10 +252,10 @@ export const HABILIDADES = {
         hacer: buscar(["yo:castillo"], { noTipo: ["Talismán"] }),
       },
     ],
-    continuas: [{ aliadosNoPierden: true }],
+    continuas: [{ aliadosNoPierden: true }, { proteccion: { por: ["Talismán"] }, a: "tusDemasAliados", tipoObjetivo: "Oro" }],
   },
   "La Isla del Doctor Moreau": {
-    disparadas: [{ cuando: ["entra"], hacer: [{ op: "generar", n: 1 }] }],
+    disparadas: [{ cuando: ["entra"], hacer: [{ op: "generar", n: 1, costeMin: 4 }] }],
     activadas: [
       {
         texto: "Pagar un Oro: Barajar hasta dos cartas de los Cementerios y Robar una carta",
@@ -412,6 +412,7 @@ export const HABILIDADES = {
   "Libro de Revelaciones": {
     claves: ["UnaCopia"],
     disparadas: [{ cuando: ["entra"], hacer: [{ op: "tope", n: 3, como: "m" }, sel(["var:m"], { zona: "castillo" }, "a"), mov("mano", "a"), barajar()] }],
+    continuas: [{ gana: "NoConvertible", tipoObjetivo: "Oro", a: "demasAliados", zona: "reserva" }],
   },
   "Libro de las Obras": {
     claves: ["UnaCopia"],
@@ -443,7 +444,7 @@ export const HABILIDADES = {
     fns: { conFuria: (e, ctx) => N.carta(e, ctx.datos.uid).tipo === "Aliado" && N.tiene(e, ctx.datos.uid, "Furia") },
   },
   "Los Siete Sellos": {
-    claves: ["UnaCopia"],
+    claves: ["UnaCopia", "NoConvertible"],
     disparadas: [{ cuando: ["alCementerio"], quien: "yo", veces: 2, si: "selloResuelto", hacer: [{ op: "botar", n: 2, quien: "rival" }] }],
     fns: {
       selloResuelto: (e, ctx) => {

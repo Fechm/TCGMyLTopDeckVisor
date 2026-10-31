@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mesa, poner, oros, elegir, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
-import { resolver } from "../web/duelo/efectos.js";
+import { mesa, poner, oros, elegir, accionesLegales, aplicar, sinRespuesta, zonaDe, id, N } from "./ayuda-duelo.mjs";
+import { resolver, OPS, cumple, disponibles } from "../web/duelo/efectos.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const oro = (uid, extra = {}) => ({ tipo: "oro", uid, ...extra });
@@ -9,6 +9,7 @@ const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nom
 const nombreDe = (e, nombre) => (v) => v !== null && N.carta(e, v).nombre === nombre;
 const primero = (v) => v !== null && v !== false;
 const puedeUsar = (e, uid, h) => accionesLegales(e).some((a) => a.tipo === "habilidad" && a.uid === uid && (h === undefined || a.h === h));
+const ctxDe = (e, uid, j = 0) => ({ ctrl: j, fuente: uid, def: e.instancias[uid], costeFuente: N.carta(e, uid).coste ?? 0, vars: {} });
 const generados = (e, j) => (e.jugadores[j].generados ?? []).reduce((s, g) => s + g.n, 0);
 
 function alTope(e, j, nombre) {
@@ -76,7 +77,15 @@ test("Matriz V: al entrar Roba una carta y hasta dos cartas que controles ganan 
   assert.equal(N.tiene(e, matriz, "Indestructible"), true);
 });
 
-test("Matriz V: no puede ser convertida", { todo: "efecto: no puede ser convertida" }, () => {});
+test("Matriz V: no puede ser convertida", () => {
+  const e = mesa();
+  const matriz = poner(e, 1, "reserva", "Matriz V");
+  const [d] = oros(e, 1, 1);
+  OPS.convertir(e, { var: "x", en: "Aliado", a: "defensa" }, { ctx: { ctrl: 0, vars: { x: [matriz, d] } } });
+  assert.equal(zonaDe(e, matriz), "reserva");
+  assert.equal(N.carta(e, matriz).tipo, "Oro");
+  assert.equal(zonaDe(e, d), "defensa");
+});
 
 test("Matriz V: en tu Reserva el oponente no dispara habilidades de cartas de coste 0 o 1 sin Desterrar una carta de su mano", { todo: "continua: el oponente no puede disparar habilidades de cartas de coste N o menos a menos que pague un coste (Desterrar de la mano)" }, () => {});
 
@@ -111,7 +120,19 @@ test("Medalla de Papa Legba: sin Aliados con Furia no se puede usar", () => {
   assert.equal(puedeUsar(e, legba), false);
 });
 
-test("Medalla de Papa Legba: cuenta las habilidades que utilizó el oponente", { todo: "contador: habilidades utilizadas por un jugador en el turno" }, () => {});
+test("Medalla de Papa Legba: cuenta las habilidades que utilizó el oponente", () => {
+  let e = mesa();
+  const legba = poner(e, 0, "reserva", "Medalla de Papa Legba");
+  poner(e, 0, "defensa", "Valefor");
+  e.jugadores[1].jugadas = { total: 1, nombres: {}, Aliado: 1 };
+  e.jugadores[1].habilidadesUsadas = 1;
+  assert.equal(puedeUsar(e, legba), false);
+  e.jugadores[1].habilidadesUsadas = 2;
+  assert.equal(puedeUsar(e, legba), true);
+  const tope = e.jugadores[1].castillo[0];
+  e = aplicar(e, habilidad(legba, "Medalla de Papa Legba"));
+  assert.equal(zonaDe(e, tope), "pagado");
+});
 
 test("Medalla de Santa Muerte: al comienzo del turno puedes descartar para nombrar una carta que no sea Oro, que pierde su habilidad por el turno", () => {
   let e = mesa();
@@ -148,9 +169,26 @@ test("Mente Suprema: es Oro Inicial", () => {
   assert.equal(N.carta(e, mente).oroInicial, true);
 });
 
-test("Mente Suprema: con dos o más Aliados con habilidad, los Talismanes que van al Cementerio son Desterrados", { todo: "reemplazo: los Talismanes que fueran al Cementerio son Desterrados en su lugar" }, () => {});
+test("Mente Suprema: con dos o más Aliados con habilidad, los Talismanes que van al Cementerio son Desterrados", () => {
+  const e = mesa();
+  poner(e, 0, "reserva", "Mente Suprema");
+  const a = poner(e, 0, "defensa", "Valefor");
+  const resolverTalisman = () => {
+    const t = poner(e, 1, "mano", "Danza del Cuchillo");
+    N.sacar(e, t);
+    OPS.finTalisman(e, { uid: t });
+    return zonaDe(e, t);
+  };
+  assert.equal(resolverTalisman(), "cementerio");
+  poner(e, 0, "defensa", "Valefor");
+  assert.equal(resolverTalisman(), "destierro");
+  e.conv[a] = { tipo: "Aliado", sinHabilidad: true };
+  assert.equal(resolverTalisman(), "cementerio");
+});
 
-test("Mente Suprema: cada jugador Roba hasta dos cartas por efectos y juega hasta dos Talismanes por turno", { todo: "continua: máximo de cartas Robadas por efectos y máximo de cartas de un tipo concreto jugadas por turno" }, () => {});
+test("Mente Suprema: cada jugador Roba hasta dos cartas por efectos por turno", { todo: "continua: máximo de cartas Robadas por efectos por turno" }, () => {});
+
+test("Mente Suprema: cada jugador juega hasta dos Talismanes por turno", { todo: "continua: máximo de cartas de un tipo concreto jugadas por turno" }, () => {});
 
 test("Miguel de Cervantes: sin Aliados, una vez por turno pone un Aliado de coste 2 o menos de tu Cementerio como Aliado sin habilidad", () => {
   let e = mesa();
@@ -187,7 +225,21 @@ test("Miguel de Cervantes: si uno de tus Aliados de coste 2 o más es Anulado, g
   assert.deepEqual(e.jugadores[0].generados[0].tipos, ["Aliado"]);
 });
 
-test("Miguel de Cervantes: el Oro generado solo sirve para Aliados de coste 2 o más", { todo: "generar: Oro restringido a un tipo con coste mínimo" }, () => {});
+test("Miguel de Cervantes: el Oro generado solo sirve para Aliados de coste 2 o más", () => {
+  let e = mesa();
+  poner(e, 0, "reserva", "Miguel de Cervantes");
+  oros(e, 0, 2);
+  const guardia = poner(e, 0, "mano", "Guardia Real");
+  oros(e, 1, 1);
+  const ciempies = poner(e, 1, "mano", "Ciempiés-SP");
+  e = aplicar(e, jugar(guardia));
+  e = aplicar(e, { tipo: "responder", uid: ciempies });
+  while (!e.pendiente && e.pila.length && !e.pila.at(-1).cerrada) e = aplicar(e, { tipo: "noResponder" });
+  e.jugadores[0].reserva = [];
+  assert.equal(disponibles(e, 0, { tipo: "Aliado", coste: 1 }), 0);
+  assert.equal(disponibles(e, 0, { tipo: "Aliado", coste: 2 }), 1);
+  assert.equal(disponibles(e, 0, { tipo: "Talismán", coste: 2 }), 0);
+});
 
 test("Monitor Araucano: mostrando un Arma de tu mano pone la primera carta de tu Castillo como Aliado sin habilidad de Fuerza 0", () => {
   let e = mesa();
@@ -243,7 +295,18 @@ test("Necronomicon: una vez por turno pone hasta dos cartas de tu mano en el fon
   assert.equal(puedeUsar(e, necro), false);
 });
 
-test("Necronomicon: los Oros en juego ganan Indestructible", { todo: "continua: los Oros en juego ganan una clave (Indestructible / Indesterrable)" }, () => {});
+test("Necronomicon: los Oros en juego ganan Indestructible", () => {
+  const e = mesa();
+  const necro = poner(e, 0, "reserva", "Necronomicon");
+  const [mio] = oros(e, 0, 1);
+  const [suyo] = oros(e, 1, 1);
+  const aliado = poner(e, 1, "defensa", "Valefor");
+  assert.equal(N.tiene(e, necro, "Indestructible"), true);
+  assert.equal(N.tiene(e, mio, "Indestructible"), true);
+  assert.equal(N.tiene(e, suyo, "Indestructible"), true);
+  assert.equal(N.tiene(e, aliado, "Indestructible"), false);
+  assert.equal(cumple(e, ctxDe(e, aliado, 1), mio, {}, "destruir"), false);
+});
 
 test("Necronomicon: no se puede jugar más de una carta sin pagar su coste por turno", { todo: "continua: máximo de cartas jugadas sin pagar su coste por turno" }, () => {});
 
@@ -324,7 +387,22 @@ test("Pallax: sin dos cartas más en tu Cementerio no se puede usar", () => {
   assert.equal(puedeUsar(e, pallax), false);
 });
 
-test("Pallax: los efectos de Oros oponentes que afecten a tus Aliados con Arma cuestan un Oro adicional", { todo: "efecto: las habilidades de Oros oponentes que afecten a ciertos Aliados cuestan Oros adicionales" }, () => {});
+test("Pallax: los efectos de Oros oponentes que afecten a tus Aliados con Arma cuestan un Oro adicional", () => {
+  const e = mesa();
+  poner(e, 1, "reserva", "Pallax");
+  const armado = poner(e, 1, "defensa", "Valefor");
+  poner(e, 1, "arma", "Pedrenyal", { portador: armado });
+  const desnudo = poner(e, 1, "defensa", "Valefor");
+  const fuenteOro = poner(e, 0, "pagado", "Patria Vieja");
+  const fuenteAliado = poner(e, 0, "defensa", "Valefor");
+  assert.deepEqual(N.proteccionContra(e, armado, ctxDe(e, fuenteOro)), { inmune: false, cuesta: 1 });
+  assert.deepEqual(N.proteccionContra(e, desnudo, ctxDe(e, fuenteOro)), { inmune: false, cuesta: 0 });
+  assert.deepEqual(N.proteccionContra(e, armado, ctxDe(e, fuenteAliado)), { inmune: false, cuesta: 0 });
+  assert.equal(cumple(e, ctxDe(e, fuenteOro), armado, {}), false);
+  assert.equal(cumple(e, ctxDe(e, fuenteOro), desnudo, {}), true);
+  oros(e, 0, 1);
+  assert.equal(cumple(e, ctxDe(e, fuenteOro), armado, {}), true);
+});
 
 test("Pan de Muerto: en tu Vigilia, pagándolo busca un Tótem de coste 2 o más y lo juega reduciendo su coste en un Oro", () => {
   let e = mesa();
@@ -616,7 +694,7 @@ test("Primer Escudo: en tu Vigilia, sin haber puesto Oros, se pone desde tu Ceme
   let e = mesa();
   const escudo = poner(e, 0, "cementerio", "Primer Escudo");
   e = aplicar(e, habilidad(escudo, "Primer Escudo", 1));
-  assert.equal(zonaDe(e, escudo), "reserva");
+  assert.equal(e.jugadores[0].reserva.length, 1);
   assert.equal(e.jugadores[0].oroJugado, true);
 });
 
@@ -625,11 +703,31 @@ test("Primer Escudo: también desde tu mano, y no si ya pusiste un Oro", () => {
   const escudo = poner(e, 0, "mano", "Primer Escudo");
   const otro = poner(e, 0, "cementerio", "Primer Escudo");
   e = aplicar(e, habilidad(escudo, "Primer Escudo", 0));
-  assert.equal(zonaDe(e, escudo), "reserva");
+  assert.equal(e.jugadores[0].reserva.length, 1);
   assert.equal(puedeUsar(e, otro), false);
 });
 
-test("Primer Escudo: convirtiéndolo, pagando un Oro y mostrando dos Aliados Anula un Talismán", { todo: "respuesta: Anular con una habilidad activada de una carta en juego" }, () => {});
+test("Primer Escudo: convirtiéndolo, pagando un Oro y mostrando dos Aliados Anula un Talismán", () => {
+  let e = mesa();
+  e.activo = 1;
+  const escudo = poner(e, 0, "reserva", "Primer Escudo");
+  oros(e, 0, 1);
+  const a = poner(e, 0, "mano", "Valefor");
+  const b = poner(e, 0, "mano", "Guardia Real");
+  oros(e, 1, 2);
+  poner(e, 0, "defensa", "Valefor");
+  const danza = poner(e, 1, "mano", "Danza del Cuchillo");
+  e = aplicar(e, jugar(danza));
+  const r = accionesLegales(e).find((x) => x.tipo === "responder" && x.uid === escudo);
+  assert.deepEqual(r, { tipo: "responder", uid: escudo, def: id("Primer Escudo"), h: 2 });
+  e = sinRespuesta(aplicar(e, r));
+  assert.equal(zonaDe(e, danza), "cementerio");
+  assert.equal(zonaDe(e, a), "mano");
+  assert.equal(zonaDe(e, b), "mano");
+  assert.equal(N.carta(e, escudo).sinHabilidad, true);
+  assert.equal(e.jugadores[0].reserva.length, 1);
+  assert.equal(e.jugadores[0].pagado.length, 1);
+});
 
 test("Quantum Megumi: una vez por turno Baraja una carta de tu mano para Barajar hasta tres de tu Cementerio y Robar una", () => {
   let e = mesa();
@@ -733,4 +831,13 @@ test("Salitre: cuando un Oro es Destruido se Baraja en el Castillo de su dueño"
   assert.ok(e.jugadores[1].castillo.includes(suyo));
 });
 
-test("Salitre: los Oros en juego son Indesterrables", { todo: "continua: los Oros en juego ganan una clave (Indestructible / Indesterrable)" }, () => {});
+test("Salitre: los Oros en juego son Indesterrables", () => {
+  const e = mesa();
+  const salitre = poner(e, 0, "reserva", "Salitre");
+  const [suyo] = oros(e, 1, 1);
+  const aliado = poner(e, 1, "defensa", "Valefor");
+  assert.equal(N.tiene(e, salitre, "Indesterrable"), true);
+  assert.equal(N.tiene(e, suyo, "Indesterrable"), true);
+  assert.equal(N.tiene(e, aliado, "Indesterrable"), false);
+  assert.equal(cumple(e, ctxDe(e, salitre), suyo, {}, "desterrar"), false);
+});

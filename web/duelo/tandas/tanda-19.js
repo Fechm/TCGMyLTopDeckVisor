@@ -248,8 +248,13 @@ export const HABILIDADES = {
         opcional: true,
         hacer: [...barajarYDesterrar(2), { op: "si", f: "roba", entonces: [robar(1)] }],
       },
+      { cuando: ["ataca"], quien: "yo", hacer: [{ op: "fn", f: "protegerAtacante" }] },
     ],
+    continuas: [{ proteccion: { por: ["Aliado", "Oro"], cuesta: 1 }, tipoObjetivo: "Oro", a: "tusDemasAliados" }],
     fns: {
+      protegerAtacante: (e, ctx) => {
+        N.agregarEfecto(e, { tipo: "proteccion", uid: ctx.datos.uid, por: ["Aliado", "Oro"], cuesta: 1, fin: "turno" }, ctx.ctrl);
+      },
       restoCementerio: restoCementerio(2),
       roba: (e, ctx) => N.aliadosDe(e, ctx.ctrl).length > 0 && e.jugadores[ctx.ctrl].reserva.length === 0,
     },
@@ -273,6 +278,7 @@ export const HABILIDADES = {
     },
   },
   "Corazon de Muerte": {
+    disparadas: [{ cuando: ["entra"], si: "desdeMano", hacer: [sel(["todos:enJuego"], {}, "p"), { op: "fn", f: "proteger" }] }],
     activadas: [
       {
         texto: "Pagar este Oro: jugar una carta de tu Cementerio que no sea Talismán reduciendo su coste en un Oro",
@@ -286,6 +292,10 @@ export const HABILIDADES = {
       puede: (e, ctx) => enReserva(e, ctx) && e.jugadores[ctx.ctrl].cementerio.some((u) => jugableCon(e, ctx, u, 1, 0, 1)),
       jugable: (e, ctx, u) => jugableCon(e, ctx, u, 1, 0, 0),
       jugar: jugarReducido(1, 0),
+      desdeMano: (e, ctx) => e.jugadores[ctx.ctrl].oroJugado,
+      proteger: (e, ctx) => {
+        for (const uid of ctx.vars.p ?? []) N.agregarEfecto(e, { tipo: "proteccion", uid, cuesta: 1, fin: "proximoTurno" }, ctx.ctrl);
+      },
     },
   },
   "Corazón de Dragón": {
@@ -356,6 +366,7 @@ export const HABILIDADES = {
     },
   },
   "Crono Diamante": {
+    continuas: [{ noAnulables: { tipoCarta: ["Aliado", "Tótem"], costeMin: 2, primera: true } }],
     disparadas: [{ cuando: ["juega"], quien: "yo", si: "aliadoCaro", hacer: [{ op: "fn", f: "marcar" }] }],
     activadas: [
       {
@@ -524,7 +535,10 @@ export const HABILIDADES = {
   },
   "Diadema Celestial": {
     disparadas: [{ cuando: ["entra"], hacer: [{ op: "mostrarHasta", tipos: ["Aliado", "Talismán"], como: "m" }, mov("mano", "m")] }, alBotarPorDano],
-    continuas: [{ fuerzaPor: "bloquea", a: "tusAliados" }],
+    continuas: [
+      { fuerzaPor: "bloquea", a: "tusAliados" },
+      { pierde: "Imbloqueable", a: "aliadosRival" },
+    ],
     fns: {
       botadaPorDano,
       dejarDeBotar,
