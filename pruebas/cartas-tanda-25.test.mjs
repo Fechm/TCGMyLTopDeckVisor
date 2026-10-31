@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, hacer, elegir, aplicar, accionesLegales, zonaDe, id, N } from "./ayuda-duelo.mjs";
 import { resolver } from "../web/duelo/efectos.js";
+import { costeDe } from "../web/duelo/motor.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
@@ -19,6 +20,28 @@ function hastaDano(e) {
   e = aplicar(e, { tipo: "finBloqueo" });
   e = aplicar(e, { tipo: "pasar" });
   return aplicar(e, { tipo: "pasar" });
+}
+
+function con(e, nombre, extra) {
+  const k = id(nombre);
+  e.catalogo = { ...e.catalogo, [k]: { ...e.catalogo[k], ...extra } };
+  return e;
+}
+
+const bandido = (e, nombre) => con(e, nombre, { razas: ["Bandido"] });
+const jugable = (e, uid, portador) => accionesLegales(e).some((a) => a.tipo === "jugar" && a.uid === uid && (portador === undefined || a.portador === portador));
+
+function enGuerra(e, atacante) {
+  e = combate(e, atacante);
+  e = aplicar(e, { tipo: "finAtaque" });
+  return aplicar(e, { tipo: "finBloqueo" });
+}
+
+function resolverTodo(e) {
+  for (let i = 0; i < 20 && (e.pendiente || (e.pila.length && !e.pila.at(-1).cerrada)); i++) {
+    e = e.pendiente ? aplicar(e, { tipo: "elegir", i: 0 }) : aplicar(e, { tipo: "noResponder" });
+  }
+  return e;
 }
 
 function sacarDelJuego(e, uid) {
@@ -93,7 +116,7 @@ test("Daga del Bandido: el portador gana 2 de Fuerza", () => {
 });
 
 test("Daga del Bandido: al entrar cada jugador Bota cuatro y pones uno de los Oros Botados en tu Oro Pagado", () => {
-  let e = mesa();
+  let e = bandido(mesa(), "Sir Persival");
   const p = poner(e, 0, "defensa", "Sir Persival");
   oros(e, 0, 1);
   const daga = poner(e, 0, "mano", "Daga del Bandido");
@@ -107,9 +130,31 @@ test("Daga del Bandido: al entrar cada jugador Bota cuatro y pones uno de los Or
   assert.ok(e.jugadores[0].pagado.includes(oro));
 });
 
-test("Daga del Bandido: solo puede ser portada por Aliados Bandido", { todo: "restricción de portador: solo Aliados de cierta raza o Fuerza" }, () => {});
+test("Daga del Bandido: solo puede ser portada por Aliados Bandido", () => {
+  const e = bandido(mesa(), "Sir Galahad");
+  const g = poner(e, 0, "defensa", "Sir Galahad");
+  const p = poner(e, 0, "defensa", "Sir Persival");
+  oros(e, 0, 1);
+  const daga = poner(e, 0, "mano", "Daga del Bandido");
+  assert.equal(jugable(e, daga, g), true);
+  assert.equal(jugable(e, daga, p), false);
+});
 
-test("Daga del Bandido: el oponente paga un Oro adicional en tu Vigilia", { todo: "impuesto: el oponente paga un Oro adicional por jugar cartas y usar habilidades durante tu Vigilia" }, () => {});
+test("Daga del Bandido: el oponente paga un Oro adicional por cartas y habilidades en tu Vigilia", () => {
+  const e = bandido(mesa(), "Sir Persival");
+  const p = poner(e, 0, "defensa", "Sir Persival");
+  armar(e, 0, "Daga del Bandido", p);
+  const r = poner(e, 1, "defensa", "Sir Galahad");
+  const tal = poner(e, 1, "mano", "Llamar a la Manada");
+  const mio = poner(e, 0, "mano", "Llamar a la Manada");
+  assert.equal(costeDe(e, 1, tal).pagar, 2);
+  assert.equal(costeDe(e, 0, mio).pagar, 1);
+  assert.equal(N.impuestoHabilidad(e, 1, r, "activada"), 1);
+  assert.equal(N.impuestoHabilidad(e, 0, p, "activada"), 0);
+  e.activo = 1;
+  assert.equal(costeDe(e, 1, tal).pagar, 1);
+  assert.equal(N.impuestoHabilidad(e, 1, r, "activada"), 0);
+});
 
 test("Diabolista de Ébano: el portador gana 2 de Fuerza e Indesterrable", () => {
   const e = mesa();
@@ -146,7 +191,35 @@ test("Diabolista de Ébano: si es el turno oponente, además él Bota cuatro car
   assert.equal(e.jugadores[1].castillo.length, 26);
 });
 
-test("Diabolista de Ébano: se juega en Guerra de Talismanes o en la Fase Final oponente", { todo: "momento: jugar un Arma en la Guerra de Talismanes o al comienzo de una Fase" }, () => {});
+test("Diabolista de Ébano: se juega en la Guerra de Talismanes", () => {
+  let e = mesa();
+  const g = poner(e, 0, "defensa", "Sir Galahad");
+  const r = poner(e, 1, "defensa", "Sir Persival");
+  oros(e, 1, 1);
+  const d = poner(e, 1, "mano", "Diabolista de Ébano");
+  e = enGuerra(e, g);
+  assert.equal(e.fase, "talismanes");
+  assert.equal(jugable(e, d, r), true);
+});
+
+test("Diabolista de Ébano: se juega en la Fase Final oponente pero no en la propia", () => {
+  let e = mesa();
+  poner(e, 0, "defensa", "Sir Galahad");
+  const r = poner(e, 1, "defensa", "Sir Persival");
+  oros(e, 1, 1);
+  const d = poner(e, 1, "mano", "Diabolista de Ébano");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  e = aplicar(e, { tipo: "pasarMomento" });
+  assert.equal(jugable(e, d, r), true);
+  let f = mesa();
+  const p = poner(f, 0, "defensa", "Sir Persival");
+  oros(f, 0, 1);
+  const d2 = poner(f, 0, "mano", "Diabolista de Ébano");
+  assert.equal(jugable(f, d2, p), true);
+  f = aplicar(f, { tipo: "terminar" });
+  assert.notEqual(f.fase, "momento");
+});
 
 test("El Huascar: el portador duplica su Fuerza y tus demás Aliados ganan Fuerza igual a su coste", () => {
   const e = mesa();
@@ -180,7 +253,19 @@ test("El Huascar: con Exhumar se juega desde el Cementerio", () => {
   assert.ok(accionesLegales(e).some((a) => a.tipo === "jugar" && a.uid === h && a.portador === p && a.desde === "cementerio"));
 });
 
-test("El Huascar: al entrar un Oro no puede ser agrupado el próximo turno", { todo: "efecto: un Oro no se agrupa en la próxima Agrupación" }, () => {});
+test("El Huascar: al entrar un Oro no puede ser agrupado el próximo turno", () => {
+  let e = mesa();
+  const p = poner(e, 0, "defensa", "Sir Persival");
+  oros(e, 0, 2);
+  const oro = poner(e, 1, "pagado", "Drácula");
+  const otro = poner(e, 1, "pagado", "Drácula");
+  const h = poner(e, 0, "mano", "El Huascar");
+  e = hacer(e, jugar(h, { portador: p }), oro);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.activo, 1);
+  assert.equal(zonaDe(e, oro), "pagado");
+  assert.equal(zonaDe(e, otro), "reserva");
+});
 
 test("Escudo de Energia: el portador gana 1 de Fuerza e Indesterrable", () => {
   const e = mesa();
@@ -451,7 +536,15 @@ test("Espada de San Jeronimo: un Aliado de coste 2 o menos tiene Fuerza 0 hasta 
   assert.equal(N.fuerza(e, r), 0);
 });
 
-test("Espada de San Jeronimo: se juega en Guerra de Talismanes", { todo: "momento: jugar un Arma en la Guerra de Talismanes o al comienzo de una Fase" }, () => {});
+test("Espada de San Jeronimo: se juega en Guerra de Talismanes", () => {
+  let e = mesa();
+  const g = poner(e, 0, "defensa", "Sir Galahad");
+  const r = poner(e, 1, "defensa", "Sir Persival");
+  oros(e, 1, 1);
+  const s = poner(e, 1, "mano", "Espada de San Jeronimo");
+  e = enGuerra(e, g);
+  assert.equal(jugable(e, s, r), true);
+});
 
 test("Espada del Guerrero Inmortal: el portador gana 2 de Fuerza y Furia y tus Aliados ganan 1", () => {
   const e = mesa();
@@ -562,7 +655,17 @@ test("Espada del Orden: cuando es Destruida puedes Descartar una carta para subi
   assert.equal(zonaDe(e, d), "cementerio");
 });
 
-test("Espada del Orden: se juega en Guerra de Talismanes", { todo: "momento: jugar un Arma en la Guerra de Talismanes o al comienzo de una Fase" }, () => {});
+test("Espada del Orden: se juega en Guerra de Talismanes", () => {
+  let e = mesa();
+  const g = poner(e, 0, "defensa", "Sir Galahad");
+  const r = poner(e, 1, "defensa", "Sir Persival");
+  oros(e, 1, 2);
+  const o = poner(e, 1, "mano", "Espada del Orden");
+  const larga = poner(e, 1, "mano", "Espada Larga");
+  e = enGuerra(e, g);
+  assert.equal(jugable(e, o, r), true);
+  assert.equal(jugable(e, larga), false);
+});
 
 test("Estaca: el portador gana 2 de Fuerza y Furia", () => {
   const e = mesa();
@@ -617,9 +720,31 @@ test("Estaca y Martillo: o buscas una carta que no sea Talismán", () => {
   assert.equal(zonaDe(e, ali), "mano");
 });
 
-test("Estaca y Martillo: se juega al comienzo de cualquier Fase o en Guerra de Talismanes", { todo: "momento: jugar un Arma en la Guerra de Talismanes o al comienzo de una Fase" }, () => {});
+test("Estaca y Martillo: se juega al comienzo de cualquier Fase o en Guerra de Talismanes", () => {
+  let e = mesa();
+  const g = poner(e, 0, "defensa", "Sir Galahad");
+  oros(e, 0, 1);
+  const s = poner(e, 0, "mano", "Estaca y Martillo");
+  assert.equal(jugable(e, s, g), true);
+  e = aplicar(e, { tipo: "batalla" });
+  assert.equal(e.fase, "momento");
+  assert.equal(jugable(e, s, g), true);
+  let f = mesa();
+  const a = poner(f, 0, "defensa", "Sir Galahad");
+  const r = poner(f, 1, "defensa", "Sir Persival");
+  oros(f, 1, 1);
+  const s2 = poner(f, 1, "mano", "Estaca y Martillo");
+  f = aplicar(f, { tipo: "batalla" });
+  while (f.fase === "momento") f = aplicar(f, { tipo: "pasarMomento" });
+  f = aplicar(f, { tipo: "atacar", uid: a });
+  f = aplicar(f, { tipo: "finAtaque" });
+  while (f.fase === "momento") f = aplicar(f, { tipo: "pasarMomento" });
+  f = aplicar(f, { tipo: "finBloqueo" });
+  assert.equal(f.fase, "talismanes");
+  assert.equal(jugable(f, s2, r), true);
+});
 
-test("Estaca y Martillo: el portador no puede ser afectado por Aliados oponentes", { todo: "protección: el portador no puede ser afectado por Aliados oponentes" }, () => {});
+test("Estaca y Martillo: el portador no puede ser afectado por Aliados oponentes", { todo: "protección: continua con alcance al portador del Arma" }, () => {});
 
 test("Flechar Xoon: Exhumar y el portador gana 2 de Fuerza e Indesterrable", () => {
   const e = mesa();
@@ -640,7 +765,32 @@ test("Flechar Xoon: cuando sale del juego puedes Desterrar una carta de coste 2 
   assert.equal(zonaDe(e, r), "destierro");
 });
 
-test("Flechar Xoon: subir una carta que controles para Anular un Talismán o Tótem de coste 2 o menos", { todo: "respuesta: Anular con una habilidad activada de una carta en juego" }, () => {});
+test("Flechar Xoon: subir una carta que controles para Anular un Talismán o Tótem de coste 2 o menos", () => {
+  let e = mesa();
+  const r = poner(e, 1, "defensa", "Sir Persival");
+  const x = armar(e, 1, "Flechar Xoon", r);
+  const otro = poner(e, 1, "defensa", "El Dracul");
+  oros(e, 0, 3);
+  const isla = poner(e, 0, "mano", "Isla de Poveglia");
+  e = aplicar(e, jugar(isla));
+  const resp = accionesLegales(e).find((a) => a.tipo === "responder" && a.uid === x);
+  assert.ok(resp);
+  e = aplicar(e, resp);
+  e = resolverTodo(elegir(e, otro));
+  assert.equal(zonaDe(e, isla), "cementerio");
+  assert.equal(zonaDe(e, otro), "mano");
+  assert.equal(N.ubicar(e, otro).j, 1);
+});
+
+test("Flechar Xoon: no Anula Tótems de coste 3 o más", () => {
+  let e = mesa();
+  const r = poner(e, 1, "defensa", "Sir Persival");
+  const x = armar(e, 1, "Flechar Xoon", r);
+  oros(e, 0, 3);
+  const hoshi = poner(e, 0, "mano", "Fortaleza Hoshi");
+  e = aplicar(e, jugar(hoshi));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder" && a.uid === x), false);
+});
 
 test("Garfio Pirata: el portador gana 2 de Fuerza y Furia y al entrar no puede salir del juego hasta tu próximo turno", () => {
   let e = mesa();
@@ -818,4 +968,4 @@ test("Guadaña de Santa Muerte: si controlas un Aliado con Furia no se dispara e
   assert.equal(zonaDe(e, tal), "castillo");
 });
 
-test("Guadaña de Santa Muerte: no puede portarse en Aliados de Fuerza 2 o 3", { todo: "restricción de portador: solo Aliados de cierta raza o Fuerza" }, () => {});
+test("Guadaña de Santa Muerte: no puede portarse en Aliados de Fuerza 2 o 3", { todo: "restricción de portador: excluir Aliados dentro de un rango de Fuerza" }, () => {});

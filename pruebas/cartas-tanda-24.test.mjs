@@ -67,7 +67,27 @@ test("Alas de Ángel: si el portador es un Ángel gana Indestructible e Indester
   assert.equal(N.tiene(e, g, "Indestructible"), false);
 });
 
-test("Alas de Ángel: con Aliados Ángel el oponente solo declara un atacante por turno", { todo: "efecto: el oponente solo puede declarar ataque con un Aliado por turno" }, () => {});
+test("Alas de Ángel: con Aliados Ángel el oponente solo declara un atacante por turno", () => {
+  let e = con(mesa(), "Sir Galahad", { razas: ["Ángel"] });
+  const g = poner(e, 0, "defensa", "Sir Galahad");
+  [e] = armar(e, "Alas de Ángel", g);
+  const v1 = poner(e, 1, "defensa", "Valefor");
+  const v2 = poner(e, 1, "defensa", "Valefor");
+  e.activo = 1;
+  e = declarar(e, v1);
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "atacar" && a.uid === v2), false);
+});
+
+test("Alas de Ángel: sin Aliados Ángel el oponente ataca con varios", () => {
+  let e = mesa();
+  const g = poner(e, 0, "defensa", "Sir Galahad");
+  [e] = armar(e, "Alas de Ángel", g);
+  const v1 = poner(e, 1, "defensa", "Valefor");
+  const v2 = poner(e, 1, "defensa", "Valefor");
+  e.activo = 1;
+  e = declarar(e, v1);
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "atacar" && a.uid === v2), true);
+});
 
 test("Ama-No-Saka-Hoko: el portador gana 1 de Fuerza y es Indesterrable", () => {
   let e = mesa();
@@ -174,7 +194,37 @@ test("Armadura Celestial: al salir del juego puedes Descartar una carta para pon
   assert.equal(zonaDe(e, a), "mano");
 });
 
-test("Armadura Celestial: Destruir el portador para Anular un Talismán de coste 2 o menos", { todo: "respuesta: Anular desde una carta en juego pagando un coste (Destruir el portador)" }, () => {});
+test("Armadura Celestial: Destruir el portador para Anular un Talismán de coste 2 o menos", () => {
+  let e = mesa();
+  const g = poner(e, 0, "defensa", "Sir Galahad");
+  let a;
+  [e, a] = armar(e, "Armadura Celestial", g);
+  e.activo = 1;
+  oros(e, 1, 3);
+  const t = poner(e, 1, "mano", "Llamar a la Manada");
+  e = aplicar(e, jugar(t));
+  const r = accionesLegales(e).find((x) => x.tipo === "responder" && x.uid === a);
+  assert.ok(r);
+  e = aplicar(e, r);
+  if (e.pendiente) e = elegir(e, false);
+  e = sinRespuesta(e);
+  assert.equal(zonaDe(e, g), "cementerio");
+  assert.equal(zonaDe(e, t), "cementerio");
+  assert.equal(e.jugadores[1].mano.length, 0);
+});
+
+test("Armadura Celestial: no Anula Talismanes de coste mayor que 2", () => {
+  let e = mesa();
+  const g = poner(e, 0, "defensa", "Sir Galahad");
+  let a;
+  [e, a] = armar(e, "Armadura Celestial", g);
+  e.activo = 1;
+  oros(e, 1, 5);
+  const t = poner(e, 1, "mano", "Danza del Cuchillo");
+  e = con(e, "Danza del Cuchillo", { coste: 3 });
+  e = aplicar(e, jugar(t));
+  assert.equal(accionesLegales(e).some((x) => x.tipo === "responder" && x.uid === a), false);
+});
 
 test("Armadura Celestial: cancelar la habilidad de una carta que afecte a un Aliado", { todo: "efecto: cancelar una habilidad que afecte a un Aliado" }, () => {});
 
@@ -203,7 +253,18 @@ test("Armas Campesinas: el portador gana 2 de Fuerza e Indestructible; al entrar
   assert.equal(e.jugadores[0].mano.length, 2);
 });
 
-test("Armas Campesinas: se puede jugar en Guerra de Talismanes", { todo: "carta: Arma jugable en Guerra de Talismanes por sí misma" }, () => {});
+test("Armas Campesinas: se puede jugar en Guerra de Talismanes", () => {
+  const e = mesa();
+  const g = poner(e, 0, "defensa", "Sir Galahad");
+  const a = poner(e, 0, "mano", "Armas Campesinas");
+  const otra = poner(e, 0, "mano", "Pedrenyal");
+  oros(e, 0, 2);
+  e.fase = "talismanes";
+  e.prioridad = 0;
+  const l = accionesLegales(e);
+  assert.ok(l.some((x) => x.tipo === "jugar" && x.uid === a && x.portador === g));
+  assert.equal(l.some((x) => x.tipo === "jugar" && x.uid === otra), false);
+});
 
 test("Arpon Ballenero: el portador gana 2 de Fuerza e Indestructible y al entrar busca un Aliado y un Arma", () => {
   let e = mesa();
@@ -237,7 +298,23 @@ test("Arpon Ballenero: en la Fase Final, si atacaste, Barajas y/o Destierras has
   assert.deepEqual(c.map((u) => zonaDe(e, u)), ["castillo", "destierro", "cementerio"]);
 });
 
-test("Arpon Ballenero: también si bloqueaste este turno", { todo: "evento: registrar que un jugador bloqueó este turno" }, () => {});
+test("Arpon Ballenero: también si bloqueaste este turno", () => {
+  let e = mesa();
+  const g = poner(e, 0, "defensa", "Sir Galahad");
+  [e] = armar(e, "Arpon Ballenero", g);
+  if (e.pendiente) e = elegir(e, null);
+  if (e.pendiente) e = elegir(e, null);
+  const c = poner(e, 1, "cementerio", "Valefor");
+  e.activo = 1;
+  e.jugadores[0].atacoEsteTurno = true;
+  const f = aplicar(e, { tipo: "terminar" });
+  assert.equal(f.pendiente, null);
+  e.jugadores[0].bloqueoEsteTurno = true;
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.pendiente.jugador, 0);
+  e = elegir(e, c);
+  assert.equal(zonaDe(e, c), "castillo");
+});
 
 test("Atgeir: Exhumar y el portador gana 2 de Fuerza", () => {
   let e = mesa();
@@ -573,7 +650,22 @@ test("Cañon de Fusion: una vez por turno Barajas una carta de tu mano para Roba
   assert.equal(puedeUsar(e, a), false);
 });
 
-test("Cañon de Fusion: tus demás cartas no pueden perder su habilidad", { todo: "continua: tus demás cartas (no solo Aliados) no pueden perder su habilidad" }, () => {});
+test("Cañon de Fusion: tus demás cartas no pueden perder su habilidad", () => {
+  let e = mesa();
+  const g = poner(e, 0, "defensa", "Sir Galahad");
+  let a;
+  [e, a] = armar(e, "Cañon de Fusion", g);
+  if (e.pendiente) e = elegir(e, false);
+  const oro = poner(e, 0, "reserva", "Pebre");
+  const rival = poner(e, 1, "defensa", "Balaur");
+  for (const u of [g, oro, rival]) N.agregarEfecto(e, { tipo: "pierdeHabilidad", uid: u, fin: "turno" }, 1);
+  assert.equal(N.activa(e, g), true);
+  assert.equal(N.activa(e, oro), true);
+  assert.equal(N.activa(e, rival), false);
+  N.agregarEfecto(e, { tipo: "pierdeHabilidad", uid: a, fin: "turno" }, 1);
+  assert.equal(N.activa(e, a), false);
+  assert.equal(N.activa(e, g), false);
+});
 
 test("Cañon de Plasma: Exhumar, +2 de Fuerza e Indesterrable; busca un Arma y Destierra del Castillo oponente una carta de coste igual o menor", () => {
   let e = mesa();
@@ -609,7 +701,24 @@ test("Cañón Helios: +2 de Fuerza y Furia, al entrar Robas dos y al atacar elig
   assert.deepEqual(accionesLegales(e), [{ tipo: "bloquear", uid: v, atacante: g }]);
 });
 
-test("Cañón Helios: Desterrarlo para Anular un Talismán o prevenir que un Aliado sea afectado", { todo: "respuesta: Anular un Talismán o prevenir un efecto desde una carta en juego Desterrándola" }, () => {});
+test("Cañón Helios: Desterrarlo para Anular un Talismán", () => {
+  let e = mesa();
+  const g = poner(e, 0, "defensa", "Sir Galahad");
+  let a;
+  [e, a] = armar(e, "Cañón Helios", g);
+  e.activo = 1;
+  oros(e, 1, 3);
+  const t = poner(e, 1, "mano", "Llamar a la Manada");
+  e = aplicar(e, jugar(t));
+  const r = accionesLegales(e).find((x) => x.tipo === "responder" && x.uid === a);
+  assert.ok(r);
+  e = sinRespuesta(aplicar(e, r));
+  assert.equal(zonaDe(e, a), "destierro");
+  assert.equal(zonaDe(e, t), "cementerio");
+  assert.equal(zonaDe(e, g), "defensa");
+});
+
+test("Cañón Helios: prevenir que un Aliado sea afectado por un efecto oponente", { todo: "respuesta: prevenir que un Aliado sea afectado por un efecto oponente desde una carta en juego" }, () => {});
 
 test("Cetro Demoniaco: su coste baja en uno si controlas o jugaste Armas o a Lucifer", () => {
   const e = mesa();

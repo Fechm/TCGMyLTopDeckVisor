@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, hacer, elegir, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
 import { costeDe } from "../web/duelo/motor.js";
+import { disponibles } from "../web/duelo/efectos.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
@@ -66,7 +67,37 @@ test("Ciudad de los Cesares: Barajar una carta de tu mano para Desterrar una car
   assert.equal(usable(e, c), false);
 });
 
-test("Ciudad de los Cesares: Anular una carta con su habilidad", { todo: "respuesta: Anular con una habilidad activada de una carta en juego" }, () => {});
+const respuestasDe = (e, uid) => accionesLegales(e).filter((a) => a.tipo === "responder" && a.uid === uid).map((a) => a.h);
+
+test("Ciudad de los Cesares: Barajar una carta de la mano para Anular una carta de coste 1 o menos", () => {
+  let e = mesa();
+  const c = poner(e, 1, "apoyo", "Ciudad de los Cesares");
+  const m = poner(e, 1, "mano", "Sir Persival");
+  oros(e, 0, 1);
+  const v = poner(e, 0, "mano", "Valefor");
+  e = aplicar(e, jugar(v));
+  assert.deepEqual(respuestasDe(e, c), [1]);
+  e = resolverTodo(aplicar(e, { tipo: "responder", uid: c, def: id("Ciudad de los Cesares"), h: 1 }));
+  assert.equal(zonaDe(e, v), "cementerio");
+  assert.equal(zonaDe(e, m), "castillo");
+});
+
+test("Ciudad de los Cesares: pagar un Oro para Anular una carta de coste 2 o más, una vez por turno", () => {
+  let e = mesa();
+  const c = poner(e, 1, "apoyo", "Ciudad de los Cesares");
+  oros(e, 1, 1);
+  oros(e, 0, 3);
+  const g = poner(e, 0, "mano", "Guardia Real");
+  e = aplicar(e, jugar(g));
+  assert.deepEqual(respuestasDe(e, c), [2]);
+  e = resolverTodo(aplicar(e, { tipo: "responder", uid: c, def: id("Ciudad de los Cesares"), h: 2 }));
+  assert.equal(zonaDe(e, g), "cementerio");
+  assert.equal(e.jugadores[1].reserva.length, 0);
+  poner(e, 1, "mano", "Sir Persival");
+  const v = poner(e, 0, "mano", "Valefor");
+  e = aplicar(e, jugar(v));
+  assert.deepEqual(respuestasDe(e, c), []);
+});
 
 test("Ciudadela Furia: Baraja un Aliado oponente y Descartas tantas cartas como su coste", () => {
   let e = mesa();
@@ -154,10 +185,17 @@ test("Cueva de Xalpen: genera un Oro para Armas o Tótems", () => {
   let e = mesa();
   const c = poner(e, 0, "apoyo", "Cueva de Xalpen");
   e = hacer(e, habilidad(c, "Cueva de Xalpen", 0), "Generar un Oro para Armas o Tótems");
-  assert.deepEqual(e.jugadores[0].generados, [{ n: 1, tipos: ["Arma", "Tótem"] }]);
+  assert.equal(disponibles(e, 0, { tipo: "Tótem", coste: 2 }), 1);
 });
 
-test("Cueva de Xalpen: el Oro generado solo sirve para cartas de coste 2 o más", { todo: "generar: Oro generado restringido a cartas de coste mínimo" }, () => {});
+test("Cueva de Xalpen: el Oro generado solo sirve para cartas de coste 2 o más", () => {
+  let e = mesa();
+  const c = poner(e, 0, "apoyo", "Cueva de Xalpen");
+  e = hacer(e, habilidad(c, "Cueva de Xalpen", 0), "Generar un Oro para Armas o Tótems");
+  assert.equal(disponibles(e, 0, { tipo: "Arma", coste: 1 }), 0);
+  assert.equal(disponibles(e, 0, { tipo: "Arma", coste: 2 }), 1);
+  assert.equal(disponibles(e, 0, { tipo: "Aliado", coste: 3 }), 0);
+});
 
 test("Cueva de Xalpen: un Aliado duplica su Fuerza por el turno", () => {
   let e = mesa();
@@ -219,7 +257,18 @@ test("El Abismo: mira la mano oponente y Baraja una carta de coste 2 o menos que
   assert.equal(zonaDe(e, v), "mano");
 });
 
-test("El Abismo: tus Tótems no pueden perder su habilidad", { todo: "protección: tus Tótems no pueden perder su habilidad" }, () => {});
+test("El Abismo: tus Tótems no pueden perder su habilidad", () => {
+  const e = mesa();
+  const a = poner(e, 0, "apoyo", "El Abismo");
+  const t = poner(e, 0, "apoyo", "Abadía de Carfax");
+  const r = poner(e, 1, "apoyo", "Abadía de Carfax");
+  const v = poner(e, 0, "defensa", "Valefor");
+  for (const u of [a, t, r, v]) N.agregarEfecto(e, { tipo: "pierdeHabilidad", uid: u, fin: "turno" }, 1);
+  assert.equal(N.activa(e, a), true);
+  assert.equal(N.activa(e, t), true);
+  assert.equal(N.activa(e, r), false);
+  assert.equal(N.activa(e, v), false);
+});
 
 test("El Arca: al entrar puedes pagar un Oro para Robar tres cartas", () => {
   let e = mesa();
@@ -273,7 +322,26 @@ test("El Fantasma: no se puede usar sin Oros para pagar el coste", () => {
   assert.equal(usable(e, f), false);
 });
 
-test("El Fantasma: las cartas oponentes no disparan al salir del juego", { todo: "continua: las cartas oponentes no disparan habilidades al salir del juego" }, () => {});
+test("El Fantasma: las cartas oponentes no disparan al salir del juego", () => {
+  let e = mesa();
+  poner(e, 0, "apoyo", "El Fantasma");
+  const s = poner(e, 0, "apoyo", "Estela Sagrada");
+  const h = poner(e, 1, "apoyo", "Hospital San José");
+  oros(e, 0, 1);
+  e = hacer(e, habilidad(s, "Estela Sagrada"), "Barajar una carta de coste 2 o menos", h);
+  assert.equal(zonaDe(e, h), "castillo");
+  assert.equal(e.jugadores[0].cementerio.length, 0);
+});
+
+test("El Fantasma: tus propias cartas sí disparan al salir del juego", () => {
+  let e = mesa();
+  poner(e, 0, "apoyo", "El Fantasma");
+  const s = poner(e, 0, "apoyo", "Estela Sagrada");
+  const h = poner(e, 0, "apoyo", "Hospital San José");
+  oros(e, 0, 1);
+  e = hacer(e, habilidad(s, "Estela Sagrada"), "Barajar una carta de coste 2 o menos", h);
+  assert.equal(e.jugadores[1].cementerio.length, 5);
+});
 
 test("Esfinge Antartica: al entrar convierte un Aliado oponente de coste 2 o menos en uno sin habilidad bajo tu control", () => {
   let e = mesa();
@@ -468,7 +536,18 @@ test("Fuerte de Niebla: genera un Oro para Armas y busca un Arma", () => {
 
 test("Fuerte de Niebla: Descartar o Destruir un Arma para que no pueda ser Anulado", { todo: "protección: Destruir o Descartar una carta propia para que no pueda ser Anulada" }, () => {});
 
-test("Fuerte de Niebla: tus Aliados que porten Armas ganan Furia", { todo: "continua: filtro de objetivo por portar Armas" }, () => {});
+test("Fuerte de Niebla: tus Aliados que porten Armas ganan Furia", () => {
+  const e = mesa();
+  poner(e, 0, "apoyo", "Fuerte de Niebla");
+  const armado = poner(e, 0, "defensa", "Guardia Real");
+  const desnudo = poner(e, 0, "defensa", "Guardia Real");
+  poner(e, 0, "arma", "Pedrenyal", { portador: armado });
+  const rival = poner(e, 1, "defensa", "Guardia Real");
+  poner(e, 1, "arma", "Pedrenyal", { portador: rival });
+  assert.equal(N.tiene(e, armado, "Furia"), true);
+  assert.equal(N.tiene(e, desnudo, "Furia"), false);
+  assert.equal(N.tiene(e, rival, "Furia"), false);
+});
 
 test("Gehena: Destierra una carta del Castillo oponente y pone otra de tu Castillo en tu mano", () => {
   let e = mesa();
@@ -588,7 +667,28 @@ test("Hangar de la Ciudadela: si se Bota por daño se dejan de Botar cartas y se
   assert.equal(e.jugadores[1].castillo.length, 29);
 });
 
-test("Hangar de la Ciudadela: los Aliados de coste o Fuerza 0 no atacan ni disparan", { todo: "continua: los Aliados de coste o Fuerza 0 no pueden atacar ni disparar sus habilidades" }, () => {});
+test("Hangar de la Ciudadela: los Aliados de coste 0 no disparan sus habilidades", () => {
+  let e = mesa();
+  poner(e, 1, "apoyo", "Hangar de la Ciudadela");
+  poner(e, 0, "mano", "Valefor");
+  const h = poner(e, 0, "mano", "Hijos del Fuego Blanco");
+  e = aplicar(e, jugar(h));
+  assert.equal(zonaDe(e, h), "defensa");
+  assert.equal(e.pendiente, null);
+});
+
+test("Hangar de la Ciudadela: los Aliados de Fuerza 0 no disparan sus habilidades", () => {
+  let e = mesa();
+  poner(e, 1, "apoyo", "Hangar de la Ciudadela");
+  oros(e, 0, 3);
+  const m = poner(e, 0, "mano", "Mecha-Daikaiju");
+  N.agregarEfecto(e, { tipo: "fuerza", uid: m, n: -5 }, 1);
+  e = aplicar(e, jugar(m));
+  assert.equal(zonaDe(e, m), "defensa");
+  assert.equal(e.jugadores[0].mano.length, 0);
+});
+
+test("Hangar de la Ciudadela: los Aliados de coste o Fuerza 0 no pueden atacar", { todo: "restricción: los Aliados que cumplan un filtro (coste o Fuerza) no pueden atacar" }, () => {});
 
 test("Hiva: es Indesterrable y una vez por turno Destruye un Aliado", () => {
   let e = mesa();
@@ -603,7 +703,34 @@ test("Hiva: es Indesterrable y una vez por turno Destruye un Aliado", () => {
 
 test("Hiva: con Aliados de coste 1 o más los demás Tótems pierden la habilidad", { todo: "continua: los demás Tótems pierden su habilidad bajo condición" }, () => {});
 
-test("Hiva: los Oros de un jugador sin Aliados no disparan", { todo: "continua: los Oros de un jugador sin Aliados no disparan sus habilidades" }, () => {});
+test("Hiva: los Oros del oponente sin Aliados no disparan", () => {
+  let e = mesa();
+  poner(e, 1, "apoyo", "Hiva");
+  poner(e, 1, "defensa", "Valefor");
+  const t = poner(e, 0, "mano", "Tetramorfo");
+  e = aplicar(e, { tipo: "oro", uid: t });
+  assert.equal(zonaDe(e, t), "reserva");
+  assert.equal(e.jugadores[0].mano.length, 0);
+});
+
+test("Hiva: si ningún jugador controla Aliados, tampoco disparan tus Oros", () => {
+  let e = mesa();
+  poner(e, 0, "apoyo", "Hiva");
+  const t = poner(e, 0, "mano", "Tetramorfo");
+  e = aplicar(e, { tipo: "oro", uid: t });
+  assert.equal(e.jugadores[0].mano.length, 0);
+});
+
+test("Hiva: los Oros de un jugador con Aliados sí disparan", () => {
+  let e = mesa();
+  poner(e, 1, "apoyo", "Hiva");
+  poner(e, 0, "defensa", "Valefor");
+  const t = poner(e, 0, "mano", "Tetramorfo");
+  e = aplicar(e, { tipo: "oro", uid: t });
+  assert.equal(e.jugadores[0].mano.length, 1);
+});
+
+test("Hiva: tus Oros no disparan si no controlas Aliados aunque el oponente sí", { todo: "silenciar disparos solo de las cartas propias del controlador de la continua" }, () => {});
 
 test("Hospital San José: al entrar puedes Desterrar el Cementerio oponente", () => {
   let e = mesa();

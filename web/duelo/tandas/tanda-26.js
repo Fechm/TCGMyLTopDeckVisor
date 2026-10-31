@@ -216,6 +216,8 @@ export const HABILIDADES = {
     },
   },
   Kukri: {
+    momentos: ["talismanes", "faseFinal"],
+    requiere: "noFaseFinalPropia",
     portador: { fuerza: 2, claves: ["Indestructible"] },
     disparadas: [
       {
@@ -223,7 +225,10 @@ export const HABILIDADES = {
         hacer: [sel(["rival:mano"], {}, "x", { quien: "rival" }), mov("barajar"), { op: "si", f: "turnoRival", entonces: [robar(2)] }],
       },
     ],
-    fns: { turnoRival: (e, ctx) => e.activo !== ctx.ctrl },
+    fns: {
+      turnoRival: (e, ctx) => e.activo !== ctx.ctrl,
+      noFaseFinalPropia: (e, ctx) => !(e.fase === "momento" && e.momento?.nombre === "final" && e.activo === ctx.ctrl),
+    },
   },
   "La Esmeralda": {
     claves: ["Exhumar"],
@@ -362,12 +367,11 @@ export const HABILIDADES = {
         cuando: ["entra"],
         hacer: [
           sel(["rival:oros"], { tipo: "Oro" }, "o"),
-          { op: "fn", f: "retener" },
+          { ...efecto("o", { tipo: "noAgrupa" }, "juego"), jugador: "rival" },
           sel(["todos:enJuego"], {}, "h"),
           efecto("h", { tipo: "pierdeHabilidad" }, "turnoRival"),
         ],
       },
-      { cuando: ["comienzoTurno"], quien: "rival", si: "retenido", hacer: [{ op: "fn", f: "noAgrupar" }] },
       {
         cuando: ["haceDano"],
         quien: "cualquiera",
@@ -375,25 +379,7 @@ export const HABILIDADES = {
         hacer: [sel(["yo:mano", "yo:cementerio"], { tipo: ["Aliado", "Arma", "Tótem"], costeMax: 2 }, "g"), { op: "jugarGratis", var: "g" }],
       },
     ],
-    fns: {
-      delPortador,
-      retener: (e, ctx) => {
-        const [o] = ctx.vars.o ?? [];
-        if (o && e.jugadores[N.rival(ctx.ctrl)].pagado.includes(o)) e.usos[`juramento|${ctx.fuente}`] = { uid: o, turno: e.turno };
-      },
-      retenido: (e, ctx) => {
-        const r = e.usos[`juramento|${ctx.fuente}`];
-        return !!r && e.turno === r.turno + 1;
-      },
-      noAgrupar: (e, ctx) => {
-        const r = e.usos[`juramento|${ctx.fuente}`];
-        delete e.usos[`juramento|${ctx.fuente}`];
-        const p = e.jugadores[N.rival(ctx.ctrl)];
-        if (!p.reserva.includes(r.uid)) return;
-        N.sacar(e, r.uid);
-        p.pagado.push(r.uid);
-      },
-    },
+    fns: { delPortador },
   },
   Luthairon: {
     claves: ["Exhumar"],
@@ -431,7 +417,7 @@ export const HABILIDADES = {
   },
   "Macuñ": {
     exhumarSi: "conRaza",
-    portador: { fuerza: 2 },
+    portador: { fuerza: 2, claves: ["NoConvertible"] },
     activadas: [{ texto: "Barajar o Desterrar una carta de un Cementerio", momento: "tuTurno", veces: "turno", requiere: { de: ["todos:cementerio"], filtro: {} }, hacer: desterrarOBarajar }],
     fns: {
       conRaza: (e, ctx) => N.aliadosDe(e, ctx.ctrl).some((a) => (N.carta(e, a).razas ?? []).some((r) => ["Caballero", "Guerrero", "Héroe"].includes(r))),
@@ -560,6 +546,19 @@ export const HABILIDADES = {
   "Puo Estelar": {
     claves: ["Exhumar"],
     portador: { fuerza: 3, claves: ["Furia"] },
+    activadas: [
+      {
+        texto: "Barajar esta carta de tu mano para prevenir que una carta que controles sea afectada por un Oro o carta de coste 0",
+        zona: "mano",
+        coste: [sel(["fuente"], {}, "yo"), mov("barajar", "yo")],
+        requiere: { de: ["yo:enJuego"], filtro: {} },
+        hacer: [
+          sel(["yo:enJuego"], {}, "p"),
+          efecto("p", { tipo: "proteccion", por: ["Oro"] }, "turno"),
+          efecto("p", { tipo: "proteccion", costeMax: 0 }, "turno"),
+        ],
+      },
+    ],
     disparadas: [botadaPorDano],
     fns: { ...fnsBotada },
   },

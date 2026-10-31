@@ -17,8 +17,6 @@ const barajarOdesterrar = (como) => ({
   ],
 });
 
-const totemsCoste1 = (n) => (e, ctx) => totems(e, ctx.ctrl).filter((u) => coste(e, u) >= 1).length >= n;
-
 const aAliado = (v) => ({ op: "convertir", var: v, en: "Aliado", fuerza: 3, a: "defensa" });
 
 export const HABILIDADES = {
@@ -51,12 +49,31 @@ export const HABILIDADES = {
       {
         texto: "Barajar una carta de tu mano para Desterrar una carta de coste 1 o menos",
         veces: "turno",
+        grupo: "u",
         requiere: "puede",
         coste: [sel(["yo:mano"], {}, "m"), mov("barajar", "m")],
         hacer: [sel(["todos:enJuego"], { costeMax: 1 }, "x", { para: "desterrar" }), mov("desterrar")],
       },
+      {
+        texto: "Barajar una carta de tu mano para Anular una carta de coste 1 o menos",
+        veces: "turno",
+        grupo: "u",
+        respuesta: { anula: { costeMax: 1 } },
+        requiere: "conMano",
+        coste: [sel(["yo:mano"], {}, "m"), mov("barajar", "m")],
+      },
+      {
+        texto: "Pagar un Oro para Anular una carta de coste 2 o más",
+        veces: "turno",
+        grupo: "u",
+        oros: 1,
+        respuesta: { anula: {} },
+        requiere: "coste2",
+      },
     ],
     fns: {
+      conMano: (e, ctx) => e.jugadores[ctx.ctrl].mano.length > 0,
+      coste2: (e) => (e.pila.at(-1)?.coste ?? 0) >= 2,
       puede: (e, ctx) => e.jugadores[ctx.ctrl].mano.length > 0 && N.todoEnJuego(e).some((u) => coste(e, u) <= 1 && !N.tiene(e, u, "Indesterrable")),
     },
   },
@@ -129,7 +146,7 @@ export const HABILIDADES = {
             op: "modo",
             opciones: [
               { texto: "Buscar un Arma o Tótem de coste 2 o más", pasos: buscar(["yo:castillo"], { tipo: ["Arma", "Tótem"], costeMin: 2 }) },
-              { texto: "Generar un Oro para Armas o Tótems", pasos: [{ op: "generar", n: 1, tipos: ["Arma", "Tótem"] }] },
+              { texto: "Generar un Oro para Armas o Tótems", pasos: [{ op: "generar", n: 1, tipos: ["Arma", "Tótem"], costeMin: 2 }] },
             ],
           },
         ],
@@ -196,6 +213,7 @@ export const HABILIDADES = {
         hacer: [sel(["rival:mano"], { costeMax: 2, noTipo: ["Aliado"] }, "x", { hasta: true }), mov("barajar")],
       },
     ],
+    continuas: [{ noPierden: true, a: "tusAliados", tipoObjetivo: "Tótem" }],
     fns: { nTotems, conMano: (e, ctx) => e.jugadores[N.rival(ctx.ctrl)].mano.length > 0 },
   },
   "El Arca": {
@@ -233,6 +251,7 @@ export const HABILIDADES = {
         hacer: [sel(["rival:enJuego"], { f: "pagable" }, "x", { para: "destruir" }), { op: "fn", f: "robarAlma" }],
       },
     ],
+    continuas: [{ silenciaDisparos: { rival: true, eventos: ["sale", "saleDelJuego"] } }],
     fns: {
       pagable: (e, ctx, u) => N.carta(e, u).tipo !== "Oro" && coste(e, u) <= e.jugadores[ctx.ctrl].reserva.length,
       puede: (e, ctx) =>
@@ -352,8 +371,8 @@ export const HABILIDADES = {
         ],
       },
     ],
-    continuas: [1, 2, 3, 4, 5, 6].map((n) => ({ reduceDanoCastillo: 1, si: `t${n}` })),
-    fns: Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [`t${n}`, totemsCoste1(n)])),
+    continuas: [{ reduceDanoCastilloPor: "nTotemsCoste1" }],
+    fns: { nTotemsCoste1: (e, ctx) => totems(e, ctx.ctrl).filter((u) => coste(e, u) >= 1).length },
   },
   Fonda: {
     disparadas: [
@@ -378,6 +397,7 @@ export const HABILIDADES = {
         hacer: [{ op: "generar", n: 1, tipos: ["Arma"] }, ...buscar(["yo:castillo"], { tipo: "Arma" })],
       },
     ],
+    continuas: [{ gana: "Furia", a: "tusAliados", conArma: true }],
   },
   Gehena: {
     activadas: [
@@ -447,6 +467,7 @@ export const HABILIDADES = {
       { cuando: ["entra"], hacer: [sel(["rival:mano"], {}, "m", { quien: "rival" }), mov("barajar", "m"), robar(2)] },
       { zona: ["cementerio"], cuando: ["salenDelCastillo"], quien: "yo", si: "botadaPorDano", hacer: [{ op: "fn", f: "detener" }] },
     ],
+    continuas: [{ silenciaDisparos: { tipoCarta: "Aliado", costeMax: 0 } }, { silenciaDisparos: { tipoCarta: "Aliado", fuerzaMax: 0 } }],
     fns: {
       botadaPorDano: (e, ctx) => ctx.datos.porDano && ctx.datos.zona === "cementerio" && ctx.datos.uids.includes(ctx.fuente),
       detener: (e, ctx) => {
@@ -474,6 +495,14 @@ export const HABILIDADES = {
         hacer: [sel(["todos:aliados"], {}, "x", { para: "destruir" }), mov("destruir")],
       },
     ],
+    continuas: [
+      { silenciaDisparos: { rival: true, tipoCarta: "Oro" }, si: "rivalSinAliados" },
+      { silenciaDisparos: { tipoCarta: "Oro" }, si: "ambosSinAliados" },
+    ],
+    fns: {
+      rivalSinAliados: (e, ctx) => N.aliadosDe(e, N.rival(ctx.ctrl)).length === 0,
+      ambosSinAliados: (e, ctx) => N.aliadosDe(e, 0).length === 0 && N.aliadosDe(e, 1).length === 0,
+    },
   },
   "Hospital San José": {
     disparadas: [

@@ -47,8 +47,11 @@ export const HABILIDADES = {
     disparadas: [
       { cuando: ["entra"], hacer: [robar(2), { op: "fn", f: "angel" }] },
       { cuando: ["sale"], hacer: [{ op: "fn", f: "quitar" }] },
+      { cuando: ["ataca"], quien: "rival", si: "conAngeles", hacer: [{ op: "fn", f: "limitar" }] },
     ],
     fns: {
+      conAngeles: (e, ctx) => N.aliadosDe(e, ctx.ctrl).some((a) => (N.carta(e, a).razas ?? []).includes("Ángel")),
+      limitar: (e, ctx) => N.agregarEfecto(e, { tipo: "maxAtacantes", j: N.rival(ctx.ctrl), n: 1, fin: "turno" }, ctx.ctrl),
       angel: (e, ctx) => {
         const p = N.portadorDe(e, ctx.fuente);
         if (!p || !(N.carta(e, p).razas ?? []).includes("Ángel")) return;
@@ -122,6 +125,24 @@ export const HABILIDADES = {
         pasos: [sel(["yo:mano"], {}, "m"), mov("cementerio", "m"), sel(["fuente"], {}, "yo"), mov("mano", "yo")],
       },
     ]),
+    activadas: [
+      {
+        texto: "Destruir el portador para Anular un Talismán de coste 2 o menos",
+        respuesta: { anula: { tipo: "Talismán", costeMax: 2 } },
+        momento: "cualquiera",
+        requiere: "portadorDestruible",
+        coste: [{ op: "fn", f: "elPortador" }, mov("destruir", "p")],
+      },
+    ],
+    fns: {
+      portadorDestruible: (e, ctx) => {
+        const p = N.portadorDe(e, ctx.fuente);
+        return !!p && !N.tiene(e, p, "Indestructible") && N.puedeSalir(e, p);
+      },
+      elPortador: (e, ctx) => {
+        ctx.vars.p = [N.portadorDe(e, ctx.fuente)].filter(Boolean);
+      },
+    },
   },
   "Armadura Dorada": {
     claves: ["Exhumar"],
@@ -129,6 +150,7 @@ export const HABILIDADES = {
     disparadas: [{ cuando: ["entra"], hacer: [robar(2)] }],
   },
   "Armas Campesinas": {
+    momentos: ["talismanes"],
     portador: { fuerza: 2, claves: ["Indestructible"] },
     disparadas: [{ cuando: ["entra"], hacer: [sel(["rival:aliados"], {}, "a"), { op: "fn", f: "aCero" }, { op: "botar", nf: "perdida", quien: "rival" }, robar(2)] }],
     fns: {
@@ -153,7 +175,7 @@ export const HABILIDADES = {
     fns: {
       fuerzaPortador,
       restoPortador,
-      ataco: (e, ctx) => e.activo === ctx.ctrl && e.jugadores[ctx.ctrl].atacoEsteTurno,
+      ataco: (e, ctx) => (e.activo === ctx.ctrl && e.jugadores[ctx.ctrl].atacoEsteTurno) || !!e.jugadores[ctx.ctrl].bloqueoEsteTurno,
     },
   },
   Atgeir: {
@@ -245,7 +267,7 @@ export const HABILIDADES = {
     disparadas: [{ cuando: ["entra"], hacer: buscar(["yo:castillo"], { noTipo: ["Talismán"] }) }],
   },
   "Carruaje Infernal": {
-    requiere: "sinCopia",
+    claves: ["Unica"],
     portador: { fuerza: 1, noCambia: true },
     activadas: [
       {
@@ -275,7 +297,6 @@ export const HABILIDADES = {
         ],
       },
     ],
-    fns: { sinCopia: (e, ctx) => !N.armasDe(e, ctx.ctrl).some((u) => N.carta(e, u).nombre === "Carruaje Infernal") },
   },
   "Casco de Esparta": {
     claves: ["Exhumar"],
@@ -306,7 +327,7 @@ export const HABILIDADES = {
   "Cañon Silverado": {
     claves: ["Exhumar"],
     portador: { fuerza: 3, claves: ["Indesterrable"] },
-    continuas: [{ impuestoTalisman: true }],
+    continuas: [{ impuestoTodos: { tipoCarta: "Talismán", n: 1 } }],
     disparadas: [
       { cuando: ["entra"], hacer: [{ op: "fn", f: "silverado" }] },
       { cuando: ["ataca"], quien: "cualquiera", si: "portadorEs", hacer: [{ op: "fn", f: "silverado" }] },
@@ -324,6 +345,7 @@ export const HABILIDADES = {
   "Cañon de Fusion": {
     claves: ["Exhumar"],
     portador: { fuerza: 2, claves: ["Indesterrable"] },
+    continuas: [{ noPierden: true, a: "tusDemasAliados", tipoObjetivo: ["Aliado", "Arma", "Tótem", "Talismán", "Oro"] }],
     disparadas: [{ cuando: ["entra"], opcional: true, hacer: [sel(["rival:enJuego"], { noTipo: ["Oro"] }), mov("barajar")] }],
     activadas: [
       {
@@ -357,6 +379,14 @@ export const HABILIDADES = {
   },
   "Cañón Helios": {
     portador: { fuerza: 2, claves: ["Furia"] },
+    activadas: [
+      {
+        texto: "Desterrar Cañón Helios para Anular un Talismán",
+        respuesta: { anula: { tipo: "Talismán" } },
+        momento: "cualquiera",
+        coste: [sel(["fuente"], {}, "yo"), mov("desterrar", "yo")],
+      },
+    ],
     disparadas: [
       { cuando: ["entra"], hacer: [robar(2)] },
       {

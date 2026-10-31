@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, hacer, elegir, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
 import { costeDe } from "../web/duelo/motor.js";
-import { resolver } from "../web/duelo/efectos.js";
+import { resolver, cumple, OPS } from "../web/duelo/efectos.js";
 import { TRANSCRITAS } from "../web/duelo/cartas.js";
 
 const jugar = (uid, extra = {}) => ({ tipo: "jugar", uid, ...extra });
@@ -42,7 +42,21 @@ test("Revólver Webley: también puede jugar una carta de tu Cementerio con el c
   assert.equal(e.jugadores[0].pagado.length, 2);
 });
 
-test("Revólver Webley: el portador no puede ser afectado por efectos oponentes hasta tu próximo turno", { todo: "efecto: no puede ser afectado por efectos oponentes" }, () => {});
+test("Revólver Webley: el portador no puede ser afectado por efectos oponentes hasta tu próximo turno", () => {
+  let e = mesa();
+  oros(e, 0, 2);
+  const v = poner(e, 0, "defensa", "Valefor");
+  const r = poner(e, 0, "mano", "Revólver Webley");
+  e = aplicar(e, jugar(r, { portador: v }));
+  const danza = poner(e, 1, "mano", "Danza del Cuchillo");
+  const ctx = (fuente, ctrl) => ({ ctrl, fuente, def: e.instancias[fuente], vars: {} });
+  assert.equal(cumple(e, ctx(danza, 1), v, {}, "destruir"), false);
+  assert.equal(cumple(e, ctx(r, 0), v, {}, "destruir"), true);
+  e.turno += 1;
+  e.activo = 0;
+  N.expirar(e, "inicio");
+  assert.equal(cumple(e, ctx(danza, 1), v, {}, "destruir"), true);
+});
 
 test("Rifle Winchester: el portador gana 2 de Fuerza e Indestructible", () => {
   const e = mesa();
@@ -156,7 +170,38 @@ test("Trampa Dulce: cuando el portador sale del juego puedes cambiarla de portad
   assert.equal(N.fuerza(e, v), 5);
 });
 
-test("Trampa Dulce: hasta dos veces por turno, pagar un Oro para Anular un Talismán", { todo: "respuesta: Anular con una habilidad activada de una carta en juego" }, () => {});
+test("Trampa Dulce: hasta dos veces por turno, pagar un Oro para Anular un Talismán", () => {
+  let e = mesa();
+  const g = poner(e, 1, "defensa", "Guardia Real");
+  const t = poner(e, 1, "arma", "Trampa Dulce", { portador: g });
+  oros(e, 1, 3);
+  oros(e, 0, 6);
+  const responde = (s) => accionesLegales(s).find((a) => a.tipo === "responder" && a.uid === t);
+  const d1 = poner(e, 0, "mano", "Danza del Cuchillo");
+  e = aplicar(e, jugar(d1));
+  e = aplicar(e, responde(e));
+  assert.equal(zonaDe(e, d1), "cementerio");
+  assert.equal(zonaDe(e, g), "defensa");
+  assert.equal(e.jugadores[1].pagado.length, 1);
+  const d2 = poner(e, 0, "mano", "Danza del Cuchillo");
+  e = aplicar(e, jugar(d2));
+  e = aplicar(e, responde(e));
+  assert.equal(zonaDe(e, d2), "cementerio");
+  const d3 = poner(e, 0, "mano", "Danza del Cuchillo");
+  e = aplicar(e, jugar(d3));
+  assert.equal(responde(e), undefined);
+});
+
+test("Trampa Dulce: no Anula cartas que no son Talismán", () => {
+  let e = mesa();
+  const g = poner(e, 1, "defensa", "Guardia Real");
+  const t = poner(e, 1, "arma", "Trampa Dulce", { portador: g });
+  oros(e, 1, 1);
+  oros(e, 0, 1);
+  const v = poner(e, 0, "mano", "Valefor");
+  e = aplicar(e, jugar(v));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder" && a.uid === t), false);
+});
 
 test("Trompeta del Apocalipsis: tiene Exhumar y el portador pierde su Fuerza y su habilidad", () => {
   let e = mesa();
@@ -301,7 +346,14 @@ test("Ahu Tongariki: los Aliados de coste 1 o menos pierden 1 de Fuerza y tus Al
   assert.equal(N.tiene(e, r, "Indestructible"), false);
 });
 
-test("Ahu Tongariki: los Aliados de coste 1 o menos pierden Furia", { todo: "continua: los Aliados de coste N o menos pierden una clave (Furia)" }, () => {});
+test("Ahu Tongariki: los Aliados de coste 1 o menos pierden Furia", () => {
+  const e = mesa();
+  poner(e, 0, "apoyo", "Ahu Tongariki");
+  const v = poner(e, 1, "defensa", "Valefor");
+  const b = poner(e, 1, "defensa", "Balaur");
+  assert.equal(N.tiene(e, v, "Furia"), false);
+  assert.equal(N.tiene(e, b, "Furia"), true);
+});
 
 test("Altar de Muertos: al entrar Baraja la mitad de los Aliados de cada jugador redondeada hacia arriba", () => {
   let e = mesa();
@@ -599,7 +651,20 @@ test("Casa de Opio: en el turno oponente no genera Oro", () => {
   assert.equal((e.jugadores[0].generados ?? []).length, 0);
 });
 
-test("Casa de Opio: se juega al comienzo de cualquier Fase y en el turno oponente cuesta un Oro menos", { todo: "momento: jugar un Tótem al comienzo de cualquier Fase (con reducción de coste en el turno oponente)" }, () => {});
+test("Casa de Opio: se juega al comienzo de cualquier Fase y en el turno oponente cuesta un Oro menos", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const c = poner(e, 0, "mano", "Casa de Opio");
+  assert.equal(costeDe(e, 0, c).pagar, 2);
+  e.activo = 1;
+  assert.equal(costeDe(e, 0, c).pagar, 1);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  e = aplicar(e, { tipo: "pasarMomento" });
+  e = aplicar(e, jugar(c));
+  assert.equal(zonaDe(e, c), "apoyo");
+  assert.equal(e.jugadores[0].pagado.length, 1);
+});
 
 test("Casa de Opio: también genera Oro cuando el oponente usa una habilidad", { todo: "evento: cuando un jugador usa una habilidad activada" }, () => {});
 
@@ -646,7 +711,20 @@ test("Castillo Drácula: pagando un Oro no recibes daño de combate hasta tu pr�
   assert.deepEqual(f.fin, { inicioDe: 0, desde: e.turno });
 });
 
-test("Castillo Drácula: o no puedas ser afectado por efectos oponentes", { todo: "efecto: el jugador no puede ser afectado por efectos oponentes" }, () => {});
+test("Castillo Drácula: o tus cartas no pueden ser afectadas por efectos oponentes hasta tu próximo turno", () => {
+  let e = mesa();
+  oros(e, 0, 1);
+  const c = poner(e, 0, "apoyo", "Castillo Drácula");
+  const v = poner(e, 0, "defensa", "Valefor");
+  const danza = poner(e, 1, "mano", "Danza del Cuchillo");
+  e = hacer(e, habilidad(c, "Castillo Drácula"), "No ser afectado por efectos oponentes hasta tu próximo turno");
+  const ctx = { ctrl: 1, fuente: danza, def: e.instancias[danza], vars: {} };
+  assert.equal(cumple(e, ctx, v, {}, "destruir"), false);
+  e.turno += 1;
+  e.activo = 0;
+  N.expirar(e, "inicio");
+  assert.equal(cumple(e, ctx, v, {}, "destruir"), true);
+});
 
 test("Castillo de Karnstein: tiene Exhumar y al entrar Destierra hasta una carta que no sea Oro y Roba dos", () => {
   let e = mesa();
@@ -674,7 +752,31 @@ test("Castillo de Karnstein: se dispara cuando otro Tótem entra bajo tu control
   assert.equal(e.jugadores[0].mano.length, 6);
 });
 
-test("Castillo de Karnstein: Destruyéndolo Anula una carta jugada durante tu turno", { todo: "respuesta: Anular con una habilidad activada de una carta en juego" }, () => {});
+test("Castillo de Karnstein: Destruyéndolo Anula una carta jugada durante tu turno", () => {
+  let e = mesa();
+  const k = poner(e, 0, "apoyo", "Castillo de Karnstein");
+  const v = poner(e, 0, "defensa", "Valefor");
+  oros(e, 1, 2);
+  const danza = poner(e, 1, "mano", "Danza del Cuchillo");
+  e.prioridad = 1;
+  e.fase = "talismanes";
+  e = aplicar(e, jugar(danza));
+  const r = accionesLegales(e).find((a) => a.tipo === "responder" && a.uid === k);
+  assert.ok(r);
+  e = aplicar(e, r);
+  assert.equal(zonaDe(e, danza), "cementerio");
+  assert.equal(zonaDe(e, k), "cementerio");
+  assert.equal(zonaDe(e, v), "defensa");
+});
+
+test("Castillo de Karnstein: no Anula cartas jugadas en el turno oponente", () => {
+  let e = mesa();
+  const k = poner(e, 1, "apoyo", "Castillo de Karnstein");
+  oros(e, 0, 1);
+  const v = poner(e, 0, "mano", "Valefor");
+  e = aplicar(e, jugar(v));
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "responder" && a.uid === k), false);
+});
 
 test("Cementerio General: al entrar Baraja hasta tantas cartas oponentes de coste 3 o menos como cartas Exhumar controles y Roba dos", () => {
   let e = mesa();
@@ -691,9 +793,28 @@ test("Cementerio General: al entrar Baraja hasta tantas cartas oponentes de cost
   assert.equal(e.jugadores[0].mano.length, 2);
 });
 
-test("Cementerio General: las cartas de tu Cementerio no pierden su habilidad ni pueden ser Desterradas por efectos", { todo: "continua: las cartas de tu Cementerio no pierden su habilidad ni pueden ser Desterradas por efectos" }, () => {});
+test("Cementerio General: las cartas de tu Cementerio no pueden ser Desterradas por efectos", () => {
+  const e = mesa();
+  poner(e, 0, "apoyo", "Cementerio General");
+  const x = poner(e, 0, "cementerio", "Valefor");
+  const y = poner(e, 1, "cementerio", "Valefor");
+  OPS.mover(e, { var: "x", a: "desterrar" }, { ctx: { ctrl: 1, vars: { x: [x, y] } } });
+  assert.equal(zonaDe(e, x), "cementerio");
+  assert.equal(zonaDe(e, y), "destierro");
+});
 
-test("Cementerio General: tus Aliados con Exhumar ganan Furia", { todo: "continua: ganar una clave solo los Aliados que tienen otra clave (Exhumar)" }, () => {});
+test("Cementerio General: las cartas de tu Cementerio no pueden perder su habilidad", { todo: "continua: las cartas de tu Cementerio no pierden su habilidad (noPierden no alcanza cartas fuera del juego)" }, () => {});
+
+test("Cementerio General: tus Aliados con Exhumar ganan Furia", () => {
+  const e = mesa();
+  poner(e, 0, "apoyo", "Cementerio General");
+  const b = poner(e, 0, "defensa", "Carmilla");
+  const g = poner(e, 0, "defensa", "Guardia Real");
+  const r = poner(e, 1, "defensa", "Carmilla");
+  assert.equal(N.tiene(e, b, "Furia"), true);
+  assert.equal(N.tiene(e, g, "Furia"), false);
+  assert.equal(N.tiene(e, r, "Furia"), false);
+});
 
 test("Cementerio Maldito: una vez por turno Baraja o Destierra hasta cuatro cartas de los Cementerios", () => {
   let e = mesa();

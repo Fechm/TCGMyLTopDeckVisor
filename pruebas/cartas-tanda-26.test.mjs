@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mesa, poner, oros, elegir, sinRespuesta, accionesLegales, aplicar, zonaDe, id, N } from "./ayuda-duelo.mjs";
-import { entrarEnJuego, resolver, disponibles } from "../web/duelo/efectos.js";
+import { entrarEnJuego, resolver, disponibles, cumple } from "../web/duelo/efectos.js";
 
 const habilidad = (uid, nombre, h = 0) => ({ tipo: "habilidad", uid, def: id(nombre), h });
 const nombreDe = (e, nombre) => (v) => v !== null && N.carta(e, v).nombre === nombre;
@@ -270,8 +270,33 @@ test("Kukri: si entra en el turno oponente, además Robas dos cartas", () => {
   assert.equal(e.jugadores[0].mano.length, 2);
 });
 
-test("Kukri: se puede jugar en la Guerra de Talismanes o en la Fase Final oponente", { todo: "carta: Arma jugable en la Guerra de Talismanes y en la Fase Final oponente" }, () => {
-  assert.fail();
+test("Kukri: se puede jugar en la Guerra de Talismanes", () => {
+  let e = mesa();
+  const p = aliado(e, 0);
+  const k = poner(e, 0, "mano", "Kukri");
+  oros(e, 0, 1);
+  for (const a of [{ tipo: "batalla" }, { tipo: "atacar", uid: p }, { tipo: "finAtaque" }, { tipo: "finBloqueo" }]) e = aplicar(e, a);
+  assert.equal(e.fase, "talismanes");
+  e = aplicar(e, { tipo: "pasar" });
+  assert.equal(e.prioridad, 0);
+  assert.equal(accionesLegales(e).some((a) => a.tipo === "jugar" && a.uid === k), true);
+});
+
+test("Kukri: se puede jugar en la Fase Final oponente pero no en la propia", () => {
+  let e = mesa();
+  const p = aliado(e, 0);
+  const k = poner(e, 0, "mano", "Kukri");
+  oros(e, 0, 1);
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.activo, 1);
+  assert.notEqual(e.fase, "momento");
+  e = aplicar(e, { tipo: "terminar" });
+  assert.equal(e.fase, "momento");
+  if (e.momento.prioridad === 1) e = aplicar(e, { tipo: "pasarMomento" });
+  const jugar = accionesLegales(e).find((a) => a.tipo === "jugar" && a.uid === k && a.portador === p);
+  assert.ok(jugar);
+  e = sinRespuesta(aplicar(e, jugar));
+  assert.deepEqual(e.armas[p], [k]);
 });
 
 test("La Esmeralda: Exhumar; el portador gana 3 de Fuerza y Furia; al entrar genera un Oro por el turno", () => {
@@ -318,8 +343,18 @@ test("Lanza Argenta: puede Destruirse para cancelar una habilidad", { todo: "efe
   assert.fail();
 });
 
-test("Lanza Argenta: también se Baraja si llega al Cementerio porque su portador sale del juego", { todo: "evento: alCementerio para Armas que caen junto a su portador" }, () => {
-  assert.fail();
+test("Lanza Argenta: también se Baraja si llega al Cementerio porque su portador sale del juego", () => {
+  let e = mesa();
+  const p = aliado(e, 0);
+  const l = armar(e, 0, "Lanza Argenta", p);
+  const v = poner(e, 1, "cementerio", "Valefor");
+  N.mover(e, p, "cementerio");
+  resolver(e);
+  e = elegir(e, v);
+  e = elegir(e, null);
+  assert.equal(zonaDe(e, l), "castillo");
+  assert.equal(zonaDe(e, v), "castillo");
+  assert.equal(zonaDe(e, p), "cementerio");
 });
 
 test("Lanza Sacra: el portador gana 1 de Fuerza y Furia; al entrar juega un Arma de tu Destierro reduciendo su coste en un Oro", () => {
@@ -447,6 +482,7 @@ test("Lanza del Juramento: al entrar un Oro oponente no se agrupa y una carta no
   assert.equal(e.activo, 1);
   assert.equal(zonaDe(e, o), "pagado");
   assert.equal(N.activa(e, per), false);
+  assert.equal(e.efectos.some((f) => f.tipo === "noAgrupa"), false);
 });
 
 test("Lanza del Juramento: cuando el portador hace daño de combate, juega sin pagar una carta de coste 2 o menos de tu mano o Cementerio", () => {
@@ -525,8 +561,15 @@ test("Macuñ: el portador gana 2 de Fuerza; una vez en tu turno Baraja o Destier
   assert.equal(zonaDe(e, v), "destierro");
 });
 
-test("Macuñ: no se puede convertir en cartas del mismo u otro tipo", { todo: "efecto: no puede ser convertida en otra carta" }, () => {
-  assert.fail();
+test("Macuñ: el portador no se puede convertir en cartas del mismo u otro tipo", () => {
+  const e = mesa();
+  const p = aliado(e, 0);
+  armar(e, 0, "Macuñ", p);
+  const q = aliado(e, 0);
+  assert.equal(N.tiene(e, p, "NoConvertible"), true);
+  const ctx = { ctrl: 1, fuente: poner(e, 1, "defensa", "Valefor"), def: id("Valefor"), costeFuente: 1, vars: {} };
+  assert.equal(cumple(e, ctx, p, {}, "convertir"), false);
+  assert.equal(cumple(e, ctx, q, {}, "convertir"), true);
 });
 
 test("Martillo Mjlnir: el portador gana 3 de Fuerza; en tu Vigilia sube un Aliado de tu Cementerio a tu mano", () => {
@@ -685,6 +728,18 @@ test("Puo Estelar: si la Botas por daño dejas de Botar y se Destierra", () => {
   assert.equal(e.jugadores[0].castillo.length, 30);
 });
 
-test("Puo Estelar: Barajarla de tu mano previene que una carta tuya sea afectada por un Oro o carta de coste 0", { todo: "efecto: proteger una carta de Oros y cartas de coste 0" }, () => {
-  assert.fail();
+test("Puo Estelar: Barajarla de tu mano previene que una carta tuya sea afectada por un Oro o carta de coste 0", () => {
+  let e = mesa();
+  const p = aliado(e, 0);
+  const x = poner(e, 0, "mano", "Puo Estelar");
+  const oro = poner(e, 1, "reserva", "Drácula");
+  const tal = poner(e, 1, "mano", "Dragón Dorado");
+  const val = poner(e, 1, "defensa", "Valefor");
+  const ctx = (u) => ({ ctrl: 1, fuente: u, def: e.instancias[u], costeFuente: N.carta(e, u).coste ?? 0, vars: {} });
+  assert.equal(cumple(e, ctx(oro), p, {}, "destruir"), true);
+  e = aplicar(e, habilidad(x, "Puo Estelar"));
+  assert.equal(zonaDe(e, x), "castillo");
+  assert.equal(cumple(e, ctx(oro), p, {}, "destruir"), false);
+  assert.equal(cumple(e, ctx(tal), p, {}, "destruir"), false);
+  assert.equal(cumple(e, ctx(val), p, {}, "destruir"), true);
 });

@@ -49,11 +49,16 @@ export const HABILIDADES = {
             requiere: "hayJugable",
             pasos: [sel(["yo:mano", "yo:cementerio"], { f: "jugable" }, "j"), { op: "fn", f: "jugarReducido" }],
           },
+          { op: "fn", f: "proteger" },
         ],
       },
     ],
     fns: {
       jugable: jugableReducido,
+      proteger: (e, ctx) => {
+        const p = N.portadorDe(e, ctx.fuente);
+        if (p) N.agregarEfecto(e, { tipo: "proteccion", uid: p, por: "todo", fin: "proximoTurno" }, ctx.ctrl);
+      },
       hayJugable: (e, ctx) => [...e.jugadores[ctx.ctrl].mano, ...e.jugadores[ctx.ctrl].cementerio].some((u) => jugableReducido(e, ctx, u)),
       jugarReducido: (e, ctx) => {
         const pasos = [];
@@ -113,6 +118,7 @@ export const HABILIDADES = {
   },
   "Trampa Dulce": {
     portador: { fuerza: 2, claves: ["Indestructible"] },
+    activadas: [{ texto: "Pagar un Oro: Anular un Talismán", respuesta: { anula: { tipo: "Talismán" } }, momento: "cualquiera", oros: 1, maxVeces: 2 }],
     disparadas: [
       { cuando: ["entra"], hacer: [{ op: "fn", f: "registrar" }] },
       {
@@ -242,7 +248,7 @@ export const HABILIDADES = {
         ],
       },
     ],
-    continuas: [{ fuerza: -1, a: "aliados", costeMax: 1 }, { gana: "Indestructible", a: "tusAliados" }],
+    continuas: [{ fuerza: -1, a: "aliados", costeMax: 1 }, { pierde: "Furia", a: "aliados", costeMax: 1 }, { gana: "Indestructible", a: "tusAliados" }],
   },
   "Altar de Muertos": {
     disparadas: [
@@ -447,8 +453,10 @@ export const HABILIDADES = {
   },
   "Casa de Opio": {
     claves: ["NoAnulable"],
+    momentos: ["comienzoFase"],
+    reduce: "red",
     disparadas: [{ cuando: ["juega"], quien: "rival", si: "miTurno", veces: 1, hacer: [{ op: "generar", n: 1, tipos: ["Aliado", "Arma"] }] }],
-    fns: { miTurno: (e, ctx) => e.activo === ctx.ctrl },
+    fns: { miTurno: (e, ctx) => e.activo === ctx.ctrl, red: (e, ctx) => (e.activo !== ctx.ctrl ? 1 : 0) },
   },
   "Castillo Drácula": {
     disparadas: [
@@ -470,7 +478,7 @@ export const HABILIDADES = {
     ],
     activadas: [
       {
-        texto: "Pagar un Oro: hasta tu próximo turno no recibes daño de combate, o tu oponente Bota cinco cartas",
+        texto: "Pagar un Oro: hasta tu próximo turno no recibes daño de combate o no puedes ser afectado por efectos oponentes, o tu oponente Bota cinco cartas",
         veces: "turno",
         oros: 1,
         hacer: [
@@ -478,6 +486,7 @@ export const HABILIDADES = {
             op: "modo",
             opciones: [
               { texto: "No recibir daño de combate hasta tu próximo turno", pasos: [{ op: "efecto", efecto: { tipo: "prevenirDano" }, jugador: "yo", fin: "proximoTurno" }] },
+              { texto: "No ser afectado por efectos oponentes hasta tu próximo turno", pasos: [{ op: "fn", f: "inmune" }] },
               { texto: "Tu oponente Bota cinco cartas", pasos: [botar(5)] },
             ],
           },
@@ -485,6 +494,9 @@ export const HABILIDADES = {
       },
     ],
     fns: {
+      inmune: (e, ctx) => {
+        N.agregarEfecto(e, { tipo: "proteccion", de: ctx.ctrl, por: "todo", fin: "proximoTurno" }, ctx.ctrl);
+      },
       segundo: (e, ctx) => {
         const [a] = ctx.vars.a ?? [];
         if (!a) return [];
@@ -503,10 +515,23 @@ export const HABILIDADES = {
         hacer: [sel(["todos:enJuego"], { noTipo: ["Oro"] }, "x", { hasta: true, para: "desterrar" }), mov("desterrar"), robar(2)],
       },
     ],
-    fns: { totemMio: (e, ctx) => ctx.datos.j === ctx.ctrl && N.carta(e, ctx.datos.uid).tipo === "Tótem" },
+    activadas: [
+      {
+        texto: "Destruirlo: Anular una carta jugada durante tu turno",
+        respuesta: { anula: {} },
+        momento: "cualquiera",
+        requiere: "tuTurno",
+        coste: [sel(["fuente"], {}, "yo"), mov("destruir", "yo")],
+      },
+    ],
+    fns: {
+      totemMio: (e, ctx) => ctx.datos.j === ctx.ctrl && N.carta(e, ctx.datos.uid).tipo === "Tótem",
+      tuTurno: (e, ctx) => e.activo === ctx.ctrl,
+    },
   },
   "Cementerio General": {
     claves: ["Exhumar"],
+    continuas: [{ cementerioIndesterrable: {} }, { gana: "Furia", a: "tusAliados", conClave: "Exhumar" }],
     disparadas: [{ cuando: ["entra"], hacer: [sel(["rival:enJuego"], { costeMax: 3 }, "x", { nf: "exhumar", hasta: true }), mov("barajar"), robar(2)] }],
     fns: { exhumar: (e, ctx) => N.enJuegoDe(e, ctx.ctrl).filter((u) => N.tiene(e, u, "Exhumar")).length },
   },

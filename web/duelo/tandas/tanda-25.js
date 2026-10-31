@@ -78,9 +78,15 @@ export const HABILIDADES = {
     fns: { portadorAtaca },
   },
   "Daga del Bandido": {
+    portadorSi: { raza: "Bandido" },
     portador: { fuerza: 2 },
+    continuas: [
+      { impuestoRival: { n: 1 }, si: "tuVigilia" },
+      { impuestoHabilidadRival: { n: 1, de: "activada" }, si: "tuVigilia" },
+    ],
     disparadas: [{ cuando: ["entra"], hacer: [{ op: "fn", f: "botarTodos" }, sel(["var:botadas"], { tipo: "Oro", zona: "cementerio" }, "o"), { op: "ponerOro", var: "o", a: "pagado" }] }],
     fns: {
+      tuVigilia: (e, ctx) => e.activo === ctx.ctrl && (e.fase === "vigilia" || (e.fase === "momento" && e.momento?.nombre === "vigilia")),
       botarTodos: (e, ctx) => {
         const botadas = [];
         for (const j of [ctx.ctrl, N.rival(ctx.ctrl)]) {
@@ -94,6 +100,8 @@ export const HABILIDADES = {
     },
   },
   "Diabolista de Ébano": {
+    momentos: ["talismanes", "faseFinal"],
+    requiere: "noTuFaseFinal",
     portador: { fuerza: 2, claves: ["Indesterrable"] },
     disparadas: [
       {
@@ -106,7 +114,10 @@ export const HABILIDADES = {
         ],
       },
     ],
-    fns: { turnoRival: (e, ctx) => e.activo !== ctx.ctrl },
+    fns: {
+      turnoRival: (e, ctx) => e.activo !== ctx.ctrl,
+      noTuFaseFinal: (e, ctx) => !(e.fase === "momento" && e.momento?.nombre === "final" && e.activo === ctx.ctrl),
+    },
   },
   "El Huascar": {
     claves: ["Exhumar"],
@@ -114,6 +125,7 @@ export const HABILIDADES = {
       { fuerzaPor: "duplica", a: "aliados" },
       { fuerzaPor: "porCoste", a: "tusAliados" },
     ],
+    disparadas: [{ cuando: ["entra"], hacer: [sel(["todos:pagado"], { tipo: "Oro" }, "o"), { op: "fn", f: "noAgrupar" }] }],
     activadas: [
       {
         texto: "Desterrar hasta un Arma o Tótem en juego y Robar dos cartas",
@@ -132,6 +144,11 @@ export const HABILIDADES = {
         }
       },
       porCoste: (e, ctx) => (ctx.objetivo === N.portadorDe(e, ctx.fuente) ? 0 : coste(e, ctx.objetivo)),
+      noAgrupar: (e, ctx) => {
+        const [o] = ctx.vars.o ?? [];
+        if (!o) return [];
+        return [efecto("o", { tipo: "noAgrupa", j: N.controlador(e, o) }, "juego")];
+      },
     },
   },
   "Escudo de Energia": {
@@ -253,6 +270,7 @@ export const HABILIDADES = {
     disparadas: [{ cuando: ["faseFinal"], hacer: [sel(["todos:cementerio"], {}, "c", { n: 3, hasta: true }), mov("desterrar", "c"), robar(2)] }],
   },
   "Espada de San Jeronimo": {
+    momentos: ["talismanes"],
     portador: { fuerza: 2 },
     activadas: [
       {
@@ -312,6 +330,7 @@ export const HABILIDADES = {
     ],
   },
   "Espada del Orden": {
+    momentos: ["talismanes"],
     portador: { fuerza: 2, claves: ["Indesterrable"] },
     disparadas: [
       {
@@ -346,6 +365,7 @@ export const HABILIDADES = {
     fns: { costeX: (e, ctx) => (ctx.vars.x ?? []).reduce((s, u) => s + coste(e, u), 0) },
   },
   "Estaca y Martillo": {
+    momentos: ["comienzoFase", "talismanes"],
     portador: { fuerza: 2 },
     activadas: [
       {
@@ -370,6 +390,14 @@ export const HABILIDADES = {
   "Flechar Xoon": {
     claves: ["Exhumar"],
     portador: { fuerza: 2, claves: ["Indesterrable"] },
+    activadas: [
+      {
+        texto: "Subir una carta que controles a la mano de su dueño para Anular un Talismán o Tótem de coste 2 o menos",
+        veces: "turno",
+        respuesta: { anula: { tipo: ["Talismán", "Tótem"], costeMax: 2 } },
+        coste: [sel(["yo:enJuego"], {}, "s"), mov("mano", "s")],
+      },
+    ],
     disparadas: [
       {
         cuando: ["sale"],
